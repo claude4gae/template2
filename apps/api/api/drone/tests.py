@@ -17,7 +17,7 @@ from django.urls import reverse
 
 import api.account.services as account_services
 from api.drone import selectors, services
-from api.drone.models import DroneEarlyInform, DroneSOP, DroneSopJiraTemplate, DroneSopJiraUserTemplate
+from api.drone.models import DroneEarlyInform, DroneSOP, DroneSopJiraUserTemplate
 
 _PREVIOUS_LOGGING_DISABLE: int | None = None
 
@@ -229,7 +229,7 @@ class DroneSopInstantInformTests(TestCase):
             user_sdwt_prod="SDWT",
             jira_key="DUMMY",
         )
-        DroneSopJiraTemplate.objects.create(line_id="L1", template_key="line_a")
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT", template_key="line_a")
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
@@ -405,7 +405,7 @@ class DroneEndpointTests(TestCase):
     )
     @patch("api.drone.services.sop_jira._jira_session")
     def test_instant_inform_uses_user_template_override(self, mock_session: Mock) -> None:
-        """사용자 템플릿 오버라이드가 적용되는지 확인합니다."""
+        """user_sdwt_prod 템플릿 매핑이 적용되는지 확인합니다."""
         session = Mock()
         resp = Mock(status_code=201)
         resp.json.return_value = {"key": "DUMMY-321"}
@@ -505,8 +505,8 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             line="L3",
             user_sdwt_prod="SDWT3",
         )
-        DroneSopJiraTemplate.objects.create(line_id="L1", template_key="line_a")
-        DroneSopJiraTemplate.objects.create(line_id="L2", template_key="line_b")
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT1", template_key="line_a")
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT2", template_key="line_b")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",
@@ -576,7 +576,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
     )
     @patch("api.drone.services.sop_jira._jira_session")
     def test_jira_create_uses_user_template_override(self, mock_session: Mock) -> None:
-        """사용자 템플릿 오버라이드가 적용되는지 확인합니다."""
+        """user_sdwt_prod 템플릿 매핑이 적용되는지 확인합니다."""
         session = Mock()
         resp = Mock(status_code=201)
         resp.json.return_value = {"issues": [{"key": "PROJ1-1"}]}
@@ -637,7 +637,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             user_sdwt_prod="SDWT2",
             jira_key="PROJ2",
         )
-        DroneSopJiraTemplate.objects.create(line_id="L1", template_key="line_a")
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT1", template_key="line_a")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",

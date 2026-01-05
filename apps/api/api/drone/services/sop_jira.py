@@ -952,11 +952,6 @@ def run_drone_sop_jira_instant_inform(
         # ---------------------------------------------------------------------
         _enrich_rows_with_ctttm_urls(rows=[row_payload], config=DroneCtttmConfig.from_settings())
 
-        line_id = row_payload.get("line_id")
-        if not isinstance(line_id, str) or not line_id.strip():
-            raise ValueError("line_id is required to resolve Jira template key")
-        normalized_line_id = line_id.strip()
-
         user_sdwt_prod = row_payload.get("user_sdwt_prod")
         if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
             raise ValueError("user_sdwt_prod is required to resolve Jira project key")
@@ -968,19 +963,16 @@ def run_drone_sop_jira_instant_inform(
         if not project_key:
             raise ValueError(f"jira_key missing for user_sdwt_prod={normalized_user_sdwt_prod!r}")
 
-        template_keys_by_line = selectors.list_drone_sop_jira_templates_by_line_ids(line_ids={normalized_line_id})
         template_keys_by_user_sdwt = selectors.list_drone_sop_jira_templates_by_user_sdwt_prods(
             user_sdwt_prod_values={row_payload.get("user_sdwt_prod")},
         )
         template_key = _resolve_template_key_for_row(
             row=row_payload,
             template_keys_by_user_sdwt=template_keys_by_user_sdwt,
-            template_keys_by_line=template_keys_by_line,
         )
         if not template_key:
             logger.warning(
-                "Missing Jira template mapping for line_id=%s user_sdwt_prod=%s",
-                normalized_line_id,
+                "Missing Jira template mapping for user_sdwt_prod=%s",
                 row_payload.get("user_sdwt_prod"),
             )
             with transaction.atomic():
@@ -1143,19 +1135,19 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         template_key_by_id, missing_template_ids = _resolve_template_keys_for_rows(rows=rows)
         if missing_template_ids:
             missing_id_set = set(missing_template_ids)
-            missing_line_ids = sorted(
+            missing_user_sdwt = sorted(
                 {
-                    row.get("line_id", "").strip()
+                    row.get("user_sdwt_prod", "").strip()
                     for row in rows
                     if row.get("id") in missing_id_set
-                    and isinstance(row.get("line_id"), str)
-                    and row.get("line_id").strip()
+                    and isinstance(row.get("user_sdwt_prod"), str)
+                    and row.get("user_sdwt_prod").strip()
                 }
             )
             logger.warning(
-                "Missing Jira template mapping for %s drone_sop rows (line_ids=%s)",
+                "Missing Jira template mapping for %s drone_sop rows (user_sdwt_prod=%s)",
                 len(missing_template_ids),
-                ",".join(missing_line_ids[:10]) if missing_line_ids else "-",
+                ",".join(missing_user_sdwt[:10]) if missing_user_sdwt else "-",
             )
             with transaction.atomic():
                 DroneSOP.objects.filter(id__in=missing_template_ids).update(send_jira=-1)
@@ -1271,12 +1263,8 @@ def _resolve_template_keys_for_rows(
     # -------------------------------------------------------------------------
     # 1) 입력 값 수집
     # -------------------------------------------------------------------------
-    line_ids: set[str] = set()
     user_sdwt_prod_values: set[str] = set()
     for row in rows:
-        line_id = row.get("line_id")
-        if isinstance(line_id, str) and line_id.strip():
-            line_ids.add(line_id.strip())
         user_sdwt_prod = row.get("user_sdwt_prod")
         if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
             user_sdwt_prod_values.add(user_sdwt_prod.strip())
@@ -1284,7 +1272,6 @@ def _resolve_template_keys_for_rows(
     # -------------------------------------------------------------------------
     # 2) 템플릿 매핑 조회
     # -------------------------------------------------------------------------
-    template_keys_by_line = selectors.list_drone_sop_jira_templates_by_line_ids(line_ids=line_ids)
     template_keys_by_user_sdwt = selectors.list_drone_sop_jira_templates_by_user_sdwt_prods(
         user_sdwt_prod_values=user_sdwt_prod_values,
     )
@@ -1302,7 +1289,6 @@ def _resolve_template_keys_for_rows(
         template_key = _resolve_template_key_for_row(
             row=row,
             template_keys_by_user_sdwt=template_keys_by_user_sdwt,
-            template_keys_by_line=template_keys_by_line,
         )
         if not template_key:
             missing_ids.append(rid)
@@ -1316,14 +1302,12 @@ def _resolve_template_key_for_row(
     *,
     row: dict[str, Any],
     template_keys_by_user_sdwt: dict[str, str],
-    template_keys_by_line: dict[str, str],
 ) -> str | None:
     """단일 DroneSOP row에 대한 Jira 템플릿 키를 반환합니다.
 
     인자:
         row: Drone SOP 행 dict(행 데이터).
         template_keys_by_user_sdwt: user_sdwt_prod → template_key (소속별 템플릿 키).
-        template_keys_by_line: line_id → template_key (라인별 템플릿 키).
 
     반환:
         template_key 문자열 또는 None.
@@ -1346,20 +1330,9 @@ def _resolve_template_key_for_row(
             return None
 
     # -------------------------------------------------------------------------
-    # 2) line_id 기반 fallback
+    # 2) 매핑 누락 시 None 반환
     # -------------------------------------------------------------------------
-    line_id = row.get("line_id")
-    if not isinstance(line_id, str) or not line_id.strip():
-        return None
-
-    normalized_line_id = line_id.strip()
-    template_key = template_keys_by_line.get(normalized_line_id)
-    if not isinstance(template_key, str) or not template_key.strip():
-        return None
-    normalized_key = template_key.strip()
-    if normalized_key not in TEMPLATE_SOURCES:
-        return None
-    return normalized_key
+    return None
 
 
 def _resolve_project_key_for_row(

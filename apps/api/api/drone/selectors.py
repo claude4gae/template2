@@ -26,7 +26,7 @@ from api.common.services import (
 )
 from api.common.selectors import _get_user_sdwt_prod_values
 
-from .models import DroneEarlyInform, DroneSOP, DroneSopJiraTemplate, DroneSopJiraUserTemplate
+from .models import DroneEarlyInform, DroneSOP, DroneSopJiraUserTemplate
 
 
 def list_early_inform_entries(*, line_id: str) -> QuerySet[DroneEarlyInform]:
@@ -85,46 +85,6 @@ def get_drone_sop_for_update(*, sop_id: int) -> DroneSOP | None:
     if sop_id <= 0:
         return None
     return DroneSOP.objects.select_for_update().filter(id=sop_id).first()
-
-
-def list_drone_sop_jira_templates_by_line_ids(
-    *,
-    line_ids: set[str] | list[str],
-) -> dict[str, str]:
-    """line_id별 Jira 템플릿 키 맵을 조회합니다.
-
-    인자:
-        line_ids: line_id 집합 또는 리스트.
-
-    반환:
-        {line_id: template_key} 형태의 dict.
-
-    부작용:
-        없음. 읽기 전용 조회입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    normalized_lines = [line.strip() for line in line_ids if isinstance(line, str) and line.strip()]
-    if not normalized_lines:
-        return {}
-
-    # -----------------------------------------------------------------------------
-    # 2) 템플릿 조회 및 매핑 구성
-    # -----------------------------------------------------------------------------
-    rows = DroneSopJiraTemplate.objects.filter(line_id__in=normalized_lines).values("line_id", "template_key")
-    mapping: dict[str, str] = {}
-    for row in rows:
-        line_id = row.get("line_id")
-        template_key = row.get("template_key")
-        if not isinstance(line_id, str) or not line_id.strip():
-            continue
-        if not isinstance(template_key, str) or not template_key.strip():
-            continue
-        mapping[line_id.strip()] = template_key.strip()
-
-    return mapping
 
 
 def list_drone_sop_jira_templates_by_user_sdwt_prods(

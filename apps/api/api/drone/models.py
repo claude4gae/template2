@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: 드론 SOP/조기 알림 모델
-# 주요 구성: DroneSOP, DroneEarlyInform, Jira 템플릿 모델
+# 주요 구성: DroneSOP, DroneEarlyInform, Jira 템플릿(user_sdwt_prod) 모델
 # 주요 가정: sop_key는 필드 조합으로 생성합니다.
 # =============================================================================
 from __future__ import annotations
@@ -142,26 +142,6 @@ class DroneSOP(models.Model):
         super().save(*args, **kwargs)
 
 
-class DroneSopJiraTemplate(models.Model):
-    """Drone SOP Jira 템플릿(line_id 매핑)을 저장하는 모델입니다."""
-
-    line_id = models.CharField(max_length=50, unique=True)
-    template_key = models.CharField(max_length=50)
-    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
-    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
-
-    class Meta:
-        db_table = "drone_sop_jira_template"
-        indexes = [
-            models.Index(fields=["line_id"], name="idx_dro_sop_jir_tmpl_ln_id"),
-        ]
-
-    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
-        """관리자/디버깅용 문자열 표현을 반환합니다."""
-
-        return f"{self.line_id} -> {self.template_key}"
-
-
 class DroneSopJiraUserTemplate(models.Model):
     """Drone SOP Jira 템플릿(user_sdwt_prod 매핑)을 저장하는 모델입니다."""
 
@@ -210,7 +190,6 @@ class DroneEarlyInform(models.Model):
 __all__ = [
     "DroneEarlyInform",
     "DroneSOP",
-    "DroneSopJiraTemplate",
     "DroneSopJiraUserTemplate",
     "build_sop_key",
 ]

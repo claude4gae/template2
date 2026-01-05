@@ -26,8 +26,6 @@
   - SOP 식별키 `sop_key` (line/eqp/chamber/lot/main_step 조합)
   - 상태/전송 관련: `status`, `needtosend`, `send_jira`, `jira_key`
   - 기타: `user_sdwt_prod`, `knox_id`, `comment`, `custom_end_step`
-- `DroneSopJiraTemplate` (`drone_sop_jira_template`)
-  - line_id → Jira 템플릿 매핑
 - `DroneSopJiraUserTemplate` (`drone_sop_jira_user_template`)
   - user_sdwt_prod → Jira 템플릿 매핑
 - `DroneEarlyInform` (`drone_early_inform`)
@@ -36,7 +34,7 @@
 ## 주요 규칙/정책
 - Airflow 트리거 엔드포인트는 `ensure_airflow_token(require_bearer=True)`가 필요합니다.
 - POP3 수집은 advisory lock으로 중복 실행을 방지합니다.
-- Jira 템플릿은 user_sdwt_prod 우선, 없으면 line 기준을 사용합니다.
+- Jira 템플릿은 user_sdwt_prod 기준으로 매핑합니다.
 
 ## 주요 흐름
 
@@ -80,8 +78,7 @@
 4. project key 해석:
    - `account_affiliation`의 `jira_key` 사용.
 5. 템플릿 해석:
-   - `drone_sop_jira_user_template` → user_sdwt_prod 우선
-   - 없으면 `drone_sop_jira_template`(line 기준)
+   - `drone_sop_jira_user_template` → user_sdwt_prod 기준
 6. CTTTM URL enrichment(옵션).
 7. Jira API 호출(bulk 또는 single).
 8. 성공 row는 `send_jira=1`, `jira_key`, `inform_step`, `informed_at` 업데이트.
