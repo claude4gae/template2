@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: 드론 SOP/조기 알림 모델
-# 주요 구성: DroneSOP, DroneEarlyInform, Jira 템플릿(user_sdwt_prod) 모델
+# 주요 구성: DroneSOP, DroneEarlyInform, Jira 템플릿/프로젝트 키(user_sdwt_prod) 모델
 # 주요 가정: sop_key는 필드 조합으로 생성합니다.
 # =============================================================================
 from __future__ import annotations
@@ -143,10 +143,11 @@ class DroneSOP(models.Model):
 
 
 class DroneSopJiraUserTemplate(models.Model):
-    """Drone SOP Jira 템플릿(user_sdwt_prod 매핑)을 저장하는 모델입니다."""
+    """Drone SOP Jira 템플릿/프로젝트 키(user_sdwt_prod 매핑)을 저장하는 모델입니다."""
 
     user_sdwt_prod = models.CharField(max_length=50, unique=True)
-    template_key = models.CharField(max_length=50)
+    template_key = models.CharField(max_length=50, null=True, blank=True)
+    jira_key = models.CharField(max_length=64, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 

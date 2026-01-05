@@ -227,9 +227,12 @@ class DroneSopInstantInformTests(TestCase):
             department="D",
             line="L1",
             user_sdwt_prod="SDWT",
+        )
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT",
+            template_key="line_a",
             jira_key="DUMMY",
         )
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT", template_key="line_a")
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
@@ -375,8 +378,8 @@ class DroneEndpointTests(TestCase):
             department="D",
             line="L1",
             user_sdwt_prod="SDWT",
-            jira_key="DUMMY",
         )
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT", jira_key="DUMMY")
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
@@ -416,9 +419,12 @@ class DroneEndpointTests(TestCase):
             department="D",
             line="L1",
             user_sdwt_prod="SDWT",
+        )
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT",
+            template_key="line_a",
             jira_key="DUMMY",
         )
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT", template_key="line_a")
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
@@ -470,6 +476,72 @@ class DroneEndpointTests(TestCase):
         self.assertEqual(refreshed.comment, "updated")
 
 
+class DroneJiraKeyEndpointTests(TestCase):
+    """Jira 키/템플릿 키 엔드포인트를 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 사용자/소속 데이터를 준비합니다."""
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            sabun="S70000",
+            password="test-password",
+            knox_id="knox-70000",
+        )
+        self.superuser = User.objects.create_superuser(
+            sabun="S70001",
+            password="test-password",
+            knox_id="knox-70001",
+        )
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="SDWT",
+        )
+
+    def test_jira_key_get_requires_authentication(self) -> None:
+        """Jira 키 조회는 인증이 필요합니다."""
+        response = self.client.get(reverse("line-dashboard-jira-keys"), {"userSdwtProd": "SDWT"})
+        self.assertEqual(response.status_code, 401)
+
+    def test_jira_key_get_returns_values(self) -> None:
+        """Jira 키/템플릿 키 조회가 정상 응답하는지 확인합니다."""
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT",
+            template_key="line_a",
+            jira_key="PROJ",
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("line-dashboard-jira-keys"), {"userSdwtProd": "SDWT"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["jiraKey"], "PROJ")
+        self.assertEqual(response.json()["templateKey"], "line_a")
+
+    def test_jira_key_update_requires_superuser(self) -> None:
+        """Jira 키 갱신은 슈퍼유저만 가능해야 합니다."""
+        payload = {"userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "line_a"}
+
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        refreshed = DroneSopJiraUserTemplate.objects.get(user_sdwt_prod="SDWT")
+        self.assertEqual(refreshed.jira_key, "PROJ")
+        self.assertEqual(refreshed.template_key, "line_a")
+
+
 class DroneSopJiraCreateProjectKeyTests(TestCase):
     """Jira 생성 시 프로젝트/템플릿 매핑을 검증합니다."""
     @override_settings(
@@ -492,21 +564,28 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             department="D",
             line="L1",
             user_sdwt_prod="SDWT1",
-            jira_key="PROJ1",
         )
         account_services.ensure_affiliation_option(
             department="D",
             line="L2",
             user_sdwt_prod="SDWT2",
-            jira_key="PROJ2",
         )
         account_services.ensure_affiliation_option(
             department="D",
             line="L3",
             user_sdwt_prod="SDWT3",
         )
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT1", template_key="line_a")
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT2", template_key="line_b")
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT1",
+            template_key="line_a",
+            jira_key="PROJ1",
+        )
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT2",
+            template_key="line_b",
+            jira_key="PROJ2",
+        )
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT3", template_key="line_a")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",
@@ -587,9 +666,12 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             department="D",
             line="L1",
             user_sdwt_prod="SDWT",
+        )
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT",
+            template_key="line_a",
             jira_key="PROJ1",
         )
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT", template_key="line_a")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",
@@ -629,15 +711,18 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             department="D",
             line="L1",
             user_sdwt_prod="SDWT1",
-            jira_key="PROJ1",
         )
         account_services.ensure_affiliation_option(
             department="D",
             line="L2",
             user_sdwt_prod="SDWT2",
-            jira_key="PROJ2",
         )
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT1", template_key="line_a")
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT1",
+            template_key="line_a",
+            jira_key="PROJ1",
+        )
+        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT2", jira_key="PROJ2")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",

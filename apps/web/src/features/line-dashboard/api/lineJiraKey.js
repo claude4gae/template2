@@ -9,7 +9,7 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
     return { jiraKey: "" }
   }
 
-  const endpoint = buildBackendUrl("/api/v1/account/affiliation/jira-key", { userSdwtProd })
+  const endpoint = buildBackendUrl("/api/v1/line-dashboard/jira-keys", { userSdwtProd })
   const response = await fetch(endpoint, {
     cache: "no-store",
     credentials: "include",
@@ -28,7 +28,7 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
 }
 
 export async function updateUserSdwtJiraKey({ userSdwtProd, jiraKey }) {
-  const endpoint = buildBackendUrl("/api/v1/account/affiliation/jira-key")
+  const endpoint = buildBackendUrl("/api/v1/line-dashboard/jira-keys")
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

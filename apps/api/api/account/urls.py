@@ -17,7 +17,6 @@ from django.urls import path
 from .views import (
     AccountAffiliationApprovalView,
     AccountAffiliationView,
-    AccountAffiliationJiraKeyView,
     AccountAffiliationRequestListView,
     AccountAffiliationReconfirmView,
     AccountExternalAffiliationSyncView,
@@ -44,11 +43,6 @@ urlpatterns = [
         "affiliation/reconfirm",
         AccountAffiliationReconfirmView.as_view(),
         name="account-affiliation-reconfirm",
-    ),
-    path(
-        "affiliation/jira-key",
-        AccountAffiliationJiraKeyView.as_view(),
-        name="account-affiliation-jira-key",
     ),
     path(
         "external-affiliations/sync",

@@ -379,7 +379,51 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
     return _get_user_sdwt_prod_values(line_id)
 
 
-def get_affiliation_jira_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str | None:
+def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
+    """user_sdwt_prod에 대응하는 소속 존재 여부를 확인합니다.
+
+    인자:
+        user_sdwt_prod: 사용자 소속 값.
+
+    반환:
+        소속 존재 여부(bool).
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    return account_selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+
+
+def get_drone_sop_jira_user_template(
+    *,
+    user_sdwt_prod: str,
+) -> DroneSopJiraUserTemplate | None:
+    """user_sdwt_prod에 해당하는 Jira 템플릿/프로젝트 키 설정을 조회합니다.
+
+    인자:
+        user_sdwt_prod: 사용자 소속 값.
+
+    반환:
+        DroneSopJiraUserTemplate 또는 None.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 유효성 확인
+    # -----------------------------------------------------------------------------
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        return None
+
+    # -----------------------------------------------------------------------------
+    # 2) 템플릿/프로젝트 키 조회
+    # -----------------------------------------------------------------------------
+    return DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).first()
+
+
+def get_drone_sop_jira_project_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str | None:
     """user_sdwt_prod에 해당하는 Jira project key를 조회합니다.
 
     인자:
@@ -392,12 +436,32 @@ def get_affiliation_jira_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str |
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.get_affiliation_jira_key_for_user_sdwt_prod(
-        user_sdwt_prod=user_sdwt_prod,
+    # -----------------------------------------------------------------------------
+    # 1) 입력 유효성 확인
+    # -----------------------------------------------------------------------------
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        return None
+
+    # -----------------------------------------------------------------------------
+    # 2) 비어있지 않은 키 조회
+    # -----------------------------------------------------------------------------
+    key = (
+        DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod=user_sdwt_prod.strip())
+        .exclude(jira_key__isnull=True)
+        .exclude(jira_key="")
+        .values_list("jira_key", flat=True)
+        .order_by("jira_key")
+        .first()
     )
+    if isinstance(key, str) and key.strip():
+        return key.strip()
+    # -----------------------------------------------------------------------------
+    # 3) 기본값 반환
+    # -----------------------------------------------------------------------------
+    return None
 
 
-def list_affiliation_jira_keys_by_user_sdwt_prod(
+def list_drone_sop_jira_project_keys_by_user_sdwt_prod(
     *,
     user_sdwt_prod_values: set[str] | list[str],
 ) -> dict[str, str | None]:
@@ -413,9 +477,32 @@ def list_affiliation_jira_keys_by_user_sdwt_prod(
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.list_affiliation_jira_keys_by_user_sdwt_prod(
-        user_sdwt_prod_values=user_sdwt_prod_values,
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화
+    # -----------------------------------------------------------------------------
+    normalized_sdwt = [
+        value.strip() for value in user_sdwt_prod_values if isinstance(value, str) and value.strip()
+    ]
+    if not normalized_sdwt:
+        return {}
+
+    # -----------------------------------------------------------------------------
+    # 2) 조회 및 매핑 생성
+    # -----------------------------------------------------------------------------
+    rows = DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod__in=normalized_sdwt).values(
+        "user_sdwt_prod",
+        "jira_key",
     )
+    mapping: dict[str, str | None] = {}
+    for row in rows:
+        sdwt = row.get("user_sdwt_prod")
+        if not isinstance(sdwt, str) or not sdwt.strip():
+            continue
+        key = row.get("jira_key")
+        normalized_key = key.strip() if isinstance(key, str) and key.strip() else None
+        mapping[sdwt.strip()] = normalized_key
+
+    return mapping
 
 
 def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:

@@ -19,8 +19,6 @@
 - `GET /api/v1/account/affiliation/requests`
 - `GET /api/v1/account/affiliation/reconfirm`
 - `POST /api/v1/account/affiliation/reconfirm`
-- `GET /api/v1/account/affiliation/jira-key`
-- `POST /api/v1/account/affiliation/jira-key` (superuser 전용)
 - `POST /api/v1/account/external-affiliations/sync` (Airflow 토큰 전용)
 - `POST /api/v1/account/access/grants`
 - `GET /api/v1/account/access/manageable`
@@ -33,7 +31,7 @@
 - `UserProfile` (`account_user_profile`)
   - 역할: `admin | manager | viewer`
 - `Affiliation` (`account_affiliation`)
-  - `department/line/user_sdwt_prod` 허용 조합 + `jira_key`
+  - `department/line/user_sdwt_prod` 허용 조합
 - `UserSdwtProdAccess` (`account_user_sdwt_prod_access`)
   - 접근 권한/관리 권한(`can_manage`) 부여 기록
 - `UserSdwtProdChange` (`account_user_sdwt_prod_change`)
@@ -117,18 +115,7 @@
 1. 인증 확인.
 2. `UserSdwtProdAccess` 기반으로 그룹/멤버 목록 구성 후 반환.
 
-### 9) Jira Key 조회/갱신
-`GET /api/v1/account/affiliation/jira-key`
-1. userSdwtProd 필수.
-2. userSdwtProd에 해당하는 `Affiliation` 존재 확인.
-3. 해당 userSdwtProd의 `jira_key` 반환.
-
-`POST /api/v1/account/affiliation/jira-key`
-1. superuser 인증 확인.
-2. userSdwtProd/jiraKey 유효성 검사.
-3. userSdwtProd에 해당하는 `Affiliation.jira_key` 갱신.
-
-### 10) Line/SDWT 선택 옵션
+### 9) Line/SDWT 선택 옵션
 `GET /api/v1/account/line-sdwt-options`
 1. 인증 확인.
 2. `(line_id, user_sdwt_prod)` 목록 조회 후 그룹화 응답.

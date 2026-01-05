@@ -9,6 +9,7 @@ from django.urls import path
 
 from .views import (
     DroneEarlyInformView,
+    DroneJiraKeyView,
     DroneSopInstantInformView,
     DroneSopJiraTriggerView,
     DroneSopPop3IngestTriggerView,
@@ -18,6 +19,7 @@ from .views import (
 
 urlpatterns = [
     path("early-inform", DroneEarlyInformView.as_view(), name="drone-early-inform"),
+    path("jira-keys", DroneJiraKeyView.as_view(), name="line-dashboard-jira-keys"),
     path("history", LineHistoryView.as_view(), name="line-dashboard-history"),
     path("line-ids", LineIdListView.as_view(), name="line-dashboard-line-ids"),
     path(

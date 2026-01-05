@@ -1,21 +1,19 @@
 # =============================================================================
 # 모듈 설명: 소속 관련 서비스 로직을 제공합니다.
-# - 주요 대상: get_affiliation_overview, ensure_affiliation_option, submit_affiliation_reconfirm_response, update_affiliation_jira_key
+# - 주요 대상: get_affiliation_overview, ensure_affiliation_option, submit_affiliation_reconfirm_response
 # - 불변 조건: 모든 쓰기 작업은 서비스 레이어에서 수행합니다.
 # =============================================================================
 
 """소속 관련 서비스 로직 모음.
 
-- 주요 대상: 소속 개요, 소속 옵션 보장, 재확인 처리, Jira Key 갱신, 옵션 페이로드
+- 주요 대상: 소속 개요, 소속 옵션 보장, 재확인 처리, 옵션 페이로드
 - 주요 엔드포인트/클래스: get_affiliation_overview 등
 - 가정/불변 조건: 모든 쓰기 작업은 서비스 레이어에서 수행됨
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
-from django.db import transaction
 from django.utils import timezone
 
 from ..models import Affiliation
@@ -91,7 +89,6 @@ def ensure_affiliation_option(
     department: str,
     line: str,
     user_sdwt_prod: str,
-    jira_key: str | None = None,
 ) -> Affiliation:
     """소속 옵션을 생성하거나 기존 행을 갱신합니다.
 
@@ -99,13 +96,11 @@ def ensure_affiliation_option(
     - department: 부서 식별자
     - line: 라인 식별자
     - user_sdwt_prod: 소속 그룹 값
-    - jira_key: Jira 키(옵션)
-
     반환:
     - Affiliation: 소속 옵션 객체
 
     부작용:
-    - Affiliation 생성 또는 jira_key 업데이트
+    - Affiliation 생성
 
     오류:
     - ValueError: 필수 입력 누락
@@ -128,13 +123,6 @@ def ensure_affiliation_option(
         line=normalized_line,
         user_sdwt_prod=normalized_user_sdwt,
     )
-
-    # -----------------------------------------------------------------------------
-    # 3) Jira 키 보정
-    # -----------------------------------------------------------------------------
-    if jira_key is not None and option.jira_key != jira_key:
-        option.jira_key = jira_key
-        option.save(update_fields=["jira_key"])
 
     return option
 
@@ -223,40 +211,6 @@ def submit_affiliation_reconfirm_response(
         user.save(update_fields=["requires_affiliation_reconfirm"])
 
     return response_payload, status_code
-
-
-def update_affiliation_jira_key(*, user_sdwt_prod: str, jira_key: str | None) -> int:
-    """user_sdwt_prod에 해당하는 Affiliation의 jira_key를 업데이트합니다.
-
-    입력:
-    - user_sdwt_prod: 대상 user_sdwt_prod 문자열
-    - jira_key: Jira 프로젝트 키(없으면 None)
-
-    반환:
-    - int: 업데이트된 행 개수
-
-    부작용:
-    - Affiliation.jira_key 업데이트
-
-    오류:
-    - ValueError: user_sdwt_prod 누락
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
-        raise ValueError("user_sdwt_prod is required")
-
-    # -----------------------------------------------------------------------------
-    # 2) 키 정규화 및 업데이트
-    # -----------------------------------------------------------------------------
-    normalized = jira_key.strip() if isinstance(jira_key, str) and jira_key.strip() else None
-    with transaction.atomic():
-        updated = Affiliation.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).update(
-            jira_key=normalized
-        )
-    return int(updated or 0)
 
 
 def get_line_sdwt_options_payload(*, pairs: list[dict[str, str]]) -> dict[str, object]:

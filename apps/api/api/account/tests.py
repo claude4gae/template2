@@ -18,7 +18,6 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.urls import reverse
-from rest_framework.test import APIClient
 
 from api.account.models import (
     Affiliation,
@@ -30,7 +29,6 @@ from api.account.models import (
 from api.account.selectors import (
     get_accessible_user_sdwt_prods_for_user,
     get_next_user_sdwt_prod_change,
-    get_affiliation_jira_key_for_user_sdwt_prod,
     list_affiliation_options,
     list_line_sdwt_pairs,
     resolve_user_affiliation,
@@ -43,7 +41,6 @@ from api.account.services import (
     request_affiliation_change,
     submit_affiliation_reconfirm_response,
     sync_external_affiliations,
-    update_affiliation_jira_key,
 )
 import api.emails.services as email_services
 
@@ -230,28 +227,10 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(confirm_response.status_code, 202)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
-    def test_account_jira_key_sync_and_grants(self) -> None:
-        """JIRA 키 동기화/외부 동기화/권한 부여 흐름을 확인합니다."""
+    def test_account_external_sync_and_grants(self) -> None:
+        """외부 동기화/권한 부여 흐름을 확인합니다."""
         # -----------------------------------------------------------------------------
-        # 1) 슈퍼유저로 Jira 키 조회/갱신
-        # -----------------------------------------------------------------------------
-        self.client.force_login(self.superuser)
-
-        jira_get = self.client.get(
-            reverse("account-affiliation-jira-key"),
-            {"userSdwtProd": "group-a"},
-        )
-        self.assertEqual(jira_get.status_code, 200)
-
-        jira_post = self.client.post(
-            reverse("account-affiliation-jira-key"),
-            data='{"userSdwtProd":"group-a","jiraKey":"PROJ"}',
-            content_type="application/json",
-        )
-        self.assertEqual(jira_post.status_code, 200)
-
-        # -----------------------------------------------------------------------------
-        # 2) 외부 소속 동기화 호출
+        # 1) 외부 소속 동기화 호출
         # -----------------------------------------------------------------------------
         sync_response = self.client.post(
             reverse("account-external-affiliation-sync"),
@@ -262,7 +241,7 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(sync_response.status_code, 200)
 
         # -----------------------------------------------------------------------------
-        # 3) 매니저 권한 부여 및 조회
+        # 2) 매니저 권한 부여 및 조회
         # -----------------------------------------------------------------------------
         self.client.force_login(self.manager)
         grant_response = self.client.post(
@@ -294,17 +273,6 @@ class AffiliationSelectorTests(TestCase):
                 {"department": "DeptB", "line": "L2", "user_sdwt_prod": "S3"},
             ],
         )
-
-    def test_update_affiliation_jira_key_updates_matching_user_sdwt_prod(self) -> None:
-        """JIRA 키 업데이트가 user_sdwt_prod 기준으로 적용되는지 확인합니다."""
-        Affiliation.objects.create(department="DeptA", line="L1", user_sdwt_prod="S1")
-        Affiliation.objects.create(department="DeptB", line="L1", user_sdwt_prod="S2")
-
-        updated = update_affiliation_jira_key(user_sdwt_prod="S1", jira_key="PROJ")
-
-        self.assertEqual(updated, 1)
-        self.assertEqual(get_affiliation_jira_key_for_user_sdwt_prod(user_sdwt_prod="S1"), "PROJ")
-        self.assertIsNone(get_affiliation_jira_key_for_user_sdwt_prod(user_sdwt_prod="S2"))
 
     def test_list_line_sdwt_pairs_filters_and_orders(self) -> None:
         """라인-소속 쌍이 필터링되고 정렬되는지 확인합니다."""
@@ -896,37 +864,8 @@ class AffiliationOverviewTests(TestCase):
         self.assertEqual(payload["accessibleUserSdwtProds"][0]["userSdwtProd"], "group-a")
 
 
-class AffiliationJiraKeyPermissionTests(TestCase):
-    """JIRA 키 권한 및 소속 변경 요청을 검증합니다."""
-
-    def setUp(self) -> None:
-        """테스트용 소속 데이터를 준비합니다."""
-        Affiliation.objects.create(department="Dept", line="L1", user_sdwt_prod="S1")
-
-    def test_jira_key_update_requires_superuser(self) -> None:
-        """JIRA 키 업데이트는 슈퍼유저만 가능해야 합니다."""
-        User = get_user_model()
-        user = User.objects.create_user(
-            sabun="S60001",
-            password="test-password",
-            knox_id="knox-60001",
-        )
-        superuser = User.objects.create_superuser(
-            sabun="S60002",
-            password="test-password",
-            knox_id="knox-60002",
-        )
-
-        url = reverse("account-affiliation-jira-key")
-
-        client = APIClient()
-        client.force_authenticate(user=user)
-        resp = client.post(url, data={"userSdwtProd": "S1", "jiraKey": "PROJ"}, format="json")
-        self.assertEqual(resp.status_code, 403)
-
-        client.force_authenticate(user=superuser)
-        resp = client.post(url, data={"userSdwtProd": "S1", "jiraKey": "PROJ"}, format="json")
-        self.assertEqual(resp.status_code, 200)
+class AffiliationChangeRequestTests(TestCase):
+    """소속 변경 요청을 검증합니다."""
 
     def test_request_affiliation_change_creates_pending_for_first_affiliation(self) -> None:
         """첫 소속 변경 요청은 승인 대기 상태로 생성되어야 합니다."""

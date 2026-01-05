@@ -17,6 +17,8 @@
 - `DELETE /api/v1/line-dashboard/early-inform`
 - `GET /api/v1/line-dashboard/history`
 - `GET /api/v1/line-dashboard/line-ids`
+- `GET /api/v1/line-dashboard/jira-keys`
+- `POST /api/v1/line-dashboard/jira-keys`
 - `POST /api/v1/line-dashboard/sop/<sop_id>/instant-inform`
 - `POST /api/v1/line-dashboard/sop/ingest/pop3/trigger`
 - `POST /api/v1/line-dashboard/sop/jira/trigger`
@@ -27,14 +29,14 @@
   - 상태/전송 관련: `status`, `needtosend`, `send_jira`, `jira_key`
   - 기타: `user_sdwt_prod`, `knox_id`, `comment`, `custom_end_step`
 - `DroneSopJiraUserTemplate` (`drone_sop_jira_user_template`)
-  - user_sdwt_prod → Jira 템플릿 매핑
+  - user_sdwt_prod → Jira 템플릿/프로젝트 키 매핑
 - `DroneEarlyInform` (`drone_early_inform`)
   - 조기 알림 기준(라인/스텝) 및 custom_end_step
 
 ## 주요 규칙/정책
 - Airflow 트리거 엔드포인트는 `ensure_airflow_token(require_bearer=True)`가 필요합니다.
 - POP3 수집은 advisory lock으로 중복 실행을 방지합니다.
-- Jira 템플릿은 user_sdwt_prod 기준으로 매핑합니다.
+- Jira 템플릿/프로젝트 키는 user_sdwt_prod 기준으로 매핑합니다.
 
 ## 주요 흐름
 
@@ -76,7 +78,7 @@
 2. advisory lock으로 중복 실행 방지.
 3. 후보 조회: `send_jira=0 && needtosend=1 && status=COMPLETE`.
 4. project key 해석:
-   - `account_affiliation`의 `jira_key` 사용.
+   - `drone_sop_jira_user_template`의 `jira_key` 사용.
 5. 템플릿 해석:
    - `drone_sop_jira_user_template` → user_sdwt_prod 기준
 6. CTTTM URL enrichment(옵션).

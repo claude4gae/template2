@@ -804,7 +804,7 @@ class EmailMailboxAccessViewTests(TestCase):
         payload = response.json()
         members = payload["members"]
         member_ids = {item["userId"] for item in members}
-        self.assertEqual(member_ids, {requester.id, affiliated.id, granted.id})
+        self.assertEqual(member_ids, {requester.id, affiliated.id, granted.id, manager.id})
 
         requester_member = next(item for item in members if item["userId"] == requester.id)
         self.assertEqual(requester_member["emailCount"], 2)
@@ -1772,6 +1772,7 @@ class EmailEndpointTests(TestCase):
             조건 불일치 시 assertion 실패.
         """
 
+        User = get_user_model()
         manager = User.objects.create_user(sabun="S77779", password="test-password")
         manager.user_sdwt_prod = "group-b"
         manager.save(update_fields=["user_sdwt_prod"])

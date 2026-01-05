@@ -957,7 +957,7 @@ def run_drone_sop_jira_instant_inform(
             raise ValueError("user_sdwt_prod is required to resolve Jira project key")
         normalized_user_sdwt_prod = user_sdwt_prod.strip()
 
-        project_key = selectors.get_affiliation_jira_key_for_user_sdwt_prod(
+        project_key = selectors.get_drone_sop_jira_project_key_for_user_sdwt_prod(
             user_sdwt_prod=normalized_user_sdwt_prod,
         )
         if not project_key:
@@ -1211,8 +1211,8 @@ def _resolve_project_keys_for_rows(
 ) -> tuple[dict[int, str], list[int]]:
     """DroneSOP row 목록에 대해 Jira project key를 해석합니다.
 
-    - account_affiliation.user_sdwt_prod 매핑이 존재해야 합니다.
-    - project key는 Affiliation.jira_key에서 가져옵니다.
+    - drone_sop_jira_user_template.user_sdwt_prod 매핑이 존재해야 합니다.
+    - project key는 DroneSopJiraUserTemplate.jira_key에서 가져옵니다.
     - 매핑이 없으면 해당 row id를 missing_ids로 반환합니다.
     """
 
@@ -1226,9 +1226,9 @@ def _resolve_project_keys_for_rows(
             user_sdwt_prod_values.add(user_sdwt_prod.strip())
 
     # -------------------------------------------------------------------------
-    # 2) 소속 매핑 조회
+    # 2) 프로젝트 키 매핑 조회
     # -------------------------------------------------------------------------
-    jira_keys_by_user_sdwt = selectors.list_affiliation_jira_keys_by_user_sdwt_prod(
+    jira_keys_by_user_sdwt = selectors.list_drone_sop_jira_project_keys_by_user_sdwt_prod(
         user_sdwt_prod_values=user_sdwt_prod_values,
     )
 
@@ -1344,7 +1344,7 @@ def _resolve_project_key_for_row(
 
     인자:
         row: Drone SOP 행 dict(행 데이터).
-        jira_keys_by_user_sdwt: user_sdwt_prod → jira_key (소속 Jira 키).
+        jira_keys_by_user_sdwt: user_sdwt_prod → jira_key (프로젝트 키).
 
     반환:
         jira_key 문자열 또는 None.

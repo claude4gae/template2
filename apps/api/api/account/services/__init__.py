@@ -15,7 +15,6 @@ from .affiliations import (
     get_affiliation_reconfirm_status,
     get_line_sdwt_options_payload,
     submit_affiliation_reconfirm_response,
-    update_affiliation_jira_key,
 )
 from .affiliation_requests import (
     approve_affiliation_change,
@@ -50,6 +49,5 @@ __all__ = [
     "resolve_target_user",
     "submit_affiliation_reconfirm_response",
     "sync_external_affiliations",
-    "update_affiliation_jira_key",
     "claim_unassigned_emails_for_user",
 ]

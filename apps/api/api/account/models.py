@@ -174,7 +174,6 @@ class Affiliation(models.Model):
     department = models.CharField(max_length=128)
     line = models.CharField(max_length=64)
     user_sdwt_prod = models.CharField(max_length=64)
-    jira_key = models.CharField(max_length=64, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

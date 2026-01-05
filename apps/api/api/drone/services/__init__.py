@@ -9,6 +9,7 @@
  - 조기 알림 CRUD: `services/early_inform.py`
  - Drone SOP POP3 수집: `services/sop_pop3.py`
  - Drone SOP Jira 연동: `services/sop_jira.py`
+ - Jira 템플릿/프로젝트 키 갱신: `services/jira_user_template.py`
  - 공통 유틸: `services/utils.py`
 
 이 모듈은 안정적인 import 파사드 역할을 합니다(예: `from api.drone import services`).
@@ -24,6 +25,7 @@ from .early_inform import (
     delete_early_inform_entry,
     update_early_inform_entry,
 )
+from .jira_user_template import upsert_drone_sop_jira_user_template
 from .sop_jira import (
     DroneJiraConfig,
     DroneSopInstantInformResult,
@@ -73,5 +75,6 @@ __all__ = [
     "run_drone_sop_jira_create_from_env",
     "run_drone_sop_jira_instant_inform",
     "run_drone_sop_pop3_ingest_from_env",
+    "upsert_drone_sop_jira_user_template",
     "update_early_inform_entry",
 ]

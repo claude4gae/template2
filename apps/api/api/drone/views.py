@@ -13,6 +13,8 @@
 - 예시 요청: POST   /api/v1/line-dashboard/early-inform { lineId, mainStep, customEndStep? }
 - 예시 요청: PATCH  /api/v1/line-dashboard/early-inform { id, lineId?, mainStep?, customEndStep? }
 - 예시 요청: DELETE /api/v1/line-dashboard/early-inform?id=123
+- 예시 요청: GET    /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
+- 예시 요청: POST   /api/v1/line-dashboard/jira-keys { userSdwtProd, jiraKey?, templateKey? }
 
 # 응답(예시)
 GET 예시:
@@ -522,6 +524,174 @@ class DroneEarlyInformView(APIView):
             return None
         trimmed = value.strip()
         return trimmed if trimmed and len(trimmed) <= MAX_FIELD_LENGTH else None
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DroneJiraKeyView(APIView):
+    """user_sdwt_prod 단위 Jira 템플릿/프로젝트 키 조회/갱신 엔드포인트입니다."""
+
+    MAX_PROJECT_KEY_LENGTH = 64
+    MAX_TEMPLATE_KEY_LENGTH = 50
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """userSdwtProd에 해당하는 Jira 키/템플릿 키를 조회합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: Jira 키/템플릿 키 정보
+
+        부작용:
+        - 없음(읽기 전용)
+
+        오류:
+        - 400: userSdwtProd 누락
+        - 401: 미인증
+        - 404: userSdwtProd 없음
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
+
+        snake/camel 호환:
+        - userSdwtProd / user_sdwt_prod (키 매핑)
+        """
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        auth_response = _ensure_authenticated(request)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) userSdwtProd 검증
+        # -----------------------------------------------------------------------------
+        user_sdwt_prod = (request.GET.get("userSdwtProd") or request.GET.get("user_sdwt_prod") or "").strip()
+        if not user_sdwt_prod:
+            return JsonResponse({"error": "userSdwtProd is required"}, status=400)
+
+        # -----------------------------------------------------------------------------
+        # 3) userSdwtProd 존재 확인
+        # -----------------------------------------------------------------------------
+        if not selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod):
+            return JsonResponse({"error": "userSdwtProd not found"}, status=404)
+
+        # -----------------------------------------------------------------------------
+        # 4) Jira 키 조회 및 응답 반환
+        # -----------------------------------------------------------------------------
+        entry = selectors.get_drone_sop_jira_user_template(user_sdwt_prod=user_sdwt_prod)
+        jira_key = entry.jira_key if entry and entry.jira_key else None
+        template_key = entry.template_key if entry and entry.template_key else None
+        return JsonResponse(
+            {
+                "userSdwtProd": user_sdwt_prod,
+                "jiraKey": jira_key,
+                "templateKey": template_key,
+            }
+        )
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """슈퍼유저가 userSdwtProd에 대한 Jira 키/템플릿 키를 갱신합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 갱신 결과
+
+        부작용:
+        - Jira 키/템플릿 키 갱신
+
+        오류:
+        - 400: 입력 오류
+        - 401: 미인증
+        - 403: 권한 없음
+        - 404: userSdwtProd 없음
+
+        예시 요청:
+        - 예시 요청: POST /api/v1/line-dashboard/jira-keys
+          요청 바디 예시: {"userSdwtProd":"SDWT_A","jiraKey":"ABC","templateKey":"line_a"}
+
+        snake/camel 호환:
+        - userSdwtProd / user_sdwt_prod (키 매핑)
+        - jiraKey / jira_key (키 매핑)
+        - templateKey / template_key (키 매핑)
+        """
+        # -----------------------------------------------------------------------------
+        # 1) 인증/권한 확인
+        # -----------------------------------------------------------------------------
+        auth_response = _ensure_authenticated(request)
+        if auth_response is not None:
+            return auth_response
+        if not getattr(request.user, "is_superuser", False):
+            return JsonResponse({"error": "forbidden"}, status=403)
+
+        # -----------------------------------------------------------------------------
+        # 2) JSON 바디 파싱
+        # -----------------------------------------------------------------------------
+        payload = parse_json_body(request)
+        if payload is None:
+            return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+        # -----------------------------------------------------------------------------
+        # 3) userSdwtProd 추출 및 검증
+        # -----------------------------------------------------------------------------
+        user_sdwt_prod = (payload.get("userSdwtProd") or payload.get("user_sdwt_prod") or "").strip()
+        if not user_sdwt_prod:
+            return JsonResponse({"error": "userSdwtProd is required"}, status=400)
+
+        # -----------------------------------------------------------------------------
+        # 4) userSdwtProd 존재 확인
+        # -----------------------------------------------------------------------------
+        if not selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod):
+            return JsonResponse({"error": "userSdwtProd not found"}, status=404)
+
+        # -----------------------------------------------------------------------------
+        # 5) jiraKey/templateKey 추출 및 길이 검증
+        # -----------------------------------------------------------------------------
+        jira_key_provided = "jiraKey" in payload or "jira_key" in payload
+        template_key_provided = "templateKey" in payload or "template_key" in payload
+        if not (jira_key_provided or template_key_provided):
+            return JsonResponse({"error": "jiraKey or templateKey is required"}, status=400)
+
+        jira_key_value = payload.get("jiraKey") if "jiraKey" in payload else payload.get("jira_key")
+        jira_key = jira_key_value.strip() if isinstance(jira_key_value, str) else ""
+        if jira_key and len(jira_key) > self.MAX_PROJECT_KEY_LENGTH:
+            return JsonResponse(
+                {"error": f"jiraKey must be {self.MAX_PROJECT_KEY_LENGTH} characters or fewer"},
+                status=400,
+            )
+
+        template_key_value = (
+            payload.get("templateKey") if "templateKey" in payload else payload.get("template_key")
+        )
+        template_key = template_key_value.strip() if isinstance(template_key_value, str) else ""
+        if template_key and len(template_key) > self.MAX_TEMPLATE_KEY_LENGTH:
+            return JsonResponse(
+                {"error": f"templateKey must be {self.MAX_TEMPLATE_KEY_LENGTH} characters or fewer"},
+                status=400,
+            )
+
+        # -----------------------------------------------------------------------------
+        # 6) 서비스 호출 및 응답 반환
+        # -----------------------------------------------------------------------------
+        payload_kwargs: dict[str, object] = {"user_sdwt_prod": user_sdwt_prod}
+        if jira_key_provided:
+            payload_kwargs["jira_key"] = jira_key or None
+        if template_key_provided:
+            payload_kwargs["template_key"] = template_key or None
+
+        template, updated = services.upsert_drone_sop_jira_user_template(**payload_kwargs)
+        return JsonResponse(
+            {
+                "userSdwtProd": user_sdwt_prod,
+                "jiraKey": template.jira_key,
+                "templateKey": template.template_key,
+                "updated": updated,
+            }
+        )
 
 
 class LineHistoryView(APIView):
