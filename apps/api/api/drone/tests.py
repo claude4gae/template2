@@ -272,8 +272,7 @@ class DroneEndpointTests(TestCase):
         self.client.force_login(self.user)
 
     @patch("api.drone.views.services.delete_early_inform_entry")
-    @patch("api.drone.views.selectors.list_user_sdwt_prod_values_for_line", return_value=[])
-    def test_drone_early_inform_crud(self, _mock_user_sdwt, mock_delete) -> None:
+    def test_drone_early_inform_crud(self, mock_delete) -> None:
         """조기 알림 CRUD 플로우가 동작하는지 확인합니다."""
         create_response = self.client.post(
             reverse("drone-early-inform"),

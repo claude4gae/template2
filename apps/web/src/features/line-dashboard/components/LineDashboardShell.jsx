@@ -5,7 +5,7 @@ import { Outlet } from "react-router-dom"
 import { TeamSwitcher } from "@/components/common"
 import { AppShellLayout } from "@/components/layout"
 import { ChatWidget } from "@/features/assistant"
-import { RequireAuth } from "@/lib/auth"
+import { RequireAuth, useAuth } from "@/lib/auth"
 import { buildNavigationConfig } from "@/lib/config/navigationConfig"
 import {
   ActiveLineProvider,
@@ -36,11 +36,15 @@ export function LineDashboardShell({
 }
 
 function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }) {
+  const { user } = useAuth()
   const {
     data: lineOptions = [],
     isError,
     error,
-  } = useLineOptionsQuery()
+  } = useLineOptionsQuery({
+    preferredUserSdwtProd:
+      typeof user?.user_sdwt_prod === "string" ? user.user_sdwt_prod.trim() : "",
+  })
 
   useEffect(() => {
     if (isError) {

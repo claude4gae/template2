@@ -22,7 +22,7 @@ from ..selectors import (
     get_email_asset_by_id,
     get_email_by_id,
     has_unprocessed_email_assets,
-    list_claimable_email_assets,
+    list_claimable_email_assets_for_update,
 )
 from .rag import enqueue_rag_index
 
@@ -106,8 +106,11 @@ def claim_email_asset_ocr_tasks(
     # -----------------------------------------------------------------------------
     tasks: list[Dict[str, Any]] = []
     with transaction.atomic():
-        queryset = list_claimable_email_assets(now=now, max_attempts=max_attempts)
-        assets = list(queryset.select_for_update(skip_locked=True)[:limit])
+        assets = list_claimable_email_assets_for_update(
+            now=now,
+            max_attempts=max_attempts,
+            limit=limit,
+        )
 
         for asset in assets:
             lock_token = secrets.token_hex(16)

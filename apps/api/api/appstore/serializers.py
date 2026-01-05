@@ -31,19 +31,15 @@ def _user_display_name(user) -> str:
         return ""
 
     # -----------------------------------------------------------------------------
-    # 2) 이름/username/email 순서로 fallback
+    # 2) username
     # -----------------------------------------------------------------------------
-    full_name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
-    if full_name:
-        return full_name
     username = getattr(user, "username", "") or ""
     if username:
         return username
-    return getattr(user, "email", "").split("@")[0]
 
 
 def _user_knoxid(user) -> str:
-    """사용자의 knox id(이메일 로컬파트 등)를 추출합니다.
+    """사용자의 knox_id 값을 그대로 반환합니다.
 
     인자:
         user: Django 사용자 객체(또는 None).
@@ -63,10 +59,7 @@ def _user_knoxid(user) -> str:
     # -----------------------------------------------------------------------------
     if not user:
         return ""
-    email = getattr(user, "email", "")
-    if isinstance(email, str) and "@" in email:
-        return email.split("@", 1)[0]
-    return getattr(user, "username", "") or ""
+    return getattr(user, "knox_id", "") or ""
 
 
 def serialize_user(user) -> Optional[Dict[str, Any]]:

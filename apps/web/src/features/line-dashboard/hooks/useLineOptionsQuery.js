@@ -16,13 +16,53 @@ function toLineOptions(payload) {
   return Array.from(new Set(normalized))
 }
 
+function normalizeUserSdwtProd(value) {
+  if (value === null || value === undefined) return ""
+  return typeof value === "string" ? value.trim() : String(value).trim()
+}
+
+function buildPreferredLineIds(rawLines, preferredUserSdwtProd) {
+  const normalizedUserSdwt = normalizeUserSdwtProd(preferredUserSdwtProd)
+  if (!normalizedUserSdwt) return []
+
+  return rawLines
+    .filter((line) => Array.isArray(line?.userSdwtProds) && line.userSdwtProds.includes(normalizedUserSdwt))
+    .map((line) => (typeof line?.lineId === "string" ? line.lineId.trim() : ""))
+    .filter(Boolean)
+}
+
+function toPreferredLineOptions(payload, preferredUserSdwtProd) {
+  const rawLines = Array.isArray(payload?.lines) ? payload.lines : []
+  const allLineIds = toLineOptions(payload)
+  const preferredLineIds = buildPreferredLineIds(rawLines, preferredUserSdwtProd)
+
+  const seen = new Set()
+  const ordered = []
+
+  preferredLineIds.forEach((lineId) => {
+    if (!seen.has(lineId)) {
+      seen.add(lineId)
+      ordered.push(lineId)
+    }
+  })
+
+  allLineIds.forEach((lineId) => {
+    if (!seen.has(lineId)) {
+      seen.add(lineId)
+      ordered.push(lineId)
+    }
+  })
+
+  return ordered
+}
+
 export function useLineOptionsQuery(options = {}) {
-  const { enabled = true } = options
+  const { enabled = true, preferredUserSdwtProd } = options
 
   return useQuery({
     queryKey: lineDashboardQueryKeys.lineSdwtOptions(),
     queryFn: getLineSdwtOptions,
-    select: toLineOptions,
+    select: (payload) => toPreferredLineOptions(payload, preferredUserSdwtProd),
     // 탭으로 돌아올 때 홈 진입 페이지가 "새로고침"처럼 보이지 않도록
     // 포커스 시 자동 refetch를 비활성화합니다.
     refetchOnWindowFocus: false,

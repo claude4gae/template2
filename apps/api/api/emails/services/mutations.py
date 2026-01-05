@@ -19,9 +19,11 @@ import api.account.services as account_services
 from ..models import Email
 from ..selectors import (
     get_accessible_user_sdwt_prods_for_user,
+    get_email_for_update,
     list_email_asset_keys_by_email_ids,
     list_email_id_user_sdwt_by_ids,
     list_email_ids_by_sender_after,
+    list_emails_for_update,
     list_unassigned_email_ids_for_sender_id,
     user_can_bulk_delete_emails,
 )
@@ -74,7 +76,7 @@ def delete_single_email(email_id: int) -> Email:
     # 1) 대상 메일 조회/잠금
     # -----------------------------------------------------------------------------
     try:
-        email = Email.objects.select_for_update().get(id=email_id)
+        email = get_email_for_update(email_id=email_id)
     except Email.DoesNotExist:
         raise NotFound("Email not found")
 
@@ -106,7 +108,7 @@ def bulk_delete_emails(email_ids: List[int]) -> int:
     # -----------------------------------------------------------------------------
     # 1) 대상 메일 조회/잠금
     # -----------------------------------------------------------------------------
-    emails = list(Email.objects.select_for_update().filter(id__in=email_ids))
+    emails = list_emails_for_update(email_ids=email_ids)
     if not emails:
         raise NotFound("No emails found to delete")
 

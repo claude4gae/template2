@@ -461,6 +461,20 @@ LLM MUST:
 - Index / constraint naming:
   - `idx_<table>_<cols>`
   - `uniq_<table>_<cols>`
+  - Length limit: index/constraint names must be <= 30 chars.
+  - Abbreviation rules (deterministic):
+    - Tokenize by `_` and apply the map below (otherwise use the first 3 chars; keep tokens of length <= 3).
+    - If still > 30 or collides, append a 5-hex CRC32 suffix derived from the original name.
+    - When appending the hash, truncate the body from the left to fit and trim trailing `_`.
+  - Abbreviation map (extend as needed):
+    - `account=acc`, `affiliation=aff`, `department=dep`, `line=ln`, `user=usr`, `sdwt=sdw`, `prod=prd`
+    - `access=acs`, `change=chg`, `external=ext`, `snapshot=snp`, `predicted=pred`, `source=src`
+    - `updated=upd`, `created=crt`, `effective=eff`
+    - `appstore=aps`, `comment=cmt`, `parent=par`
+    - `emails=eml`, `email=eml`, `inbox=inb`, `outbox=out`, `asset=ast`, `sequence=seq`
+    - `ocr=ocr`, `lock=lk`, `expires=exp`, `status=sts`, `time=tm`, `available=avl`
+    - `jira=jir`, `template=tmpl`, `knox=knx`, `early=erl`, `inform=inf`
+    - `chamber=chm`, `main=mn`, `step=stp`, `send=snd`, `category=cat`, `name=nam`, `like=lik`, `recipient=rcp`
 
 ## 9‑5. Transactions & Side Effects
 

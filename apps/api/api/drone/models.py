@@ -93,24 +93,27 @@ class DroneSOP(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["line_id", "eqp_id", "chamber_ids", "lot_id", "main_step"],
-                name="uniq_row",
+                name="uniq_dro_sop_ln_id_eqp_i_92d25",
             )
         ]
         indexes = [
-            models.Index(fields=["send_jira", "needtosend"], name="send_jira_needtosend"),
-            models.Index(fields=["sdwt_prod"], name="sdwt_prod"),
-            models.Index(fields=["created_at", "id"], name="drone_sop_created_at_id"),
-            models.Index(fields=["user_sdwt_prod", "created_at", "id"], name="dsop_usr_sdwt_created_id"),
-            models.Index(fields=["send_jira"], name="drone_sop_send_jira"),
-            models.Index(fields=["knox_id"], name="drone_sop_knoxid"),
+            models.Index(fields=["send_jira", "needtosend"], name="idx_dro_sop_snd_jir_nts"),
+            models.Index(fields=["sdwt_prod"], name="idx_dro_sop_sdw_prd"),
+            models.Index(fields=["created_at", "id"], name="idx_dro_sop_crt_at_id"),
+            models.Index(
+                fields=["user_sdwt_prod", "created_at", "id"],
+                name="idx_dro_sop_usr_sdw_prd_dd5e5",
+            ),
+            models.Index(fields=["send_jira"], name="idx_dro_sop_snd_jir"),
+            models.Index(fields=["knox_id"], name="idx_dro_sop_knx_id"),
             models.Index(
                 fields=["id"],
-                name="drone_sop_jira_pending",
+                name="idx_dro_sop_id_jir_pen",
                 condition=Q(send_jira=0, needtosend=1, status="COMPLETE"),
             ),
         ]
 
-    def __str__(self) -> str:  # pragma: no cover - 관리자/디버깅용 문자열 표현
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"SOP {self.line_id or '-'} {self.main_step or '-'}"
@@ -150,10 +153,10 @@ class DroneSopJiraTemplate(models.Model):
     class Meta:
         db_table = "drone_sop_jira_template"
         indexes = [
-            models.Index(fields=["line_id"], name="drone_jira_tpl_line"),
+            models.Index(fields=["line_id"], name="idx_dro_sop_jir_tmpl_ln_id"),
         ]
 
-    def __str__(self) -> str:  # pragma: no cover - 관리자/디버깅용 문자열 표현
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.line_id} -> {self.template_key}"
@@ -170,10 +173,10 @@ class DroneSopJiraUserTemplate(models.Model):
     class Meta:
         db_table = "drone_sop_jira_user_template"
         indexes = [
-            models.Index(fields=["user_sdwt_prod"], name="drone_jira_tpl_user"),
+            models.Index(fields=["user_sdwt_prod"], name="idx_dro_sop_jir_usr_tmpl_a256d"),
         ]
 
-    def __str__(self) -> str:  # pragma: no cover - 관리자/디버깅용 문자열 표현
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.user_sdwt_prod} -> {self.template_key}"
@@ -187,17 +190,18 @@ class DroneEarlyInform(models.Model):
     custom_end_step = models.CharField(max_length=50, null=True, blank=True)
     updated_by = models.CharField(max_length=50, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "drone_early_inform"
         constraints = [
             models.UniqueConstraint(
                 fields=["line_id", "main_step"],
-                name="uniq_line_mainstep",
+                name="uniq_dro_erl_inf_ln_id_mn_stp",
             )
         ]
 
-    def __str__(self) -> str:  # pragma: no cover - 관리자/디버깅용 문자열 표현
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.line_id} - {self.main_step}"

@@ -5,6 +5,8 @@
 # =============================================================================
 from __future__ import annotations
 
+from typing import Any
+
 from django.db.models import Count, QuerySet
 
 from .models import AppStoreApp, AppStoreComment, AppStoreCommentLike, AppStoreLike
@@ -89,7 +91,7 @@ def get_app_detail(*, app_id: int) -> AppStoreApp | None:
         return None
 
 
-def get_liked_app_ids_for_user(*, user) -> list[int]:
+def get_liked_app_ids_for_user(*, user: Any) -> list[int]:
     """사용자가 좋아요한 앱 id 목록을 반환합니다.
 
     인자:
@@ -108,7 +110,7 @@ def get_liked_app_ids_for_user(*, user) -> list[int]:
     return list(AppStoreLike.objects.filter(user=user).values_list("app_id", flat=True))
 
 
-def get_liked_comment_ids_for_user(*, user, app_id: int) -> list[int]:
+def get_liked_comment_ids_for_user(*, user: Any, app_id: int) -> list[int]:
     """사용자가 좋아요한 댓글 id 목록을 반환합니다.
 
     인자:

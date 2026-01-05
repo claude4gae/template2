@@ -1,9 +1,10 @@
-// src/features/line-dashboard/pages/LineDashboardEntryPage.jsx
+// 파일 경로: src/features/line-dashboard/pages/LineDashboardEntryPage.jsx
 import { useEffect, useMemo } from "react"
 import { AlertCircle, Loader2 } from "lucide-react"
 import { Link, useNavigate } from "react-router-dom"
 
 import { Button } from "components/ui/button"
+import { useAuth } from "@/lib/auth"
 import { useLineOptionsQuery } from "../hooks/useLineOptionsQuery"
 
 function getFirstLineId(lineOptions) {
@@ -14,7 +15,11 @@ function getFirstLineId(lineOptions) {
 
 export function LineDashboardEntryPage() {
   const navigate = useNavigate()
-  const { data: lineOptions = [], isLoading, isError, error, refetch } = useLineOptionsQuery()
+  const { user } = useAuth()
+  const { data: lineOptions = [], isLoading, isError, error, refetch } = useLineOptionsQuery({
+    preferredUserSdwtProd:
+      typeof user?.user_sdwt_prod === "string" ? user.user_sdwt_prod.trim() : "",
+  })
 
   const firstLineId = useMemo(() => getFirstLineId(lineOptions), [lineOptions])
 

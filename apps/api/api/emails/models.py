@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈 설명: 이메일 도메인 모델을 정의합니다.
 # - 주요 클래스: Email, EmailOutbox
-# - 불변 조건: db_table은 emails_* 접두어를 사용하며, 시간은 timezone-aware입니다.
+# - 불변 조건: db_table은 emails_* 접두어를 사용하며, 시간은 타임존 인지(timezone-aware)입니다.
 # =============================================================================
 
 from __future__ import annotations
@@ -57,17 +57,17 @@ class Email(models.Model):
     class Meta:
         db_table = "emails_inbox"
         indexes = [
-            GinIndex(fields=["recipient"], name="idx_emails_inbox_recipient_gin"),
-            GinIndex(fields=["cc"], name="idx_emails_inbox_cc_gin"),
+            GinIndex(fields=["recipient"], name="idx_eml_inb_rcp_gin"),
+            GinIndex(fields=["cc"], name="idx_eml_inb_cc_gin"),
             GinIndex(
                 fields=["participants_search"],
-                name="idx_emails_inbox_part_trgm",
+                name="idx_eml_inb_par_trg",
                 opclasses=["gin_trgm_ops"],
             ),
         ]
 
     # 사람이 읽기 위한 표현이므로 커버리지 제외
-    def __str__(self) -> str:  # pragma: no cover  테스트 제외
+    def __str__(self) -> str:  # 테스트 제외(커버리지 제외): pragma: no cover
         """메일의 주요 필드를 간단한 문자열로 반환합니다.
 
         입력:
@@ -113,7 +113,7 @@ class EmailOutbox(models.Model):
     class Meta:
         db_table = "emails_outbox"
         indexes = [
-            models.Index(fields=["status", "available_at"], name="idx_emails_outbox_status_time"),
+            models.Index(fields=["status", "available_at"], name="idx_eml_out_sts_tm"),
         ]
 
 
@@ -159,13 +159,16 @@ class EmailAsset(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["email", "sequence"],
-                name="uniq_emails_email_asset_email_sequence",
+                name="uniq_eml_eml_ast_eml_seq",
             )
         ]
         indexes = [
-            models.Index(fields=["email"], name="idx_emails_email_asset_email"),
-            models.Index(fields=["ocr_status"], name="idx_emails_asset_ocr_status"),
-            models.Index(fields=["ocr_lock_expires_at"], name="idx_emails_asset_ocr_lock"),
+            models.Index(fields=["email"], name="idx_eml_eml_ast_eml"),
+            models.Index(fields=["ocr_status"], name="idx_eml_eml_ast_ocr_sts"),
+            models.Index(
+                fields=["ocr_lock_expires_at"],
+                name="idx_eml_eml_ast_ocr_lk_exp_at",
+            ),
         ]
 
 

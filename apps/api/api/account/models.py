@@ -158,6 +158,7 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
     role = models.CharField(max_length=32, choices=Roles.choices, default=Roles.VIEWER)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "account_user_profile"
@@ -174,18 +175,28 @@ class Affiliation(models.Model):
     line = models.CharField(max_length=64)
     user_sdwt_prod = models.CharField(max_length=64)
     jira_key = models.CharField(max_length=64, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "account_affiliation"
-        unique_together = ("department", "line", "user_sdwt_prod")
         constraints = [
-            models.UniqueConstraint(fields=["line", "user_sdwt_prod"], name="uniq_aff_line_user_sdwt"),
+            models.UniqueConstraint(
+                fields=["department", "line", "user_sdwt_prod"],
+                name="uniq_acc_aff_dep_ln_usr_724c6",
+            ),
+            models.UniqueConstraint(
+                fields=["line", "user_sdwt_prod"],
+                name="uniq_acc_aff_ln_usr_sdw_prd",
+            ),
         ]
         indexes = [
-            models.Index(fields=["department"], name="aff_hier_department"),
-            models.Index(fields=["line"], name="aff_hier_line"),
-            models.Index(fields=["user_sdwt_prod"], name="aff_hier_user_sdwt_prod"),
-            models.Index(fields=["line", "user_sdwt_prod"], name="aff_line_user_sdwt"),
+            models.Index(fields=["department"], name="idx_acc_aff_dep"),
+            models.Index(fields=["line"], name="idx_acc_aff_ln"),
+            models.Index(fields=["user_sdwt_prod"], name="idx_acc_aff_usr_sdw_prd"),
+            models.Index(
+                fields=["line", "user_sdwt_prod"],
+                name="idx_acc_aff_ln_usr_sdw_prd",
+            ),
         ]
 
     def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
@@ -214,10 +225,18 @@ class UserSdwtProdAccess(models.Model):
 
     class Meta:
         db_table = "account_user_sdwt_prod_access"
-        unique_together = ("user", "user_sdwt_prod")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "user_sdwt_prod"],
+                name="uniq_acc_usr_sdw_prd_acs_02885",
+            ),
+        ]
         indexes = [
-            models.Index(fields=["user"], name="user_sdwt_access_user"),
-            models.Index(fields=["user_sdwt_prod"], name="user_sdwt_access_prod"),
+            models.Index(fields=["user"], name="idx_acc_usr_sdw_prd_acs_usr"),
+            models.Index(
+                fields=["user_sdwt_prod"],
+                name="idx_acc_usr_sdw_prd_acs_1a1f0",
+            ),
         ]
 
     def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
@@ -268,8 +287,11 @@ class UserSdwtProdChange(models.Model):
         db_table = "account_user_sdwt_prod_change"
         ordering = ["-effective_from", "-id"]
         indexes = [
-            models.Index(fields=["user", "effective_from"], name="user_sdwt_change_eff"),
-            models.Index(fields=["applied"], name="user_sdwt_change_applied"),
+            models.Index(
+                fields=["user", "effective_from"],
+                name="idx_acc_usr_sdw_prd_chg_364a4",
+            ),
+            models.Index(fields=["applied"], name="idx_acc_usr_sdw_prd_chg_app"),
         ]
 
     def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
@@ -291,11 +313,11 @@ class ExternalAffiliationSnapshot(models.Model):
         indexes = [
             models.Index(
                 fields=["predicted_user_sdwt_prod"],
-                name="idx_ext_aff_snap_sdwt",
+                name="idx_acc_ext_aff_snp_pred_54654",
             ),
             models.Index(
                 fields=["source_updated_at"],
-                name="idx_ext_aff_snap_src_upd",
+                name="idx_acc_ext_aff_snp_src_upd_at",
             ),
         ]
 

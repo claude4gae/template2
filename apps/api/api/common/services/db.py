@@ -13,9 +13,10 @@
 from __future__ import annotations
 
 from contextlib import contextmanager  # with 문에서 자원 자동 정리용
-from typing import List, Optional, Sequence
+from typing import Iterator, List, Optional, Sequence
 
 from django.db import connection  # Django의 DB 연결 객체 (커서 획득용)
+from django.db.backends.utils import CursorWrapper
 
 
 def _dictfetchall(cursor) -> List[dict]:
@@ -40,7 +41,7 @@ def _dictfetchall(cursor) -> List[dict]:
 
 
 @contextmanager
-def get_cursor():
+def get_cursor() -> Iterator[CursorWrapper]:
     """데이터베이스 커서를 안전하게 열고 닫는 컨텍스트 매니저입니다.
 
     입력:

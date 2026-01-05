@@ -917,7 +917,7 @@ def run_drone_sop_jira_instant_inform(
         # 3) 대상 레코드 조회 및 이미 처리 여부 확인
         # ---------------------------------------------------------------------
         with transaction.atomic():
-            sop = DroneSOP.objects.select_for_update().filter(id=sop_id).first()
+            sop = selectors.get_drone_sop_for_update(sop_id=sop_id)
             if sop is None:
                 raise ValueError("DroneSOP not found")
 
@@ -1026,7 +1026,7 @@ def run_drone_sop_jira_instant_inform(
         # 7) 생성 결과 반영 및 상태 업데이트
         # ---------------------------------------------------------------------
         with transaction.atomic():
-            sop = DroneSOP.objects.select_for_update().filter(id=sop_id).first()
+            sop = selectors.get_drone_sop_for_update(sop_id=sop_id)
             if sop is None:
                 raise ValueError("DroneSOP not found")
 

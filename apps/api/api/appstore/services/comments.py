@@ -5,20 +5,20 @@
 # =============================================================================
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Any, Tuple
 
 from django.db import transaction
 from django.db.models import F
 from django.db.models.functions import Greatest
 
 from ..selectors import get_comment_by_id
-from ..models import AppStoreComment, AppStoreCommentLike
+from ..models import AppStoreApp, AppStoreComment, AppStoreCommentLike
 
 
 def create_comment(
     *,
-    app,
-    user,
+    app: AppStoreApp,
+    user: Any,
     content: str,
     parent_comment: AppStoreComment | None = None,
 ) -> AppStoreComment:
@@ -95,7 +95,7 @@ def delete_comment(*, comment: AppStoreComment) -> None:
 
 
 @transaction.atomic
-def toggle_comment_like(*, comment: AppStoreComment, user) -> Tuple[bool, int]:
+def toggle_comment_like(*, comment: AppStoreComment, user: Any) -> Tuple[bool, int]:
     """댓글 좋아요를 토글하고 like_count를 갱신합니다.
 
     인자:

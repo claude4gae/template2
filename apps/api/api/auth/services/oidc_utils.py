@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from django.conf import settings
+from django.http import HttpRequest
 
 ADFS_AUTH_URL = settings.ADFS_AUTH_URL
 ADFS_LOGOUT_URL = settings.ADFS_LOGOUT_URL
@@ -236,7 +237,7 @@ def b64d(value: str) -> str:
 # --------------------------
 
 
-def save_nonce(request, nonce: str) -> None:
+def save_nonce(request: HttpRequest, nonce: str) -> None:
     """OIDC nonce 값을 세션에 저장합니다.
 
     입력:
@@ -256,7 +257,7 @@ def save_nonce(request, nonce: str) -> None:
     request.session["oidc_nonce"] = nonce
 
 
-def pop_nonce(request) -> str | None:
+def pop_nonce(request: HttpRequest) -> str | None:
     """세션에 저장된 OIDC nonce 값을 꺼내고 제거합니다.
 
     입력:

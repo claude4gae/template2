@@ -12,6 +12,7 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 
+from .. import selectors
 from ..models import DroneEarlyInform
 
 
@@ -110,7 +111,7 @@ def update_early_inform_entry(
     # -----------------------------------------------------------------------------
     try:
         with transaction.atomic():
-            entry = DroneEarlyInform.objects.select_for_update().filter(id=entry_id).first()
+            entry = selectors.get_early_inform_entry_for_update(entry_id=entry_id)
             if entry is None:
                 raise DroneEarlyInformNotFoundError("Entry not found")
 
@@ -153,7 +154,7 @@ def delete_early_inform_entry(*, entry_id: int) -> DroneEarlyInform:
     # 1) 트랜잭션 내 조회/삭제
     # -----------------------------------------------------------------------------
     with transaction.atomic():
-        entry = DroneEarlyInform.objects.select_for_update().filter(id=entry_id).first()
+        entry = selectors.get_early_inform_entry_for_update(entry_id=entry_id)
         if entry is None:
             raise DroneEarlyInformNotFoundError("Entry not found")
         entry.delete()

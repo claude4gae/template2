@@ -116,7 +116,7 @@ def list_mailbox_members(*, mailbox_user_sdwt_prod: str) -> list[dict[str, objec
         return {
             "userId": user.id,
             "username": display_username_value,
-            "name": (getattr(user, "first_name", "") or "") + (getattr(user, "last_name", "") or ""),
+            "name": display_username_value,
             "knoxId": knox_id_value,
             "userSdwtProd": normalized,
             "canManage": bool(getattr(access, "can_manage", False)) if access else False,
@@ -676,6 +676,50 @@ def get_email_by_id(*, email_id: int) -> Email | None:
         return None
 
 
+def get_email_for_update(*, email_id: int) -> Email:
+    """Email을 행 잠금(select_for_update)으로 조회합니다.
+
+    입력:
+        email_id: Email PK(이메일 ID).
+    반환:
+        Email 인스턴스.
+    부작용:
+        없음. 호출 측 트랜잭션에서 행 잠금이 발생합니다.
+    오류:
+        Email.DoesNotExist 예외가 발생할 수 있습니다.
+    """
+
+    return Email.objects.select_for_update().get(id=email_id)
+
+
+def list_emails_for_update(*, email_ids: Sequence[int]) -> list[Email]:
+    """Email 목록을 행 잠금(select_for_update)으로 조회합니다.
+
+    입력:
+        email_ids: Email id 목록.
+    반환:
+        Email 인스턴스 리스트(없으면 빈 리스트).
+    부작용:
+        없음. 호출 측 트랜잭션에서 행 잠금이 발생합니다.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 검증
+    # -----------------------------------------------------------------------------
+    if not email_ids:
+        return []
+    normalized = [int(value) for value in email_ids if isinstance(value, int) or str(value).isdigit()]
+    if not normalized:
+        return []
+
+    # -----------------------------------------------------------------------------
+    # 2) 행 잠금 조회
+    # -----------------------------------------------------------------------------
+    return list(Email.objects.select_for_update().filter(id__in=normalized))
+
+
 def get_email_asset_by_id(*, asset_id: int) -> EmailAsset | None:
     """asset_id로 EmailAsset을 조회하고 없으면 None을 반환합니다.
 
@@ -800,6 +844,39 @@ def list_claimable_email_assets(
         )
         .order_by("id")
     )
+
+
+def list_claimable_email_assets_for_update(
+    *,
+    now: datetime,
+    max_attempts: int,
+    limit: int,
+) -> list[EmailAsset]:
+    """OCR 처리 대상 EmailAsset을 행 잠금으로 조회해 반환합니다.
+
+    입력:
+        now: 기준 시각(락 만료 판단용).
+        max_attempts: 최대 시도 횟수.
+        limit: 최대 조회 개수.
+    반환:
+        EmailAsset 인스턴스 리스트.
+    부작용:
+        없음. 호출 측 트랜잭션에서 행 잠금이 발생합니다.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) limit 검증
+    # -----------------------------------------------------------------------------
+    if not isinstance(limit, int) or limit <= 0:
+        return []
+
+    # -----------------------------------------------------------------------------
+    # 2) 행 잠금 조회
+    # -----------------------------------------------------------------------------
+    queryset = list_claimable_email_assets(now=now, max_attempts=max_attempts)
+    return list(queryset.select_for_update(skip_locked=True)[:limit])
 
 
 def list_email_asset_keys_by_email_ids(*, email_ids: Sequence[int]) -> list[str]:

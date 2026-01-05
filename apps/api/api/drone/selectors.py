@@ -45,6 +45,48 @@ def list_early_inform_entries(*, line_id: str) -> QuerySet[DroneEarlyInform]:
     return DroneEarlyInform.objects.filter(line_id=line_id).order_by("main_step", "id")
 
 
+def get_early_inform_entry_for_update(*, entry_id: int) -> DroneEarlyInform | None:
+    """조기 알림 엔트리를 행 잠금(select_for_update)으로 조회합니다.
+
+    인자:
+        entry_id: DroneEarlyInform ID.
+
+    반환:
+        DroneEarlyInform 인스턴스 또는 None.
+
+    부작용:
+        없음. 호출 측 트랜잭션에서 행 잠금이 발생합니다.
+
+    오류:
+        없음.
+    """
+
+    if entry_id <= 0:
+        return None
+    return DroneEarlyInform.objects.select_for_update().filter(id=entry_id).first()
+
+
+def get_drone_sop_for_update(*, sop_id: int) -> DroneSOP | None:
+    """DroneSOP 엔트리를 행 잠금(select_for_update)으로 조회합니다.
+
+    인자:
+        sop_id: DroneSOP ID.
+
+    반환:
+        DroneSOP 인스턴스 또는 None.
+
+    부작용:
+        없음. 호출 측 트랜잭션에서 행 잠금이 발생합니다.
+
+    오류:
+        없음.
+    """
+
+    if sop_id <= 0:
+        return None
+    return DroneSOP.objects.select_for_update().filter(id=sop_id).first()
+
+
 def list_drone_sop_jira_templates_by_line_ids(
     *,
     line_ids: set[str] | list[str],

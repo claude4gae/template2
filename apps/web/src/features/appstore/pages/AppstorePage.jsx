@@ -52,17 +52,11 @@ export function AppstorePage() {
   })
 
   const defaultContactName = useMemo(() => {
-    return user?.username || (user?.email ? user.email.split("@")[0] : "")
+    return user?.username || user?.knox_id || ""
   }, [user])
 
   const defaultContactKnoxid = useMemo(() => {
-    if (user?.email?.includes("@")) {
-      return user.email.split("@")[0]
-    }
-    if (user?.id != null) {
-      return String(user.id)
-    }
-    return ""
+    return user?.knox_id || ""
   }, [user])
 
   const categories = useMemo(() => {

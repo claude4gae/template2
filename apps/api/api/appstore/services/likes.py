@@ -5,7 +5,7 @@
 # =============================================================================
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Any, Tuple
 
 from django.db import transaction
 from django.db.models import F
@@ -15,7 +15,7 @@ from ..models import AppStoreApp, AppStoreLike
 
 
 @transaction.atomic
-def toggle_like(*, app: AppStoreApp, user) -> Tuple[bool, int]:
+def toggle_like(*, app: AppStoreApp, user: Any) -> Tuple[bool, int]:
     """앱 좋아요를 토글하고 like_count를 갱신합니다.
 
     인자:

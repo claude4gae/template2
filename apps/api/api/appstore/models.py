@@ -38,8 +38,8 @@ class AppStoreApp(models.Model):
         db_table = "appstore_app"
         ordering = ["-created_at", "-id"]
         indexes = [
-            models.Index(fields=["category"], name="appstore_app_category_idx"),
-            models.Index(fields=["name"], name="appstore_app_name_idx"),
+            models.Index(fields=["category"], name="idx_aps_app_cat"),
+            models.Index(fields=["name"], name="idx_aps_app_nam"),
         ]
 
     def __str__(self) -> str:  # 사람이 읽기 쉬운 표현(커버리지 제외): pragma: no cover
@@ -172,10 +172,15 @@ class AppStoreLike(models.Model):
 
     class Meta:
         db_table = "appstore_like"
-        unique_together = ("app", "user")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["app", "user"],
+                name="uniq_aps_lik_app_usr",
+            ),
+        ]
         indexes = [
-            models.Index(fields=["user"], name="appstore_like_user_idx"),
-            models.Index(fields=["app"], name="appstore_like_app_idx"),
+            models.Index(fields=["user"], name="idx_aps_lik_usr"),
+            models.Index(fields=["app"], name="idx_aps_lik_app"),
         ]
 
     def __str__(self) -> str:  # 사람이 읽기 쉬운 표현(커버리지 제외): pragma: no cover
@@ -214,9 +219,9 @@ class AppStoreComment(models.Model):
         db_table = "appstore_comment"
         ordering = ["created_at", "id"]
         indexes = [
-            models.Index(fields=["app"], name="appstore_comment_app_idx"),
-            models.Index(fields=["app", "created_at"], name="appstore_comment_created_idx"),
-            models.Index(fields=["parent"], name="appstore_comment_parent_idx"),
+            models.Index(fields=["app"], name="idx_aps_cmt_app"),
+            models.Index(fields=["app", "created_at"], name="idx_aps_cmt_app_crt_at"),
+            models.Index(fields=["parent"], name="idx_aps_cmt_par"),
         ]
 
     def __str__(self) -> str:  # 사람이 읽기 쉬운 표현(커버리지 제외): pragma: no cover
@@ -244,12 +249,12 @@ class AppStoreCommentLike(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["comment", "user"],
-                name="uniq_appstore_cmtlike_cmt_user",
+                name="uniq_aps_cmt_lik_cmt_usr",
             ),
         ]
         indexes = [
-            models.Index(fields=["user"], name="idx_appstore_cmtlike_user"),
-            models.Index(fields=["comment"], name="idx_appstore_cmtlike_comment"),
+            models.Index(fields=["user"], name="idx_aps_cmt_lik_usr"),
+            models.Index(fields=["comment"], name="idx_aps_cmt_lik_cmt"),
         ]
 
     def __str__(self) -> str:  # 사람이 읽기 쉬운 표현(커버리지 제외): pragma: no cover

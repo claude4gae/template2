@@ -8,7 +8,13 @@
 
 from __future__ import annotations
 
-from ..models import Email
+from .constants import (
+    EMAIL_CLASSIFICATION_CONFIRMED_USER,
+    EMAIL_CLASSIFICATION_UNASSIGNED,
+    EMAIL_RAG_INDEX_STATUS_INDEXED,
+    EMAIL_RAG_INDEX_STATUS_PENDING,
+    EMAIL_RAG_INDEX_STATUS_SKIPPED,
+)
 from .ingest import _parse_message_to_fields, ingest_pop3_mailbox, run_pop3_ingest, run_pop3_ingest_from_env
 from .mail_api import MailSendError, requests, send_knox_mail_api
 from .mailbox import get_mailbox_access_summary_for_user
@@ -52,12 +58,6 @@ from .storage import (
     save_parsed_email,
     store_email_html_and_assets,
 )
-
-EMAIL_CLASSIFICATION_CONFIRMED_USER = Email.ClassificationSource.CONFIRMED_USER
-EMAIL_CLASSIFICATION_UNASSIGNED = Email.ClassificationSource.UNASSIGNED
-EMAIL_RAG_INDEX_STATUS_INDEXED = Email.RagIndexStatus.INDEXED
-EMAIL_RAG_INDEX_STATUS_PENDING = Email.RagIndexStatus.PENDING
-EMAIL_RAG_INDEX_STATUS_SKIPPED = Email.RagIndexStatus.SKIPPED
 
 __all__ = [
     "MailSendError",

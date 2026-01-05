@@ -18,7 +18,7 @@ from .screenshots import (
 
 def create_app(
     *,
-    owner,
+    owner: Any,
     name: str,
     category: str,
     description: str,
