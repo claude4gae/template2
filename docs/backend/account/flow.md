@@ -119,14 +119,14 @@
 
 ### 9) Jira Key 조회/갱신
 `GET /api/v1/account/affiliation/jira-key`
-1. lineId 필수.
-2. lineId에 해당하는 `Affiliation` 존재 확인.
-3. 해당 line의 `jira_key` 반환.
+1. userSdwtProd 필수.
+2. userSdwtProd에 해당하는 `Affiliation` 존재 확인.
+3. 해당 userSdwtProd의 `jira_key` 반환.
 
 `POST /api/v1/account/affiliation/jira-key`
 1. superuser 인증 확인.
-2. lineId/jiraKey 유효성 검사.
-3. lineId에 해당하는 모든 `Affiliation.jira_key` 갱신.
+2. userSdwtProd/jiraKey 유효성 검사.
+3. userSdwtProd에 해당하는 `Affiliation.jira_key` 갱신.
 
 ### 10) Line/SDWT 선택 옵션
 `GET /api/v1/account/line-sdwt-options`

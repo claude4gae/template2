@@ -648,7 +648,7 @@ class AccountExternalAffiliationSyncView(APIView):
 
 
 # =============================================================================
-# 7) Jira 키 조회/갱신 (라인 단위)
+# 7) Jira 키 조회/갱신 (user_sdwt_prod 단위)
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAffiliationJiraKeyView(APIView):
@@ -657,7 +657,7 @@ class AccountAffiliationJiraKeyView(APIView):
     MAX_KEY_LENGTH = 64
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """lineId에 해당하는 Jira Key를 조회합니다.
+        """userSdwtProd에 해당하는 Jira Key를 조회합니다.
 
         입력:
         - 요청: Django HttpRequest
@@ -670,15 +670,15 @@ class AccountAffiliationJiraKeyView(APIView):
         - 없음
 
         오류:
-        - 400: lineId 누락
+        - 400: userSdwtProd 누락
         - 401: 미인증
-        - 404: lineId 없음
+        - 404: userSdwtProd 없음
 
         예시 요청:
-        - 예시 요청: GET /api/v1/account/affiliation/jira-key?lineId=LINE_01
+        - 예시 요청: GET /api/v1/account/affiliation/jira-key?userSdwtProd=SDWT_A
 
         snake/camel 호환:
-        - 해당 없음(쿼리 파라미터 lineId만 지원)
+        - userSdwtProd / user_sdwt_prod (키 매핑)
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -688,26 +688,26 @@ class AccountAffiliationJiraKeyView(APIView):
             return JsonResponse({"error": "unauthorized"}, status=401)
 
         # -----------------------------------------------------------------------------
-        # 2) lineId 검증
+        # 2) userSdwtProd 검증
         # -----------------------------------------------------------------------------
-        line_id = (request.GET.get("lineId") or "").strip()
-        if not line_id:
-            return JsonResponse({"error": "lineId is required"}, status=400)
+        user_sdwt_prod = (request.GET.get("userSdwtProd") or request.GET.get("user_sdwt_prod") or "").strip()
+        if not user_sdwt_prod:
+            return JsonResponse({"error": "userSdwtProd is required"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 3) lineId 존재 확인
+        # 3) userSdwtProd 존재 확인
         # -----------------------------------------------------------------------------
-        if not selectors.affiliation_exists_for_line(line_id=line_id):
-            return JsonResponse({"error": "lineId not found"}, status=404)
+        if not selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod):
+            return JsonResponse({"error": "userSdwtProd not found"}, status=404)
 
         # -----------------------------------------------------------------------------
         # 4) Jira 키 조회 및 응답 반환
         # -----------------------------------------------------------------------------
-        jira_key = selectors.get_affiliation_jira_key_for_line(line_id=line_id)
-        return JsonResponse({"lineId": line_id, "jiraKey": jira_key})
+        jira_key = selectors.get_affiliation_jira_key_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+        return JsonResponse({"userSdwtProd": user_sdwt_prod, "jiraKey": jira_key})
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """슈퍼유저가 lineId에 대한 jiraKey를 갱신합니다.
+        """슈퍼유저가 userSdwtProd에 대한 jiraKey를 갱신합니다.
 
         입력:
         - 요청: Django HttpRequest
@@ -723,14 +723,14 @@ class AccountAffiliationJiraKeyView(APIView):
         - 400: 입력 오류
         - 401: 미인증
         - 403: 권한 없음
-        - 404: lineId 없음
+        - 404: userSdwtProd 없음
 
         예시 요청:
         - 예시 요청: POST /api/v1/account/affiliation/jira-key
-          요청 바디 예시: {"lineId":"LINE_01","jiraKey":"ABC"}
+          요청 바디 예시: {"userSdwtProd":"SDWT_A","jiraKey":"ABC"}
 
         snake/camel 호환:
-        - lineId / line_id (키 매핑)
+        - userSdwtProd / user_sdwt_prod (키 매핑)
         - jiraKey / jira_key (키 매핑)
         """
         # -----------------------------------------------------------------------------
@@ -750,11 +750,11 @@ class AccountAffiliationJiraKeyView(APIView):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 3) lineId/jiraKey 추출 및 검증
+        # 3) userSdwtProd/jiraKey 추출 및 검증
         # -----------------------------------------------------------------------------
-        line_id = (payload.get("lineId") or payload.get("line_id") or "").strip()
-        if not line_id:
-            return JsonResponse({"error": "lineId is required"}, status=400)
+        user_sdwt_prod = (payload.get("userSdwtProd") or payload.get("user_sdwt_prod") or "").strip()
+        if not user_sdwt_prod:
+            return JsonResponse({"error": "userSdwtProd is required"}, status=400)
 
         jira_key_value = payload.get("jiraKey") if "jiraKey" in payload else payload.get("jira_key")
         jira_key = jira_key_value.strip() if isinstance(jira_key_value, str) else ""
@@ -772,17 +772,19 @@ class AccountAffiliationJiraKeyView(APIView):
         # 5) 서비스 호출 및 응답 반환
         # -----------------------------------------------------------------------------
         updated = services.update_affiliation_jira_key(
-            line_id=line_id,
+            user_sdwt_prod=user_sdwt_prod,
             jira_key=jira_key or None,
         )
 
         # -----------------------------------------------------------------------------
-        # 6) lineId 미존재 처리
+        # 6) userSdwtProd 미존재 처리
         # -----------------------------------------------------------------------------
         if updated == 0:
-            return JsonResponse({"error": "lineId not found"}, status=404)
+            return JsonResponse({"error": "userSdwtProd not found"}, status=404)
 
-        return JsonResponse({"lineId": line_id, "jiraKey": jira_key or None, "updated": updated})
+        return JsonResponse(
+            {"userSdwtProd": user_sdwt_prod, "jiraKey": jira_key or None, "updated": updated}
+        )
 
 
 # =============================================================================

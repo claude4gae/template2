@@ -16,6 +16,13 @@ import { Badge } from "components/ui/badge"
 import { Button } from "components/ui/button"
 import { Input } from "components/ui/input"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -32,8 +39,10 @@ const LABELS = {
   titleSuffix: "Line E-SOP Settings",
   subtitle: "E-SOP가 종료 되기전에 미리 Inform할 Step을 설정합니다.",
   jiraTitle: "Jira Project Key",
-  jiraDescription: "라인별 Jira 프로젝트 키를 설정합니다.",
+  jiraDescription: "User SDWT별 Jira 프로젝트 키를 설정합니다.",
   jiraHelper: "설정된 키는 Jira 이슈 생성 시 사용됩니다.",
+  jiraUserSdwtLabel: "User SDWT",
+  jiraUserSdwtPlaceholder: "User SDWT 선택",
   jiraPlaceholder: "ex) DRONE",
   jiraSave: "Save",
   addTitle: "E-SOP Custom End Step 추가",
@@ -149,6 +158,7 @@ function LineUserSdwtBadges({ lineId, values }) {
 
 export function LineSettingsPage({ lineId = "" }) {
   const { user } = useAuth()
+  const [selectedUserSdwtProd, setSelectedUserSdwtProd] = React.useState("")
   const {
     entries,
     userSdwtValues,
@@ -164,7 +174,7 @@ export function LineSettingsPage({ lineId = "" }) {
     updateEntry,
     deleteEntry,
     updateJiraKey,
-  } = useLineSettings(lineId)
+  } = useLineSettings({ lineId, userSdwtProd: selectedUserSdwtProd })
 
   const [formValues, setFormValues] = React.useState({ mainStep: "", customEndStep: "" })
   const [formError, setFormError] = React.useState(null)
@@ -191,9 +201,19 @@ export function LineSettingsPage({ lineId = "" }) {
   }, [])
 
   React.useEffect(() => {
+    if (!lineId || userSdwtValues.length === 0) {
+      setSelectedUserSdwtProd("")
+      return
+    }
+    if (!userSdwtValues.includes(selectedUserSdwtProd)) {
+      setSelectedUserSdwtProd(userSdwtValues[0])
+    }
+  }, [lineId, selectedUserSdwtProd, userSdwtValues])
+
+  React.useEffect(() => {
     setJiraKeyDraft(jiraKey || "")
     setJiraKeyFormError(null)
-  }, [jiraKey, lineId])
+  }, [jiraKey, lineId, selectedUserSdwtProd])
 
   const resetForm = React.useCallback(() => {
     setFormValues({ mainStep: "", customEndStep: "" })
@@ -248,8 +268,8 @@ export function LineSettingsPage({ lineId = "" }) {
   const handleJiraKeySave = React.useCallback(
     async (event) => {
       event.preventDefault()
-      if (!lineId) {
-        setJiraKeyFormError("Select a line to update Jira key")
+      if (!selectedUserSdwtProd) {
+        setJiraKeyFormError("Select a user SDWT to update Jira key")
         return
       }
 
@@ -274,7 +294,7 @@ export function LineSettingsPage({ lineId = "" }) {
         setIsSavingJiraKey(false)
       }
     },
-    [jiraKeyDraft, lineId, updateJiraKey],
+    [jiraKeyDraft, selectedUserSdwtProd, updateJiraKey],
   )
 
   const startEditing = React.useCallback((entry) => {
@@ -517,6 +537,27 @@ export function LineSettingsPage({ lineId = "" }) {
               {isSuperuser ? (
                 <form className="flex flex-wrap items-end gap-3" onSubmit={handleJiraKeySave}>
                   <div className="w-36 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
+                      {LABELS.jiraUserSdwtLabel}
+                    </label>
+                    <Select
+                      value={selectedUserSdwtProd || undefined}
+                      onValueChange={setSelectedUserSdwtProd}
+                      disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
+                    >
+                      <SelectTrigger id="jira-user-sdwt-select" className="w-full">
+                        <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {userSdwtValues.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-36 space-y-1">
                     <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
                       {LABELS.jiraTitle}
                     </label>
@@ -526,30 +567,53 @@ export function LineSettingsPage({ lineId = "" }) {
                       onChange={(event) => setJiraKeyDraft(event.target.value)}
                       placeholder={LABELS.jiraPlaceholder}
                       maxLength={MAX_JIRA_KEY_LENGTH}
-                      disabled={!lineId || isJiraKeyLoading || isSavingJiraKey}
+                      disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
                     />
                   </div>
                   <Button
                     type="submit"
                     className="md:self-end"
-                    disabled={!lineId || isJiraKeyLoading || isSavingJiraKey}
+                    disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
                   >
                     <IconDeviceFloppy className="mr-1 size-4" />
                     {LABELS.jiraSave}
                   </Button>
                 </form>
               ) : (
-                <div className="w-36 space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
-                    {LABELS.jiraTitle}
-                  </label>
-                  <Input
-                    id="jira-key-input"
-                    value={jiraKeyDraft}
-                    placeholder={LABELS.jiraPlaceholder}
-                    maxLength={MAX_JIRA_KEY_LENGTH}
-                    disabled
-                  />
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="w-36 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
+                      {LABELS.jiraUserSdwtLabel}
+                    </label>
+                    <Select
+                      value={selectedUserSdwtProd || undefined}
+                      onValueChange={setSelectedUserSdwtProd}
+                      disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
+                    >
+                      <SelectTrigger id="jira-user-sdwt-select" className="w-full">
+                        <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {userSdwtValues.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-36 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
+                      {LABELS.jiraTitle}
+                    </label>
+                    <Input
+                      id="jira-key-input"
+                      value={jiraKeyDraft}
+                      placeholder={LABELS.jiraPlaceholder}
+                      maxLength={MAX_JIRA_KEY_LENGTH}
+                      disabled
+                    />
+                  </div>
                 </div>
               )}
 

@@ -225,11 +225,11 @@ def submit_affiliation_reconfirm_response(
     return response_payload, status_code
 
 
-def update_affiliation_jira_key(*, line_id: str, jira_key: str | None) -> int:
-    """line_id에 해당하는 Affiliation의 jira_key를 업데이트합니다.
+def update_affiliation_jira_key(*, user_sdwt_prod: str, jira_key: str | None) -> int:
+    """user_sdwt_prod에 해당하는 Affiliation의 jira_key를 업데이트합니다.
 
     입력:
-    - line_id: 대상 line_id 문자열
+    - user_sdwt_prod: 대상 user_sdwt_prod 문자열
     - jira_key: Jira 프로젝트 키(없으면 None)
 
     반환:
@@ -239,21 +239,23 @@ def update_affiliation_jira_key(*, line_id: str, jira_key: str | None) -> int:
     - Affiliation.jira_key 업데이트
 
     오류:
-    - ValueError: line_id 누락
+    - ValueError: user_sdwt_prod 누락
     """
 
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    if not isinstance(line_id, str) or not line_id.strip():
-        raise ValueError("line_id is required")
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        raise ValueError("user_sdwt_prod is required")
 
     # -----------------------------------------------------------------------------
     # 2) 키 정규화 및 업데이트
     # -----------------------------------------------------------------------------
     normalized = jira_key.strip() if isinstance(jira_key, str) and jira_key.strip() else None
     with transaction.atomic():
-        updated = Affiliation.objects.filter(line=line_id.strip()).update(jira_key=normalized)
+        updated = Affiliation.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).update(
+            jira_key=normalized
+        )
     return int(updated or 0)
 
 

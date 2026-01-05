@@ -145,11 +145,11 @@ def list_affiliation_options() -> list[dict[str, str]]:
     )
 
 
-def affiliation_exists_for_line(*, line_id: str) -> bool:
-    """line_id에 대응하는 Affiliation 존재 여부를 확인합니다.
+def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
+    """user_sdwt_prod에 대응하는 Affiliation 존재 여부를 확인합니다.
 
     입력:
-    - line_id: 라인 식별자
+    - user_sdwt_prod: 소속 식별자
 
     반환:
     - bool: 존재 여부
@@ -164,60 +164,18 @@ def affiliation_exists_for_line(*, line_id: str) -> bool:
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    if not isinstance(line_id, str) or not line_id.strip():
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
         return False
     # -----------------------------------------------------------------------------
     # 2) 존재 여부 조회
     # -----------------------------------------------------------------------------
-    return Affiliation.objects.filter(line=line_id.strip()).exists()
+    return Affiliation.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).exists()
 
 
-def get_affiliation_jira_key_for_line(*, line_id: str) -> str | None:
-    """line_id에 해당하는 Jira project key를 조회합니다.
-
-    입력:
-    - line_id: 라인 식별자
-
-    반환:
-    - str | None: Jira key 또는 None
-
-    부작용:
-    - 없음(읽기 전용)
-
-    오류:
-    - 없음
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(line_id, str) or not line_id.strip():
-        return None
-
-    # -----------------------------------------------------------------------------
-    # 2) 비어있지 않은 키 조회
-    # -----------------------------------------------------------------------------
-    key = (
-        Affiliation.objects.filter(line=line_id.strip())
-        .exclude(jira_key__isnull=True)
-        .exclude(jira_key="")
-        .values_list("jira_key", flat=True)
-        .order_by("jira_key")
-        .first()
-    )
-    if isinstance(key, str) and key.strip():
-        return key.strip()
-    # -----------------------------------------------------------------------------
-    # 3) 기본값 반환
-    # -----------------------------------------------------------------------------
-    return None
-
-
-def get_affiliation_jira_key(*, line_id: str, user_sdwt_prod: str) -> str | None:
-    """line_id + user_sdwt_prod 조합의 Jira project key를 조회합니다.
+def get_affiliation_jira_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str | None:
+    """user_sdwt_prod에 해당하는 Jira project key를 조회합니다.
 
     입력:
-    - line_id: 라인 식별자
     - user_sdwt_prod: 소속 식별자
 
     반환:
@@ -233,17 +191,18 @@ def get_affiliation_jira_key(*, line_id: str, user_sdwt_prod: str) -> str | None
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    if not isinstance(line_id, str) or not line_id.strip():
-        return None
     if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
         return None
 
     # -----------------------------------------------------------------------------
-    # 2) 키 조회
+    # 2) 비어있지 않은 키 조회
     # -----------------------------------------------------------------------------
     key = (
-        Affiliation.objects.filter(line=line_id.strip(), user_sdwt_prod=user_sdwt_prod.strip())
+        Affiliation.objects.filter(user_sdwt_prod=user_sdwt_prod.strip())
+        .exclude(jira_key__isnull=True)
+        .exclude(jira_key="")
         .values_list("jira_key", flat=True)
+        .order_by("jira_key")
         .first()
     )
     if isinstance(key, str) and key.strip():
@@ -254,19 +213,17 @@ def get_affiliation_jira_key(*, line_id: str, user_sdwt_prod: str) -> str | None
     return None
 
 
-def list_affiliation_jira_keys_by_line_and_sdwt(
+def list_affiliation_jira_keys_by_user_sdwt_prod(
     *,
-    line_ids: set[str] | list[str],
     user_sdwt_prod_values: set[str] | list[str],
-) -> dict[tuple[str, str], str | None]:
-    """line_id + user_sdwt_prod 조합별 Jira key 맵을 조회합니다.
+) -> dict[str, str | None]:
+    """user_sdwt_prod별 Jira key 맵을 조회합니다.
 
     입력:
-    - line_ids: 라인 식별자 목록
     - user_sdwt_prod_values: 소속 식별자 목록
 
     반환:
-    - dict[tuple[str, str], str | None]: (line_id, user_sdwt_prod) → jira_key (라인+소속 기준 키 맵)
+    - dict[str, str | None]: user_sdwt_prod → jira_key (소속 기준 키 맵)
 
     부작용:
     - 없음(읽기 전용)
@@ -278,31 +235,27 @@ def list_affiliation_jira_keys_by_line_and_sdwt(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized_lines = [line.strip() for line in line_ids if isinstance(line, str) and line.strip()]
     normalized_sdwt = [
         value.strip() for value in user_sdwt_prod_values if isinstance(value, str) and value.strip()
     ]
-    if not normalized_lines or not normalized_sdwt:
+    if not normalized_sdwt:
         return {}
 
     # -----------------------------------------------------------------------------
     # 2) 조회 및 매핑 생성
     # -----------------------------------------------------------------------------
-    rows = (
-        Affiliation.objects.filter(line__in=normalized_lines, user_sdwt_prod__in=normalized_sdwt)
-        .values("line", "user_sdwt_prod", "jira_key")
+    rows = Affiliation.objects.filter(user_sdwt_prod__in=normalized_sdwt).values(
+        "user_sdwt_prod",
+        "jira_key",
     )
-    mapping: dict[tuple[str, str], str | None] = {}
+    mapping: dict[str, str | None] = {}
     for row in rows:
-        line_id = row.get("line")
         sdwt = row.get("user_sdwt_prod")
-        if not isinstance(line_id, str) or not line_id.strip():
-            continue
         if not isinstance(sdwt, str) or not sdwt.strip():
             continue
         key = row.get("jira_key")
         normalized_key = key.strip() if isinstance(key, str) and key.strip() else None
-        mapping[(line_id.strip(), sdwt.strip())] = normalized_key
+        mapping[sdwt.strip()] = normalized_key
 
     return mapping
 

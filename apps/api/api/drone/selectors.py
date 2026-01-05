@@ -419,11 +419,10 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
     return _get_user_sdwt_prod_values(line_id)
 
 
-def get_affiliation_jira_key_for_line_and_sdwt(*, line_id: str, user_sdwt_prod: str) -> str | None:
-    """line_id + user_sdwt_prod 조합의 Jira project key를 조회합니다.
+def get_affiliation_jira_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str | None:
+    """user_sdwt_prod에 해당하는 Jira project key를 조회합니다.
 
     인자:
-        line_id: 라인 ID.
         user_sdwt_prod: 사용자 소속 값.
 
     반환:
@@ -433,32 +432,28 @@ def get_affiliation_jira_key_for_line_and_sdwt(*, line_id: str, user_sdwt_prod: 
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.get_affiliation_jira_key(
-        line_id=line_id,
+    return account_selectors.get_affiliation_jira_key_for_user_sdwt_prod(
         user_sdwt_prod=user_sdwt_prod,
     )
 
 
-def list_affiliation_jira_keys_by_line_and_sdwt(
+def list_affiliation_jira_keys_by_user_sdwt_prod(
     *,
-    line_ids: set[str] | list[str],
     user_sdwt_prod_values: set[str] | list[str],
-) -> dict[tuple[str, str], str | None]:
-    """line_id + user_sdwt_prod 조합별 Jira project key 맵을 조회합니다.
+) -> dict[str, str | None]:
+    """user_sdwt_prod별 Jira project key 맵을 조회합니다.
 
     인자:
-        line_ids: line_id 집합 또는 리스트.
         user_sdwt_prod_values: user_sdwt_prod 집합 또는 리스트.
 
     반환:
-        {(line_id, user_sdwt_prod): jira_key} 형태의 dict.
+        {user_sdwt_prod: jira_key} 형태의 dict.
 
     부작용:
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.list_affiliation_jira_keys_by_line_and_sdwt(
-        line_ids=line_ids,
+    return account_selectors.list_affiliation_jira_keys_by_user_sdwt_prod(
         user_sdwt_prod_values=user_sdwt_prod_values,
     )
 

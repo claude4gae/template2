@@ -5,10 +5,10 @@ import * as React from "react"
 import {
   createLineSetting,
   deleteLineSetting,
-  fetchLineJiraKey,
+  fetchUserSdwtJiraKey,
   fetchLineSettings,
   updateLineSetting,
-  updateLineJiraKey,
+  updateUserSdwtJiraKey,
 } from "../api"
 import { timeFormatter } from "../utils/formatters"
 import { sortEntries } from "../utils/lineSettings"
@@ -18,7 +18,7 @@ const EMPTY_TIMESTAMP = "-"
 const normalizeId = (value) => String(value ?? "")
 const nowLabel = () => timeFormatter.format(new Date())
 
-export function useLineSettings(lineId) {
+export function useLineSettings({ lineId, userSdwtProd }) {
   const [entries, setEntries] = React.useState([])
   const [userSdwtValues, setUserSdwtValues] = React.useState([])
   const [jiraKey, setJiraKey] = React.useState("")
@@ -70,7 +70,7 @@ export function useLineSettings(lineId) {
     try {
       const [settingsResult, jiraResult] = await Promise.allSettled([
         fetchLineSettings(lineId),
-        fetchLineJiraKey(lineId),
+        userSdwtProd ? fetchUserSdwtJiraKey(userSdwtProd) : Promise.resolve({ jiraKey: "" }),
       ])
 
       let ok = true
@@ -113,7 +113,7 @@ export function useLineSettings(lineId) {
         setHasLoadedOnce(true)
       }
     }
-  }, [lineId, resetForLineChange])
+  }, [lineId, resetForLineChange, userSdwtProd])
 
   React.useEffect(() => {
     refresh()
@@ -157,16 +157,19 @@ export function useLineSettings(lineId) {
 
   const updateJiraKey = React.useCallback(
     async ({ jiraKey: nextJiraKey }) => {
-      if (!lineId) {
-        throw new Error("Select a line to update Jira key")
+      if (!userSdwtProd) {
+        throw new Error("Select a user SDWT to update Jira key")
       }
-      const { jiraKey: savedKey } = await updateLineJiraKey({ lineId, jiraKey: nextJiraKey })
+      const { jiraKey: savedKey } = await updateUserSdwtJiraKey({
+        userSdwtProd,
+        jiraKey: nextJiraKey,
+      })
       setJiraKey(savedKey || "")
       setJiraKeyError(null)
       setLastUpdatedLabel(nowLabel())
       return savedKey
     },
-    [lineId],
+    [userSdwtProd],
   )
 
   return {

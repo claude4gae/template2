@@ -11,4 +11,4 @@ export {
   fetchLineSettings,
   updateLineSetting,
 } from "./lineSettings"
-export { fetchLineJiraKey, updateLineJiraKey } from "./lineJiraKey"
+export { fetchUserSdwtJiraKey, updateUserSdwtJiraKey } from "./lineJiraKey"

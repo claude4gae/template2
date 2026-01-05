@@ -233,6 +233,7 @@ class DroneSopInstantInformTests(TestCase):
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT",
             eqp_id="EQP1",
             chamber_ids="1",
             lot_id="LOT.1",
@@ -379,6 +380,7 @@ class DroneEndpointTests(TestCase):
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT",
             eqp_id="EQP1",
             chamber_ids="1",
             lot_id="LOT.1",
@@ -476,8 +478,10 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         DRONE_JIRA_BULK_SIZE=50,
     )
     @patch("api.drone.services.sop_jira._jira_session")
-    def test_jira_create_uses_project_key_per_line_and_marks_missing_as_failed(self, mock_session: Mock) -> None:
-        """라인별 프로젝트 키가 적용되고 누락은 실패 처리되는지 확인합니다."""
+    def test_jira_create_uses_project_key_per_user_sdwt_prod_and_marks_missing_as_failed(
+        self, mock_session: Mock
+    ) -> None:
+        """user_sdwt_prod 기준 프로젝트 키가 적용되고 누락은 실패 처리되는지 확인합니다."""
         session = Mock()
         resp = Mock(status_code=201)
         resp.json.return_value = {"issues": [{"key": "PROJ1-1"}, {"key": "PROJ2-2"}]}
@@ -487,26 +491,27 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         account_services.ensure_affiliation_option(
             department="D",
             line="L1",
-            user_sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT1",
             jira_key="PROJ1",
         )
         account_services.ensure_affiliation_option(
             department="D",
             line="L2",
-            user_sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT2",
             jira_key="PROJ2",
         )
         account_services.ensure_affiliation_option(
             department="D",
             line="L3",
-            user_sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT3",
         )
         DroneSopJiraTemplate.objects.create(line_id="L1", template_key="line_a")
         DroneSopJiraTemplate.objects.create(line_id="L2", template_key="line_b")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",
-            sdwt_prod="SDWT",
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
             eqp_id="EQP1",
             chamber_ids="1",
             lot_id="LOT.1",
@@ -518,7 +523,8 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         sop2 = DroneSOP.objects.create(
             line_id="L2",
-            sdwt_prod="SDWT",
+            sdwt_prod="SDWT2",
+            user_sdwt_prod="SDWT2",
             eqp_id="EQP2",
             chamber_ids="1",
             lot_id="LOT.2",
@@ -530,7 +536,8 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         sop_missing = DroneSOP.objects.create(
             line_id="L3",
-            sdwt_prod="SDWT",
+            sdwt_prod="SDWT3",
+            user_sdwt_prod="SDWT3",
             eqp_id="EQP3",
             chamber_ids="1",
             lot_id="LOT.3",
@@ -621,20 +628,21 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         account_services.ensure_affiliation_option(
             department="D",
             line="L1",
-            user_sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT1",
             jira_key="PROJ1",
         )
         account_services.ensure_affiliation_option(
             department="D",
             line="L2",
-            user_sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT2",
             jira_key="PROJ2",
         )
         DroneSopJiraTemplate.objects.create(line_id="L1", template_key="line_a")
 
         sop1 = DroneSOP.objects.create(
             line_id="L1",
-            sdwt_prod="SDWT",
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
             eqp_id="EQP1",
             chamber_ids="1",
             lot_id="LOT.1",
@@ -646,7 +654,8 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         sop2 = DroneSOP.objects.create(
             line_id="L2",
-            sdwt_prod="SDWT",
+            sdwt_prod="SDWT2",
+            user_sdwt_prod="SDWT2",
             eqp_id="EQP2",
             chamber_ids="1",
             lot_id="LOT.2",

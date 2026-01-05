@@ -30,7 +30,7 @@ from api.account.models import (
 from api.account.selectors import (
     get_accessible_user_sdwt_prods_for_user,
     get_next_user_sdwt_prod_change,
-    get_affiliation_jira_key_for_line,
+    get_affiliation_jira_key_for_user_sdwt_prod,
     list_affiliation_options,
     list_line_sdwt_pairs,
     resolve_user_affiliation,
@@ -237,12 +237,15 @@ class AccountEndpointTests(TestCase):
         # -----------------------------------------------------------------------------
         self.client.force_login(self.superuser)
 
-        jira_get = self.client.get(reverse("account-affiliation-jira-key"), {"lineId": "L1"})
+        jira_get = self.client.get(
+            reverse("account-affiliation-jira-key"),
+            {"userSdwtProd": "group-a"},
+        )
         self.assertEqual(jira_get.status_code, 200)
 
         jira_post = self.client.post(
             reverse("account-affiliation-jira-key"),
-            data='{"lineId":"L1","jiraKey":"PROJ"}',
+            data='{"userSdwtProd":"group-a","jiraKey":"PROJ"}',
             content_type="application/json",
         )
         self.assertEqual(jira_post.status_code, 200)
@@ -278,7 +281,7 @@ class AffiliationSelectorTests(TestCase):
 
     def test_list_affiliation_options_orders_rows(self) -> None:
         """소속 옵션이 정렬된 순서로 반환되는지 확인합니다."""
-        Affiliation.objects.create(department="DeptB", line="L2", user_sdwt_prod="S1")
+        Affiliation.objects.create(department="DeptB", line="L2", user_sdwt_prod="S3")
         Affiliation.objects.create(department="DeptA", line="L2", user_sdwt_prod="S2")
         Affiliation.objects.create(department="DeptA", line="L1", user_sdwt_prod="S1")
 
@@ -288,27 +291,27 @@ class AffiliationSelectorTests(TestCase):
             [
                 {"department": "DeptA", "line": "L1", "user_sdwt_prod": "S1"},
                 {"department": "DeptA", "line": "L2", "user_sdwt_prod": "S2"},
-                {"department": "DeptB", "line": "L2", "user_sdwt_prod": "S1"},
+                {"department": "DeptB", "line": "L2", "user_sdwt_prod": "S3"},
             ],
         )
 
-    def test_update_affiliation_jira_key_updates_all_line_rows(self) -> None:
-        """JIRA 키 업데이트가 동일 라인 전체에 적용되는지 확인합니다."""
+    def test_update_affiliation_jira_key_updates_matching_user_sdwt_prod(self) -> None:
+        """JIRA 키 업데이트가 user_sdwt_prod 기준으로 적용되는지 확인합니다."""
         Affiliation.objects.create(department="DeptA", line="L1", user_sdwt_prod="S1")
         Affiliation.objects.create(department="DeptB", line="L1", user_sdwt_prod="S2")
 
-        updated = update_affiliation_jira_key(line_id="L1", jira_key="PROJ")
+        updated = update_affiliation_jira_key(user_sdwt_prod="S1", jira_key="PROJ")
 
-        self.assertEqual(updated, 2)
-        self.assertEqual(get_affiliation_jira_key_for_line(line_id="L1"), "PROJ")
+        self.assertEqual(updated, 1)
+        self.assertEqual(get_affiliation_jira_key_for_user_sdwt_prod(user_sdwt_prod="S1"), "PROJ")
+        self.assertIsNone(get_affiliation_jira_key_for_user_sdwt_prod(user_sdwt_prod="S2"))
 
-    def test_list_line_sdwt_pairs_dedupes_across_departments(self) -> None:
-        """라인-소속 쌍이 부서 중복 없이 반환되는지 확인합니다."""
+    def test_list_line_sdwt_pairs_filters_and_orders(self) -> None:
+        """라인-소속 쌍이 필터링되고 정렬되는지 확인합니다."""
         Affiliation.objects.bulk_create(
             [
                 Affiliation(department="DeptA", line="L1", user_sdwt_prod="S1"),
-                Affiliation(department="DeptB", line="L1", user_sdwt_prod="S1"),
-                Affiliation(department="DeptA", line="L1", user_sdwt_prod="S2"),
+                Affiliation(department="DeptB", line="L1", user_sdwt_prod="S2"),
                 Affiliation(department="DeptA", line="L2", user_sdwt_prod="S0"),
                 Affiliation(department="DeptA", line="L3", user_sdwt_prod=""),
             ],
@@ -918,11 +921,11 @@ class AffiliationJiraKeyPermissionTests(TestCase):
 
         client = APIClient()
         client.force_authenticate(user=user)
-        resp = client.post(url, data={"lineId": "L1", "jiraKey": "PROJ"}, format="json")
+        resp = client.post(url, data={"userSdwtProd": "S1", "jiraKey": "PROJ"}, format="json")
         self.assertEqual(resp.status_code, 403)
 
         client.force_authenticate(user=superuser)
-        resp = client.post(url, data={"lineId": "L1", "jiraKey": "PROJ"}, format="json")
+        resp = client.post(url, data={"userSdwtProd": "S1", "jiraKey": "PROJ"}, format="json")
         self.assertEqual(resp.status_code, 200)
 
     def test_request_affiliation_change_creates_pending_for_first_affiliation(self) -> None:

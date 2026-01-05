@@ -181,12 +181,8 @@ class Affiliation(models.Model):
         db_table = "account_affiliation"
         constraints = [
             models.UniqueConstraint(
-                fields=["department", "line", "user_sdwt_prod"],
-                name="uniq_acc_aff_dep_ln_usr_724c6",
-            ),
-            models.UniqueConstraint(
-                fields=["line", "user_sdwt_prod"],
-                name="uniq_acc_aff_ln_usr_sdw_prd",
+                fields=["user_sdwt_prod"],
+                name="uniq_acc_aff_usr_sdw_prd",
             ),
         ]
         indexes = [

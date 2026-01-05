@@ -954,28 +954,19 @@ def run_drone_sop_jira_instant_inform(
 
         line_id = row_payload.get("line_id")
         if not isinstance(line_id, str) or not line_id.strip():
-            raise ValueError("line_id is required to resolve Jira project key")
+            raise ValueError("line_id is required to resolve Jira template key")
         normalized_line_id = line_id.strip()
 
-        sdwt_prod = row_payload.get("sdwt_prod")
-        if not isinstance(sdwt_prod, str) or not sdwt_prod.strip():
-            raise ValueError("sdwt_prod is required to resolve Jira project key")
-        normalized_sdwt_prod = sdwt_prod.strip()
+        user_sdwt_prod = row_payload.get("user_sdwt_prod")
+        if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+            raise ValueError("user_sdwt_prod is required to resolve Jira project key")
+        normalized_user_sdwt_prod = user_sdwt_prod.strip()
 
-        valid_lines = set(selectors.list_line_ids_for_user_sdwt_prod(user_sdwt_prod=normalized_sdwt_prod))
-        if normalized_line_id not in valid_lines:
-            raise ValueError(
-                f"account_affiliation mapping missing for sdwt_prod={normalized_sdwt_prod!r} line_id={normalized_line_id!r}"
-            )
-
-        project_key = selectors.get_affiliation_jira_key_for_line_and_sdwt(
-            line_id=normalized_line_id,
-            user_sdwt_prod=normalized_sdwt_prod,
+        project_key = selectors.get_affiliation_jira_key_for_user_sdwt_prod(
+            user_sdwt_prod=normalized_user_sdwt_prod,
         )
         if not project_key:
-            raise ValueError(
-                f"jira_key missing for line_id={normalized_line_id!r} user_sdwt_prod={normalized_sdwt_prod!r}"
-            )
+            raise ValueError(f"jira_key missing for user_sdwt_prod={normalized_user_sdwt_prod!r}")
 
         template_keys_by_line = selectors.list_drone_sop_jira_templates_by_line_ids(line_ids={normalized_line_id})
         template_keys_by_user_sdwt = selectors.list_drone_sop_jira_templates_by_user_sdwt_prods(
@@ -1132,19 +1123,19 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         project_key_by_id, missing_ids = _resolve_project_keys_for_rows(rows=rows)
         if missing_ids:
             missing_id_set = set(missing_ids)
-            missing_line_ids = sorted(
+            missing_user_sdwt = sorted(
                 {
-                    row.get("line_id", "").strip()
+                    row.get("user_sdwt_prod", "").strip()
                     for row in rows
                     if row.get("id") in missing_id_set
-                    and isinstance(row.get("line_id"), str)
-                    and row.get("line_id").strip()
+                    and isinstance(row.get("user_sdwt_prod"), str)
+                    and row.get("user_sdwt_prod").strip()
                 }
             )
             logger.warning(
-                "Missing Jira project key mapping for %s drone_sop rows (line_ids=%s)",
+                "Missing Jira project key mapping for %s drone_sop rows (user_sdwt_prod=%s)",
                 len(missing_ids),
-                ",".join(missing_line_ids[:10]) if missing_line_ids else "-",
+                ",".join(missing_user_sdwt[:10]) if missing_user_sdwt else "-",
             )
             with transaction.atomic():
                 DroneSOP.objects.filter(id__in=missing_ids).update(send_jira=-1)
@@ -1228,7 +1219,7 @@ def _resolve_project_keys_for_rows(
 ) -> tuple[dict[int, str], list[int]]:
     """DroneSOP row 목록에 대해 Jira project key를 해석합니다.
 
-    - account_affiliation(user_sdwt_prod == sdwt_prod) 매핑이 존재해야 합니다.
+    - account_affiliation.user_sdwt_prod 매핑이 존재해야 합니다.
     - project key는 Affiliation.jira_key에서 가져옵니다.
     - 매핑이 없으면 해당 row id를 missing_ids로 반환합니다.
     """
@@ -1236,24 +1227,17 @@ def _resolve_project_keys_for_rows(
     # -------------------------------------------------------------------------
     # 1) 입력 값 수집
     # -------------------------------------------------------------------------
-    sdwt_prod_values: set[str] = set()
+    user_sdwt_prod_values: set[str] = set()
     for row in rows:
-        sdwt_prod = row.get("sdwt_prod")
-        if isinstance(sdwt_prod, str) and sdwt_prod.strip():
-            sdwt_prod_values.add(sdwt_prod.strip())
-
-    line_ids: set[str] = set()
-    for row in rows:
-        line_id = row.get("line_id")
-        if isinstance(line_id, str) and line_id.strip():
-            line_ids.add(line_id.strip())
+        user_sdwt_prod = row.get("user_sdwt_prod")
+        if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
+            user_sdwt_prod_values.add(user_sdwt_prod.strip())
 
     # -------------------------------------------------------------------------
     # 2) 소속 매핑 조회
     # -------------------------------------------------------------------------
-    jira_keys_by_line_sdwt = selectors.list_affiliation_jira_keys_by_line_and_sdwt(
-        line_ids=line_ids,
-        user_sdwt_prod_values=sdwt_prod_values,
+    jira_keys_by_user_sdwt = selectors.list_affiliation_jira_keys_by_user_sdwt_prod(
+        user_sdwt_prod_values=user_sdwt_prod_values,
     )
 
     project_key_by_id: dict[int, str] = {}
@@ -1268,7 +1252,7 @@ def _resolve_project_keys_for_rows(
             continue
         project_key = _resolve_project_key_for_row(
             row=row,
-            jira_keys_by_line_sdwt=jira_keys_by_line_sdwt,
+            jira_keys_by_user_sdwt=jira_keys_by_user_sdwt,
         )
         if not project_key:
             missing_ids.append(rid)
@@ -1381,13 +1365,13 @@ def _resolve_template_key_for_row(
 def _resolve_project_key_for_row(
     *,
     row: dict[str, Any],
-    jira_keys_by_line_sdwt: dict[tuple[str, str], str | None],
+    jira_keys_by_user_sdwt: dict[str, str | None],
 ) -> str | None:
     """단일 DroneSOP row에 대한 Jira project key를 반환합니다.
 
     인자:
         row: Drone SOP 행 dict(행 데이터).
-        jira_keys_by_line_sdwt: (line_id, user_sdwt_prod) → jira_key (라인/소속 Jira 키).
+        jira_keys_by_user_sdwt: user_sdwt_prod → jira_key (소속 Jira 키).
 
     반환:
         jira_key 문자열 또는 None.
@@ -1399,19 +1383,15 @@ def _resolve_project_key_for_row(
     # -------------------------------------------------------------------------
     # 1) 필수 필드 검증
     # -------------------------------------------------------------------------
-    line_id = row.get("line_id")
-    sdwt_prod = row.get("sdwt_prod")
-    if not isinstance(line_id, str) or not line_id.strip():
-        return None
-    if not isinstance(sdwt_prod, str) or not sdwt_prod.strip():
+    user_sdwt_prod = row.get("user_sdwt_prod")
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
         return None
 
     # -------------------------------------------------------------------------
     # 2) 매핑 조회
     # -------------------------------------------------------------------------
-    normalized_line_id = line_id.strip()
-    normalized_sdwt_prod = sdwt_prod.strip()
-    project_key = jira_keys_by_line_sdwt.get((normalized_line_id, normalized_sdwt_prod))
+    normalized_user_sdwt_prod = user_sdwt_prod.strip()
+    project_key = jira_keys_by_user_sdwt.get(normalized_user_sdwt_prod)
     if not isinstance(project_key, str) or not project_key.strip():
         return None
     return project_key.strip()
