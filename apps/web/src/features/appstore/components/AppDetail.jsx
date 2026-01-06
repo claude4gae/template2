@@ -682,10 +682,14 @@ export function AppDetail({
                     </dd>
                   </>
                 )}
+
+                <dt className="flex items-center text-muted-foreground">
+                  설명
+                </dt>
+                <dd className="flex items-center text-muted-foreground whitespace-pre-wrap break-words">
+                  {app.description?.trim() ? app.description : "설명 없음"}
+                </dd>
               </dl>
-              <p className="p-3 text-sm text-muted-foreground whitespace-pre-wrap break-words">
-                {app.description?.trim() ? app.description : "설명 없음"}
-              </p>
             </div>
           </div>
         </div>

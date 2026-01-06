@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { useAuth } from "@/features/auth"
 import { useAppstoreMutations } from "../hooks/useAppstoreMutations"
 import { useAppDetailQuery, useAppsQuery } from "../hooks/useAppstoreQueries"
@@ -256,6 +256,8 @@ export function AppstorePage() {
         }}
       >
         <DialogContent className="sm:max-w-4xl overflow-hidden p-0">
+          <DialogTitle className="sr-only">앱 상세</DialogTitle>
+          <DialogDescription className="sr-only">선택한 앱의 상세 정보와 댓글을 확인합니다.</DialogDescription>
           <div className="grid max-h-[80vh] min-h-[60vh] grid-rows-[auto,1fr]">
             <div className="border-b px-6 py-4">
               <div className="text-sm font-semibold">앱 상세</div>

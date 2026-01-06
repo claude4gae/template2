@@ -1,6 +1,13 @@
 // 앱스토어 앱 등록/수정 다이얼로그
 import { useEffect, useMemo, useState } from "react"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,7 +31,7 @@ function fileToDataUrl(file) {
   })
 }
 
-const CATEGORY_OPTIONS = [
+export const CATEGORY_OPTIONS = [
   "DX App",
   "Engineer App",
   "Etch Report",
@@ -155,6 +162,7 @@ export function AppFormDialog({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
+          <DialogDescription className="sr-only">앱 정보를 입력하거나 수정합니다.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">

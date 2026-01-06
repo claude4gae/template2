@@ -3,6 +3,7 @@ import { Button } from "components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -174,6 +175,7 @@ export function InstantInformCell({
             <DialogTitle>
               Inform Comment 수정
             </DialogTitle>
+            <DialogDescription className="sr-only">Inform 코멘트를 수정합니다.</DialogDescription>
           </DialogHeader>
 
           <textarea

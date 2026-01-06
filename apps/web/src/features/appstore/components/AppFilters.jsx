@@ -1,6 +1,7 @@
 // 앱스토어 필터 패널
 import { Plus, Search, X } from "lucide-react"
 
+import { CATEGORY_OPTIONS } from "./AppFormDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,6 +22,13 @@ export function AppFilters({
 }) {
   const categoryLabel = (option) => (option === "all" ? "전체" : option)
   const categoryCount = (option) => (option === "all" ? totalApps : categoryCounts?.[option] ?? 0)
+  const categorySet = new Set(categories)
+  const categoryOrderSet = new Set(CATEGORY_OPTIONS)
+  const orderedCategories = [
+    ...(categorySet.has("all") ? ["all"] : []),
+    ...CATEGORY_OPTIONS.filter((option) => categorySet.has(option)),
+    ...categories.filter((option) => option !== "all" && !categoryOrderSet.has(option)),
+  ]
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-2">
@@ -117,7 +125,7 @@ export function AppFilters({
 
           <div className="min-h-0 overflow-y-auto rounded-lg border bg-background">
             <ul className="divide-y">
-              {categories.map((option) => {
+              {orderedCategories.map((option) => {
                 const isActive = option === category
                 return (
                   <li key={option}>

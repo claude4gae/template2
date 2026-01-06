@@ -321,6 +321,7 @@ export function VocBoardPage() {
               <DialogContent className="w-[min(1100px,calc(100%-2rem))] min-w-[min(1100px,calc(100%-2rem))] max-w-[min(1100px,calc(100%-2rem))] h-[80vh] min-h-[80vh] max-h-[80vh] overflow-y-auto overflow-x-hidden">
                 <DialogHeader>
                   <DialogTitle>새 글 작성</DialogTitle>
+                  <DialogDescription className="sr-only">VOC 게시판 새 글을 작성합니다.</DialogDescription>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={handleCreatePost}>
                   <div className="space-y-2">

@@ -254,6 +254,7 @@ def _serialize_member(access: UserSdwtProdAccess) -> Dict[str, object]:
         "userId": user.id,
         "username": user.username,
         "name": (user.first_name or "") + (user.last_name or ""),
+        "knoxId": getattr(user, "knox_id", None),
         "userSdwtProd": access.user_sdwt_prod,
         "canManage": access.can_manage,
         "grantedBy": access.granted_by_id,

@@ -56,28 +56,36 @@ export function ManageableGroupsCard({ groups }) {
                 </TableHeader>
                 <TableBody>
                   {group.members?.length ? (
-                    group.members.map((member) => (
-                      <TableRow key={`${group.userSdwtProd}-${member.userId}`}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{member.username || "미지정"}</span>
-                            {member.name ? (
-                              <span className="text-muted-foreground text-xs">{member.name}</span>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {member.canManage ? (
-                            <Badge variant="default">관리자</Badge>
-                          ) : (
-                            <Badge variant="outline">멤버</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {formatDate(member.grantedAt)}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    group.members.map((member) => {
+                      const username = member.username || "미지정"
+                      const knoxId = member.knoxId || member.knox_id
+                      const name = (member.name || "").trim()
+                      const detail = name && knoxId ? `${name} (${knoxId})` : name || knoxId || ""
+                      return (
+                        <TableRow key={`${group.userSdwtProd}-${member.userId}`}>
+                          <TableCell>
+                            <div className="flex min-w-0 items-baseline gap-2">
+                              <span className="truncate font-medium">{username}</span>
+                              {detail ? (
+                                <span className="truncate text-xs text-muted-foreground">
+                                  {detail}
+                                </span>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {member.canManage ? (
+                              <Badge variant="default">관리자</Badge>
+                            ) : (
+                              <Badge variant="outline">멤버</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {formatDate(member.grantedAt)}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
                   ) : (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">

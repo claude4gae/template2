@@ -1,9 +1,10 @@
-// src/features/line-dashboard/components/CommentCell.jsx
+// 경로: src/features/line-dashboard/components/CommentCell.jsx
 import * as React from "react"
 import { Button } from "components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -213,6 +214,7 @@ export function CommentCell({ meta, recordId, baseValue }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit comment</DialogTitle>
+            <DialogDescription className="sr-only">코멘트를 편집합니다.</DialogDescription>
           </DialogHeader>
 
           {/* 📝 에디터: Enter 저장 / Shift+Enter 줄바꿈 / Ctrl|Cmd+Enter 저장 */}
