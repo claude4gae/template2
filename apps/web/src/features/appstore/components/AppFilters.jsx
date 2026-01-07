@@ -2,11 +2,25 @@
 import { Plus, Search, X } from "lucide-react"
 
 import { CATEGORY_OPTIONS } from "./AppFormDialog"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
+
+const ALL_CATEGORY = "all"
+const CATEGORY_ORDER_SET = new Set(CATEGORY_OPTIONS)
+
+const getCategoryLabel = (option) => (option === ALL_CATEGORY ? "전체" : option)
+const getOrderedCategories = (categories) => {
+  const categorySet = new Set(categories)
+
+  return [
+    ...(categorySet.has(ALL_CATEGORY) ? [ALL_CATEGORY] : []),
+    ...CATEGORY_OPTIONS.filter((option) => categorySet.has(option)),
+    ...categories.filter(
+      (option) => option !== ALL_CATEGORY && !CATEGORY_ORDER_SET.has(option),
+    ),
+  ]
+}
 
 export function AppFilters({
   totalApps,
@@ -20,29 +34,19 @@ export function AppFilters({
   onCreate,
   isCreating,
 }) {
-  const categoryLabel = (option) => (option === "all" ? "전체" : option)
-  const categoryCount = (option) => (option === "all" ? totalApps : categoryCounts?.[option] ?? 0)
-  const categorySet = new Set(categories)
-  const categoryOrderSet = new Set(CATEGORY_OPTIONS)
-  const orderedCategories = [
-    ...(categorySet.has("all") ? ["all"] : []),
-    ...CATEGORY_OPTIONS.filter((option) => categorySet.has(option)),
-    ...categories.filter((option) => option !== "all" && !categoryOrderSet.has(option)),
-  ]
+  const categoryCount = (option) =>
+    option === ALL_CATEGORY ? totalApps : categoryCounts?.[option] ?? 0
+  const orderedCategories = getOrderedCategories(categories)
+  const totalCategoryCount = Math.max(categories.length - 1, 0)
+  const hasQuery = Boolean(query)
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-2">
       {/* 상단: 요약 + 주요 액션 */}
       <Card className="rounded-2xl border bg-card shadow-sm">
-        <CardHeader className="space-y-1 pb-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="rounded-full">
-                Appstore
-              </Badge>
-              <span className="text-xs text-muted-foreground">{totalApps} apps</span>
-            </div>
-
+        <CardHeader className="space-y-3 pb-3">
+          <div className="flex justify-between">
+            <CardTitle className="text-xl">App store </CardTitle>
             <Button
               variant="default"
               size="sm"
@@ -52,47 +56,24 @@ export function AppFilters({
               type="button"
             >
               <Plus className="size-4" />
-              앱 등록
+              Add
             </Button>
           </div>
-
-          <CardTitle className="text-base">앱 등록 및 탐색</CardTitle>
-          <CardDescription className="text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                {totalCategoryCount} Categories
+              </span>
+              <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                {totalApps} apps
+              </span>
+            </div>
+          </div>
+          <CardDescription className="text-sm pt-4">
             Etch 기술팀에서 사용하는 앱을 빠르게 찾고 관리합니다.
           </CardDescription>
         </CardHeader>
-      </Card>
-
-      {/* 하단: 검색 + 필터 */}
-      <Card className="min-h-0 rounded-2xl border bg-card shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <CardTitle className="text-base">검색 및 필터</CardTitle>
-              <CardDescription className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                  {totalApps}개 앱
-                </span>
-                <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                  {Math.max(categories.length - 1, 0)}개 카테고리
-                </span>
-              </CardDescription>
-            </div>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onReset}
-              type="button"
-              className="h-8 px-2 text-xs text-muted-foreground"
-            >
-              초기화
-            </Button>
-          </div>
-        </CardHeader>
-
         <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
-          {/* 검색 */}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -101,7 +82,7 @@ export function AppFilters({
               placeholder="앱 이름, 설명, 카테고리 검색"
               className="h-10 pl-9 pr-9"
             />
-            {query ? (
+            {hasQuery ? (
               <Button
                 variant="ghost"
                 size="icon"
@@ -114,42 +95,52 @@ export function AppFilters({
               </Button>
             ) : null}
           </div>
+        </CardContent>
+      </Card>
 
-          <Separator />
-
+      {/* 하단: 검색 + 필터 */}
+      <Card className="min-h-0 rounded-2xl border bg-card shadow-sm">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+          {/* 검색 */}
           {/* 카테고리 목록 */}
           <div className="flex items-center justify-between">
-            <div className="text-sm font-medium">카테고리</div>
-            <div className="text-xs text-muted-foreground">선택: {categoryLabel(category)}</div>
+            <div className="text-sm font-medium">Category</div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onReset}
+              type="button"
+              className="h-8 px-2 text-xs text-muted-foreground"
+            >
+              reset
+            </Button>
           </div>
 
           <div className="min-h-0 overflow-y-auto rounded-lg border bg-background">
             <ul className="divide-y">
               {orderedCategories.map((option) => {
                 const isActive = option === category
+                const itemClassName = [
+                  "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm",
+                  "transition-colors",
+                  isActive ? "bg-primary/10" : "hover:bg-primary/10",
+                ].join(" ")
+                const indicatorClassName = [
+                  "h-4 w-1 rounded-full",
+                  isActive ? "bg-primary" : "bg-transparent",
+                ].join(" ")
+
                 return (
                   <li key={option}>
                     <button
                       type="button"
                       onClick={() => onCategoryChange(option)}
-                      className={[
-                        "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm",
-                        "transition-colors",
-                        isActive
-                          ? "bg-muted/60"
-                          : "hover:bg-muted/40",
-                      ].join(" ")}
+                      className={itemClassName}
                     >
                       <div className="flex items-center gap-2">
-                        <span
-                          className={[
-                            "h-4 w-1 rounded-full",
-                            isActive ? "bg-primary" : "bg-transparent",
-                          ].join(" ")}
-                          aria-hidden="true"
-                        />
+                        <span className={indicatorClassName} aria-hidden="true" />
                         <span className={isActive ? "font-medium text-foreground" : "text-foreground"}>
-                          {categoryLabel(option)}
+                          {getCategoryLabel(option)}
                         </span>
                       </div>
 
