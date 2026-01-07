@@ -153,6 +153,7 @@ class AppStoreAppsView(APIView):
               예시 "category": "Tools",
               예시 "description": "desc",
               예시 "url": "https://example.com",
+              예시 "manualUrl": "https://example.com/manual",
               예시 "screenshotUrls": ["https://example.com/cover.png"],
               예시 "coverScreenshotIndex": 0,
               예시 "screenshotUrl": "",
@@ -164,6 +165,7 @@ class AppStoreAppsView(APIView):
           - screenshotUrls / screenshot_urls (키 매핑)
           - coverScreenshotIndex / cover_screenshot_index (키 매핑)
           - screenshotUrl / screenshot_url (키 매핑)
+          - manualUrl / manual_url (키 매핑)
 
         반환:
           - app: 생성된 앱 상세 payload
@@ -196,6 +198,8 @@ class AppStoreAppsView(APIView):
         category = str(payload.get("category") or "").strip()[:MAX_CATEGORY_LENGTH]
         description = str(payload.get("description") or "").strip()
         url = str(payload.get("url") or "").strip()
+        manual_url = str(payload.get("manualUrl") or payload.get("manual_url") or "").strip()
+        manual_url = manual_url or None
         screenshot_urls = sanitize_screenshot_urls(payload.get("screenshotUrls") or payload.get("screenshot_urls"))
         screenshot_urls = apply_cover_index(
             screenshot_urls,
@@ -233,6 +237,7 @@ class AppStoreAppsView(APIView):
                 category=category,
                 description=description,
                 url=url,
+                manual_url=manual_url,
                 screenshot_urls=screenshot_urls,
                 screenshot_url=screenshot_url,
                 contact_name=contact_name,
@@ -323,6 +328,7 @@ class AppStoreAppDetailView(APIView):
           - screenshotUrls / screenshot_urls (키 매핑)
           - coverScreenshotIndex / cover_screenshot_index (키 매핑)
           - screenshotUrl / screenshot_url (키 매핑)
+          - manualUrl / manual_url (키 매핑)
 
         반환:
           - app: 업데이트된 앱 payload
@@ -385,6 +391,10 @@ class AppStoreAppDetailView(APIView):
             if not url:
                 return JsonResponse({"error": "url is required"}, status=400)
             updates["url"] = url
+
+        if "manualUrl" in payload or "manual_url" in payload:
+            manual_url = str(payload.get("manualUrl") or payload.get("manual_url") or "").strip()
+            updates["manual_url"] = manual_url or None
 
         if "screenshotUrl" in payload or "screenshot_url" in payload:
             updates["screenshot_url"] = str(payload.get("screenshotUrl") or payload.get("screenshot_url") or "").strip()

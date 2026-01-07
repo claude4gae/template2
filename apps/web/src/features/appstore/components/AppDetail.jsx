@@ -497,6 +497,7 @@ export function AppDetail({
   app,
   isLoading,
   onOpenLink,
+  onOpenManual,
   onToggleLike,
   onEdit,
   onDelete,
@@ -550,6 +551,7 @@ export function AppDetail({
     .map((value) => (typeof value === "string" ? value.trim() : ""))
     .filter(Boolean)
   const contactText = contactParts.length ? contactParts.join(" · ") : "담당자 정보 없음"
+  const manualUrl = typeof app.manualUrl === "string" ? app.manualUrl.trim() : ""
   const canManage = Boolean(app.canEdit || app.canDelete)
   const createdAtLabel = formatDateTime(app.createdAt)
   const updatedAtLabel = formatDateTime(app.updatedAt)
@@ -599,6 +601,18 @@ export function AppDetail({
                 <Heart className={cn("size-4", app.liked && "fill-primary text-primary")} />
                 <span>{app.likeCount ?? 0}</span>
               </Button>
+              {manualUrl ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 gap-1.5 px-2 text-xs"
+                  onClick={() => onOpenManual?.(app)}
+                  type="button"
+                >
+                  Manual
+                  <ArrowUpRight className="size-4" />
+                </Button>
+              ) : null}
               {app.url ? (
                 <Button
                   variant="secondary"

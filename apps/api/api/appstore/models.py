@@ -16,6 +16,7 @@ class AppStoreApp(models.Model):
     category = models.CharField(max_length=100)
     description = models.TextField(blank=True, default="")
     url = models.TextField()
+    manual_url = models.TextField(null=True, blank=True)
     screenshot_url = models.TextField(blank=True, default="")
     screenshot_base64 = models.TextField(blank=True, default="")
     screenshot_mime_type = models.CharField(max_length=100, blank=True, default="")

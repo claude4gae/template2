@@ -40,6 +40,7 @@ export const CATEGORY_OPTIONS = [
   "환경안전 Report",
   "생산지원 Report",
   "설치기술 Report",
+  "E린이 필수 App",
 ]
 
 export function AppFormDialog({
@@ -54,6 +55,7 @@ export function AppFormDialog({
   const [name, setName] = useState("")
   const [category, setCategory] = useState("")
   const [url, setUrl] = useState("")
+  const [manualUrl, setManualUrl] = useState("")
   const [description, setDescription] = useState("")
   const [contactName, setContactName] = useState("")
   const [contactKnoxid, setContactKnoxid] = useState("")
@@ -67,6 +69,7 @@ export function AppFormDialog({
       setName(initialData.name || "")
       setCategory(initialData.category || "")
       setUrl(initialData.url || "")
+      setManualUrl(initialData.manualUrl || "")
       setDescription(initialData.description || "")
       setContactName(initialData.contactName || "")
       setContactKnoxid(initialData.contactKnoxid || "")
@@ -90,6 +93,7 @@ export function AppFormDialog({
       setName("")
       setCategory("")
       setUrl("")
+      setManualUrl("")
       setDescription("")
       setContactName("")
       setContactKnoxid("")
@@ -118,14 +122,15 @@ export function AppFormDialog({
       .filter(Boolean)
     const normalizedCoverIndex =
       Number.isInteger(coverScreenshotIndex) &&
-      coverScreenshotIndex >= 0 &&
-      coverScreenshotIndex < normalizedScreenshotUrls.length
+        coverScreenshotIndex >= 0 &&
+        coverScreenshotIndex < normalizedScreenshotUrls.length
         ? coverScreenshotIndex
         : 0
     const payload = {
       name: name.trim(),
       category: category.trim(),
       url: url.trim(),
+      manualUrl: manualUrl.trim(),
       description: description.trim(),
       contactName: contactName.trim(),
       contactKnoxid: contactKnoxid.trim(),
@@ -199,6 +204,16 @@ export function AppFormDialog({
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder="https://example.com"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="app-manual-url">Manual URL</Label>
+            <Input
+              id="app-manual-url"
+              value={manualUrl}
+              onChange={(event) => setManualUrl(event.target.value)}
+              placeholder="https://example.com/manual"
             />
           </div>
 

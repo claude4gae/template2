@@ -96,6 +96,7 @@ function normalizeApp(raw) {
     category: ensureString(raw.category),
     description: ensureString(raw.description),
     url: ensureString(raw.url),
+    manualUrl: ensureString(raw.manualUrl || raw.manual_url),
     contactName: ensureString(raw.contactName || raw.contact_name),
     contactKnoxid: ensureString(raw.contactKnoxid || raw.contact_knoxid),
     screenshotUrl,

@@ -456,8 +456,8 @@ export function LineSettingsPage({ lineId = "" }) {
 
       <div className="grid flex-1 min-h-0 gap-4">
         <div className="grid min-h-0 grid-rows-[160px_1fr] gap-2">
-          <div className="grid min-h-0 grid-cols-4 gap-2">
-            <div className="col-span-3 rounded-lg border bg-background px-4 py-2 shadow-sm">
+          <div className="grid min-h-0 grid-cols-6 gap-2">
+            <div className="col-span-4 rounded-lg border bg-background px-4 py-2 shadow-sm">
               <div className="flex justify-between">
                 <div className="flex flex-col gap-1 pb-4">
                   <h2 className="text-md font-medium">{LABELS.addTitle}</h2>
@@ -516,7 +516,7 @@ export function LineSettingsPage({ lineId = "" }) {
               </div>
             </div>
 
-            <div className="rounded-lg border bg-background px-4 py-3 shadow-sm">
+            <div className="col-span-2 rounded-lg border bg-background px-4 py-3 shadow-sm">
               <div className="flex flex-col gap-1 pb-3">
                 <h2 className="text-md font-medium">{LABELS.jiraTitle}</h2>
                 <p className="text-xs text-muted-foreground">{LABELS.jiraDescription}</p>

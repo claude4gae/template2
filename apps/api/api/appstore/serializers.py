@@ -360,6 +360,7 @@ def serialize_app(
         "category": app.category,
         "description": app.description,
         "url": app.url,
+        "manualUrl": getattr(app, "manual_url", "") or "",
         "screenshotUrl": getattr(app, "screenshot_src", ""),
         "contactName": app.contact_name,
         "contactKnoxid": app.contact_knoxid,

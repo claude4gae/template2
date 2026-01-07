@@ -170,7 +170,7 @@ class AppstoreScreenshotTests(TestCase):
         self.assertEqual(updated.screenshot_gallery, [])
 
     def test_detail_payload_includes_screenshot_url(self) -> None:
-        """상세 응답에 screenshotUrl/Urls가 포함되는지 확인합니다."""
+        """상세 응답에 screenshotUrl/Urls와 manualUrl이 포함되는지 확인합니다."""
         # -----------------------------------------------------------------------------
         # 1) 사용자/앱 준비
         # -----------------------------------------------------------------------------
@@ -181,12 +181,14 @@ class AppstoreScreenshotTests(TestCase):
             knox_id="knox-54321",
         )
         screenshot_url = "data:image/png;base64,CCC="
+        manual_url = "https://example.com/manual"
         app = create_app(
             owner=user,
             name="Test App",
             category="Tools",
             description="",
             url="https://example.com",
+            manual_url=manual_url,
             screenshot_url=screenshot_url,
             contact_name="홍길동",
             contact_knoxid="hong",
@@ -205,6 +207,7 @@ class AppstoreScreenshotTests(TestCase):
         self.assertEqual(payload["app"]["screenshotUrl"], screenshot_url)
         self.assertEqual(payload["app"]["screenshotUrls"], [screenshot_url])
         self.assertEqual(payload["app"]["coverScreenshotIndex"], 0)
+        self.assertEqual(payload["app"]["manualUrl"], manual_url)
 
 
 class AppstoreCommentReplyLikeTests(TestCase):

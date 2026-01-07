@@ -45,8 +45,8 @@ export function MailboxAccessCard({ mailboxes }) {
         <CardDescription>접근 가능한 메일함의 상세 상태를 확인합니다.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
-        <div className="rounded-lg border">
-          <Table>
+        <div className="max-h-48 min-h-0 overflow-y-auto rounded-lg border">
+          <Table stickyHeader>
             <TableHeader>
               <TableRow>
                 <TableHead>메일함</TableHead>

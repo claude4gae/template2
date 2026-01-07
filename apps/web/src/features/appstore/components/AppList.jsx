@@ -1,10 +1,12 @@
 // 앱 목록 컴포넌트
+import { useEffect, useRef, useState } from "react"
 import { ArrowUpRight, Eye, Heart, MessageSquare } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 function StatBadge({ icon: Icon, value, label }) {
@@ -14,6 +16,56 @@ function StatBadge({ icon: Icon, value, label }) {
       <span className="font-medium text-foreground">{value}</span>
       {label && <span className="text-[10px] text-muted-foreground">{label}</span>}
     </div>
+  )
+}
+
+function AppTitle({ name }) {
+  const titleRef = useRef(null)
+  const [isTruncated, setIsTruncated] = useState(false)
+
+  useEffect(() => {
+    const element = titleRef.current
+    if (!element) {
+      return
+    }
+
+    const checkTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth)
+    }
+
+    checkTruncation()
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(checkTruncation)
+      observer.observe(element)
+      return () => observer.disconnect()
+    }
+
+    const handleResize = () => {
+      checkTruncation()
+    }
+
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [name])
+
+  const title = (
+    <span ref={titleRef} className="block truncate text-sm font-semibold leading-none">
+      {name}
+    </span>
+  )
+
+  if (!isTruncated) {
+    return title
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{title}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs break-words">
+        {name}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -66,9 +118,7 @@ export function AppList({
             {/* 예: 뱃지(선택) */}
             <div className="flex items-center justify-between px-5 py-1">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold leading-none">
-                  {app.name}
-                </div>
+                <AppTitle name={app.name} />
               </div>
 
               <Badge

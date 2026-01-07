@@ -23,6 +23,7 @@ def create_app(
     category: str,
     description: str,
     url: str,
+    manual_url: str | None = None,
     screenshot_urls: list[str] | None = None,
     screenshot_url: str,
     contact_name: str,
@@ -36,6 +37,7 @@ def create_app(
         category: 앱 카테고리.
         description: 앱 설명.
         url: 앱 URL.
+        manual_url: 메뉴얼 URL(없으면 None).
         screenshot_urls: 스크린샷 목록(대표가 첫 번째). URL 또는 data URL.
         screenshot_url: 스크린샷 URL 또는 data URL.
         contact_name: 담당자 이름.
@@ -76,6 +78,7 @@ def create_app(
         contact_name=contact_name,
         contact_knoxid=contact_knoxid,
         owner=owner,
+        manual_url=manual_url,
     )
 
     # -----------------------------------------------------------------------------

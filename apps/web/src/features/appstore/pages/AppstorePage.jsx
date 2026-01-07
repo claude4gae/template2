@@ -121,6 +121,14 @@ export function AppstorePage() {
     }
   }
 
+  const handleOpenManual = (app) => {
+    const manualUrl = typeof app?.manualUrl === "string" ? app.manualUrl.trim() : ""
+    if (!manualUrl) return
+    if (typeof window !== "undefined") {
+      window.open(manualUrl, "_blank", "noopener,noreferrer")
+    }
+  }
+
   const handleSubmitApp = async (payload) => {
     try {
       if (editingApp) {
@@ -271,6 +279,7 @@ export function AppstorePage() {
                   app={detailApp}
                   isLoading={appDetailQuery.isFetching && !detailApp}
                   onOpenLink={handleOpenLink}
+                  onOpenManual={handleOpenManual}
                   onToggleLike={handleToggleLike}
                   onEdit={handleEditApp}
                   onDelete={handleDeleteApp}
