@@ -10,6 +10,8 @@ from __future__ import annotations
 from django.http import HttpRequest, JsonResponse
 from rest_framework.views import APIView
 
+from .services import get_health_payload
+
 
 class HealthView(APIView):
     """단순 헬스 체크 엔드포인트."""
@@ -36,9 +38,4 @@ class HealthView(APIView):
         snake/camel 호환:
         - 해당 없음(요청 바디 없음)
         """
-        return JsonResponse(
-            {
-                "status": "ok",
-                "application": "template2-api",
-            }
-        )
+        return JsonResponse(get_health_payload())

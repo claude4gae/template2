@@ -91,6 +91,52 @@ def get_app_detail(*, app_id: int) -> AppStoreApp | None:
         return None
 
 
+def get_app_like_count(*, app_id: int) -> int:
+    """앱 좋아요 수를 조회합니다.
+
+    인자:
+        app_id: 앱 PK.
+
+    반환:
+        좋아요 수 정수 값.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 좋아요 수 조회
+    # -----------------------------------------------------------------------------
+    value = AppStoreApp.objects.filter(pk=app_id).values_list("like_count", flat=True).first()
+    return int(value or 0)
+
+
+def get_app_view_count(*, app_id: int) -> int:
+    """앱 조회수를 조회합니다.
+
+    인자:
+        app_id: 앱 PK.
+
+    반환:
+        조회수 정수 값.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 조회수 조회
+    # -----------------------------------------------------------------------------
+    value = AppStoreApp.objects.filter(pk=app_id).values_list("view_count", flat=True).first()
+    return int(value or 0)
+
+
 def get_liked_app_ids_for_user(*, user: Any) -> list[int]:
     """사용자가 좋아요한 앱 id 목록을 반환합니다.
 
@@ -153,6 +199,34 @@ def get_comments_for_app(*, app_id: int) -> QuerySet[AppStoreComment]:
         .select_related("user")
         .order_by("created_at", "id")
     )
+
+
+def get_comment_like_count(*, app_id: int, comment_id: int) -> int:
+    """댓글 좋아요 수를 조회합니다.
+
+    인자:
+        app_id: 앱 PK.
+        comment_id: 댓글 PK.
+
+    반환:
+        좋아요 수 정수 값.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 댓글 좋아요 수 조회
+    # -----------------------------------------------------------------------------
+    value = (
+        AppStoreComment.objects.filter(pk=comment_id, app_id=app_id)
+        .values_list("like_count", flat=True)
+        .first()
+    )
+    return int(value or 0)
 
 
 def get_comment_by_id(*, app_id: int, comment_id: int) -> AppStoreComment | None:

@@ -224,6 +224,34 @@ def get_user_profile_role(*, user: Any) -> str:
     return profile.role or UserProfile.Roles.VIEWER
 
 
+def get_user_profile_by_user(*, user: Any) -> UserProfile | None:
+    """사용자 프로필(UserProfile) 행을 조회합니다.
+
+    입력:
+    - user: Django 사용자 객체
+
+    반환:
+    - UserProfile | None: 프로필 행 또는 None
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 사용자 유효성 확인
+    # -----------------------------------------------------------------------------
+    if not user:
+        return None
+
+    # -----------------------------------------------------------------------------
+    # 2) 프로필 조회
+    # -----------------------------------------------------------------------------
+    return UserProfile.objects.filter(user=user).first()
+
+
 def list_user_sdwt_prod_changes(
     *, user: Any, limit: int = 50
 ) -> list[UserSdwtProdChange]:

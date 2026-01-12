@@ -141,13 +141,25 @@ def get_status_counts() -> dict[str, int]:
     - 없음
     """
 
-    status_set = get_valid_post_statuses()
-    base = {status: 0 for status in status_set}
-    for row in VocPost.objects.values("status").annotate(total=Count("id")):
+    valid_statuses = get_valid_post_statuses()
+    base = {status: 0 for status in valid_statuses}
+
+    # -----------------------------------------------------------------------------
+    # 1) status 기준으로 정렬된 결과를 반영
+    # -----------------------------------------------------------------------------
+    for row in VocPost.objects.values("status").annotate(total=Count("id")).order_by("status"):
         status = row.get("status")
         if status in base:
             base[status] = int(row.get("total") or 0)
-    return base
+
+    # -----------------------------------------------------------------------------
+    # 2) 응답 순서를 VocPost.Status.choices 기준으로 정렬
+    # -----------------------------------------------------------------------------
+    ordered: dict[str, int] = {}
+    for status, _label in VocPost.Status.choices:
+        if status in base:
+            ordered[status] = base[status]
+    return ordered
 
 
 def is_admin_user(*, user: Any) -> bool:

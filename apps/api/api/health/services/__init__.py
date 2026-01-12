@@ -7,4 +7,6 @@
 """health 서비스 공개 파사드."""
 from __future__ import annotations
 
-__all__ = []
+from .health_status import get_health_payload
+
+__all__ = ["get_health_payload"]

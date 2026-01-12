@@ -61,3 +61,4 @@ __pycache__/
 /apps/api/staticfiles/
 
 */logs/
+apps/api/logs/rag_errors.log

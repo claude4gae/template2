@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..models import UserSdwtProdAccess
+from django.db import IntegrityError, transaction
+
 from .. import selectors
+from ..models import UserSdwtProdAccess
 from .utils import _user_can_manage_user_sdwt_prod
 
 
@@ -112,23 +114,45 @@ def ensure_self_access(user: Any, *, role: str = UserSdwtProdAccess.Roles.MEMBER
     if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
         return None
 
+    normalized_user_sdwt = user_sdwt_prod.strip()
+
     # -----------------------------------------------------------------------------
-    # 2) 접근 권한 행 생성/업데이트
+    # 2) 접근 권한 역할 정규화
     # -----------------------------------------------------------------------------
     normalized_role = _normalize_role_for_current_affiliation(
         user=user,
-        user_sdwt_prod=user_sdwt_prod,
+        user_sdwt_prod=normalized_user_sdwt,
         role=role,
     )
 
-    access, created = UserSdwtProdAccess.objects.get_or_create(
-        user=user,
-        user_sdwt_prod=user_sdwt_prod,
-        defaults={"role": normalized_role, "granted_by": None},
-    )
-    if not created and _should_upgrade_role(access.role, normalized_role):
-        access.role = normalized_role
-        access.save(update_fields=["role"])
+    # -----------------------------------------------------------------------------
+    # 3) 접근 권한 행 생성/업데이트
+    # -----------------------------------------------------------------------------
+    with transaction.atomic():
+        access = selectors.get_access_row_for_user_and_prod(
+            user=user,
+            user_sdwt_prod=normalized_user_sdwt,
+        )
+        if access is None:
+            try:
+                access = UserSdwtProdAccess.objects.create(
+                    user=user,
+                    user_sdwt_prod=normalized_user_sdwt,
+                    role=normalized_role,
+                    granted_by=None,
+                )
+            except IntegrityError:
+                access = selectors.get_access_row_for_user_and_prod(
+                    user=user,
+                    user_sdwt_prod=normalized_user_sdwt,
+                )
+                if access is None:
+                    raise
+
+        if _should_upgrade_role(access.role, normalized_role):
+            access.role = normalized_role
+            access.save(update_fields=["role"])
+
     return access
 
 
@@ -189,9 +213,10 @@ def grant_or_revoke_access(
     ensure_self_access(grantor, role=UserSdwtProdAccess.Roles.MEMBER)
 
     # -----------------------------------------------------------------------------
-    # 2) 권한 검증
+    # 2) 대상 그룹 정규화 및 권한 검증
     # -----------------------------------------------------------------------------
-    if not _user_can_manage_user_sdwt_prod(user=grantor, user_sdwt_prod=target_group):
+    normalized_target = (target_group or "").strip()
+    if not _user_can_manage_user_sdwt_prod(user=grantor, user_sdwt_prod=normalized_target):
         return {"error": "forbidden"}, 403
 
     # -----------------------------------------------------------------------------
@@ -200,18 +225,18 @@ def grant_or_revoke_access(
     normalized_action = (action or "grant").lower()
     if normalized_action == "revoke":
         current_target_sdwt = (getattr(target_user, "user_sdwt_prod", None) or "").strip()
-        if current_target_sdwt and current_target_sdwt == target_group:
+        if current_target_sdwt and current_target_sdwt == normalized_target:
             return {"error": "Cannot revoke access for the user's current affiliation"}, 400
         access = selectors.get_access_row_for_user_and_prod(
             user=target_user,
-            user_sdwt_prod=target_group,
+            user_sdwt_prod=normalized_target,
         )
         if not access:
             return {"status": "ok", "deleted": 0}, 200
 
         if access.role == UserSdwtProdAccess.Roles.MANAGER:
             if not selectors.other_manager_exists(
-                user_sdwt_prod=target_group,
+                user_sdwt_prod=normalized_target,
                 exclude_user=target_user,
             ):
                 return {"error": "Cannot remove the last manager for this group"}, 400
@@ -224,18 +249,35 @@ def grant_or_revoke_access(
     # -----------------------------------------------------------------------------
     normalized_role = _normalize_role_for_current_affiliation(
         user=target_user,
-        user_sdwt_prod=target_group,
+        user_sdwt_prod=normalized_target,
         role=role or UserSdwtProdAccess.Roles.VIEWER,
     )
-    access, created = UserSdwtProdAccess.objects.get_or_create(
-        user=target_user,
-        user_sdwt_prod=target_group,
-        defaults={"role": normalized_role, "granted_by": grantor},
-    )
-    if not created and (access.role != normalized_role or access.granted_by_id != grantor.id):
-        access.role = normalized_role
-        access.granted_by = grantor
-        access.save(update_fields=["role", "granted_by"])
+
+    with transaction.atomic():
+        access = selectors.get_access_row_for_user_and_prod(
+            user=target_user,
+            user_sdwt_prod=normalized_target,
+        )
+        if access is None:
+            try:
+                access = UserSdwtProdAccess.objects.create(
+                    user=target_user,
+                    user_sdwt_prod=normalized_target,
+                    role=normalized_role,
+                    granted_by=grantor,
+                )
+            except IntegrityError:
+                access = selectors.get_access_row_for_user_and_prod(
+                    user=target_user,
+                    user_sdwt_prod=normalized_target,
+                )
+                if access is None:
+                    raise
+
+        if access.role != normalized_role or access.granted_by_id != grantor.id:
+            access.role = normalized_role
+            access.granted_by = grantor
+            access.save(update_fields=["role", "granted_by"])
 
     # -----------------------------------------------------------------------------
     # 5) 결과 반환

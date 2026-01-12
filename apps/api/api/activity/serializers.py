@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.core.exceptions import ObjectDoesNotExist
+
 from .models import ActivityLog
 
 
@@ -28,7 +30,13 @@ def serialize_activity_log(entry: ActivityLog) -> dict[str, Any]:
 
     user = entry.user
     username = user.get_username() if user else None
-    role = getattr(getattr(user, "profile", None), "role", None) if user else None
+    role = None
+    if user:
+        try:
+            role = getattr(user.profile, "role", None)
+        except ObjectDoesNotExist:
+            # 프로필이 없는 사용자는 예외 대신 None으로 처리합니다.
+            role = None
 
     metadata = entry.metadata or {}
     if isinstance(metadata, dict) and metadata.get("remote_addr") == "172.18.0.1":

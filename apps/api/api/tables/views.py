@@ -100,10 +100,11 @@ class TableUpdateView(APIView):
 
         예시 요청:
         - 예시 요청: PATCH /api/v1/tables/update
+          요청 바디 예시: {"table":"drone_sop","id":123,"updates":{"status":"DONE"}}
           요청 바디 예시: {"table":"drone_sop","id":123,"values":{"status":"DONE"}}
 
         snake/camel 호환:
-        - 해당 없음(요청 바디 키는 table/id/values만 사용)
+        - 해당 없음(요청 바디 키는 table/id/updates/values만 사용)
         """
         # -----------------------------------------------------------------------------
         # 1) JSON 바디 파싱
@@ -113,7 +114,13 @@ class TableUpdateView(APIView):
             return JsonResponse({"error": "Invalid JSON body"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 2) 테이블/레코드 식별자 검증
+        # 2) 하위 호환 키 보정(values → updates)
+        # -----------------------------------------------------------------------------
+        if "updates" not in payload and "values" in payload:
+            payload = {**payload, "updates": payload.get("values")}
+
+        # -----------------------------------------------------------------------------
+        # 3) 테이블/레코드 식별자 검증
         # -----------------------------------------------------------------------------
         table_name = sanitize_identifier(payload.get("table"), DEFAULT_TABLE)
         if not table_name:
@@ -124,13 +131,13 @@ class TableUpdateView(APIView):
             return JsonResponse({"error": "Record id is required"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 3) 활동 로그 컨텍스트 기록
+        # 4) 활동 로그 컨텍스트 기록
         # -----------------------------------------------------------------------------
         set_activity_summary(request, f"Update {table_name} record #{record_id}")
         merge_activity_metadata(request, resource=table_name, entryId=record_id)
 
         # -----------------------------------------------------------------------------
-        # 4) 업데이트 수행
+        # 5) 업데이트 수행
         # -----------------------------------------------------------------------------
         try:
             result = update_table_record(payload=payload)
@@ -145,7 +152,7 @@ class TableUpdateView(APIView):
             return JsonResponse({"error": "Failed to update record"}, status=500)
 
         # -----------------------------------------------------------------------------
-        # 5) 활동 로그 변경 전/후 저장
+        # 6) 활동 로그 변경 전/후 저장
         # -----------------------------------------------------------------------------
         if result.previous_row is not None:
             set_activity_previous_state(request, result.previous_row)
@@ -153,7 +160,7 @@ class TableUpdateView(APIView):
             set_activity_new_state(request, result.updated_row)
 
         # -----------------------------------------------------------------------------
-        # 6) 응답 반환
+        # 7) 응답 반환
         # -----------------------------------------------------------------------------
         return JsonResponse({"success": True})
 

@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from api.appstore.serializers import default_contact
 from api.appstore.services import create_app, create_comment, update_app
 
 
@@ -208,6 +209,61 @@ class AppstoreScreenshotTests(TestCase):
         self.assertEqual(payload["app"]["screenshotUrls"], [screenshot_url])
         self.assertEqual(payload["app"]["coverScreenshotIndex"], 0)
         self.assertEqual(payload["app"]["manualUrl"], manual_url)
+
+
+class AppstoreContactDefaultTests(TestCase):
+    """appstore 연락처 기본값 계산을 검증합니다."""
+
+    def test_default_contact_uses_full_name_when_username_missing(self) -> None:
+        """username이 없을 때 이름(first/last)을 사용해야 합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S11111",
+            password="test-password",
+            knox_id="knox-11111",
+        )
+        user.first_name = "John"
+        user.last_name = "Doe"
+        user.save(update_fields=["first_name", "last_name"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 기본값 계산
+        # -----------------------------------------------------------------------------
+        contact_name, contact_knoxid = default_contact(user)
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(contact_name, "John Doe")
+        self.assertEqual(contact_knoxid, "knox-11111")
+
+    def test_default_contact_uses_email_when_name_missing(self) -> None:
+        """username/이름이 없으면 email을 사용해야 합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S11112",
+            password="test-password",
+            knox_id="knox-11112",
+        )
+        user.email = "user@example.com"
+        user.save(update_fields=["email"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 기본값 계산
+        # -----------------------------------------------------------------------------
+        contact_name, contact_knoxid = default_contact(user)
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(contact_name, "user@example.com")
+        self.assertEqual(contact_knoxid, "knox-11112")
 
 
 class AppstoreCommentReplyLikeTests(TestCase):

@@ -20,6 +20,7 @@ from django.urls import reverse
 
 import api.account.services as account_services
 from api.auth.services import _extract_user_info_from_claims
+from api.auth.services.oidc import _upsert_user_from_claims
 
 
 class AuthMeTests(TestCase):
@@ -227,3 +228,55 @@ class AuthOidcClaimExtractionTests(TestCase):
         self.assertEqual(info["last_name"], "홍")
         self.assertEqual(info["givenname"], "John")
         self.assertEqual(info["surname"], "Doe")
+
+
+class AuthOidcUserUpsertTests(TestCase):
+    """OIDC 사용자 생성/갱신 로직을 검증합니다."""
+
+    def test_upsert_user_from_claims_creates_user(self) -> None:
+        """신규 사용자일 때 생성 및 필드 저장이 수행되어야 합니다."""
+        info = {
+            "sabun": "S99990",
+            "knox_id": "KNOX-99990",
+            "username": "홍길동",
+            "email": "hong@example.com",
+        }
+
+        user, created = _upsert_user_from_claims(
+            info=info,
+            sabun="S99990",
+            knox_id="KNOX-99990",
+            timezone_name="Asia/Seoul",
+        )
+
+        self.assertTrue(created)
+        user.refresh_from_db()
+        self.assertEqual(user.sabun, "S99990")
+        self.assertEqual(user.knox_id, "KNOX-99990")
+        self.assertEqual(user.email, "hong@example.com")
+
+    def test_upsert_user_from_claims_updates_existing_user(self) -> None:
+        """기존 사용자의 변경 필드가 갱신되어야 합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S99991", password="test-password")
+        user.knox_id = "KNOX-OLD"
+        user.email = "old@example.com"
+        user.save(update_fields=["knox_id", "email"])
+
+        info = {
+            "sabun": "S99991",
+            "knox_id": "KNOX-NEW",
+            "email": "new@example.com",
+        }
+
+        updated_user, created = _upsert_user_from_claims(
+            info=info,
+            sabun="S99991",
+            knox_id="KNOX-NEW",
+            timezone_name="Asia/Seoul",
+        )
+
+        self.assertFalse(created)
+        updated_user.refresh_from_db()
+        self.assertEqual(updated_user.knox_id, "KNOX-NEW")
+        self.assertEqual(updated_user.email, "new@example.com")

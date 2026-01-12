@@ -68,3 +68,25 @@ class VocEndpointTests(TestCase):
         delete_response = self.client.delete(reverse("voc-post-detail", kwargs={"post_id": post_id}))
         self.assertEqual(delete_response.status_code, 200)
         self.assertTrue(delete_response.json()["success"])
+
+    def test_voc_posts_status_counts_order(self) -> None:
+        """statusCounts가 상태 정의 순서를 유지하는지 확인합니다."""
+        # -------------------------------------------------------------------------
+        # 1) 게시글 생성(순서와 무관하게 섞어서 생성)
+        # -------------------------------------------------------------------------
+        VocPost.objects.create(title="A", content="A", author=self.user, status="진행중")
+        VocPost.objects.create(title="B", content="B", author=self.user, status="접수")
+        VocPost.objects.create(title="C", content="C", author=self.user, status="완료")
+        VocPost.objects.create(title="D", content="D", author=self.user, status="반려")
+
+        # -------------------------------------------------------------------------
+        # 2) 목록 조회
+        # -------------------------------------------------------------------------
+        response = self.client.get(reverse("voc-posts"))
+        self.assertEqual(response.status_code, 200)
+        counts = response.json()["statusCounts"]
+
+        # -------------------------------------------------------------------------
+        # 3) 상태 키 순서 검증
+        # -------------------------------------------------------------------------
+        self.assertEqual(list(counts.keys()), ["접수", "진행중", "완료", "반려"])

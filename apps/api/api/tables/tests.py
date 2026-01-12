@@ -56,3 +56,19 @@ class TablesEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["success"], True)
+
+    @patch("api.tables.services.execute")
+    @patch("api.tables.services.selectors.fetch_row")
+    @patch("api.tables.services.selectors.list_columns")
+    def test_tables_update_accepts_values_alias(self, mock_columns, mock_fetch_row, mock_execute) -> None:
+        mock_columns.return_value = ["id", "comment"]
+        mock_execute.return_value = (1, None)
+        mock_fetch_row.side_effect = [{"id": 11, "comment": "before"}, {"id": 11, "comment": "updated"}]
+
+        response = self.client.patch(
+            reverse("tables-update"),
+            data='{"table":"demo_table","id":11,"values":{"comment":"updated"}}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["success"], True)

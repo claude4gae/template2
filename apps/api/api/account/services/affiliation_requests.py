@@ -353,6 +353,7 @@ def request_affiliation_change(
     to_user_sdwt_prod: str,
     effective_from: datetime,
     timezone_name: str,
+    force_pending: bool = False,
 ) -> Tuple[dict[str, object], int]:
     """user_sdwt_prod 소속 변경을 요청합니다.
 
@@ -362,6 +363,7 @@ def request_affiliation_change(
     - to_user_sdwt_prod: 대상 소속
     - effective_from: 효력 시작 시각
     - timezone_name: 시간대 이름
+    - force_pending: 자동 승인 차단 여부
 
     반환:
     - Tuple[dict[str, object], int]: (payload, status_code) (응답 본문, 상태 코드)
@@ -398,6 +400,8 @@ def request_affiliation_change(
     predicted_match = bool(predicted_user_sdwt and predicted_user_sdwt == normalized_target)
     has_approver = selectors.has_approver_for_user_sdwt_prod(user_sdwt_prod=normalized_target)
     should_auto_apply = predicted_match or not has_approver
+    if force_pending:
+        should_auto_apply = False
     if has_existing_pending:
         should_auto_apply = False
 

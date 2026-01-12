@@ -534,6 +534,19 @@ class AssistantNormalizationTests(TestCase):
         """room_id가 허용 문자로 정규화되는지 확인합니다."""
         self.assertEqual(assistant_services.normalize_room_id(" room$% "), "room--")
 
+    def test_normalize_history_keeps_latest(self) -> None:
+        """normalize_history가 최신 N개를 유지하는지 확인합니다."""
+        history = [
+            {"role": "user", "content": "첫번째"},
+            {"role": "assistant", "content": "두번째"},
+            {"role": "user", "content": "세번째"},
+        ]
+
+        normalized = assistant_services.normalize_history(history, limit=2)
+
+        self.assertEqual(len(normalized), 2)
+        self.assertEqual([entry["content"] for entry in normalized], ["두번째", "세번째"])
+
     def test_normalize_sources_dedupes(self) -> None:
         """normalize_sources가 doc_id 기준으로 중복 제거하는지 확인합니다."""
         sources = [

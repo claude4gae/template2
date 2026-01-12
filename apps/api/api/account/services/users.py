@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..models import UserProfile
+from django.db import IntegrityError, transaction
+
 from .. import selectors
+from ..models import UserProfile
 
 
 def ensure_user_profile(user: Any) -> UserProfile:
@@ -34,9 +36,25 @@ def ensure_user_profile(user: Any) -> UserProfile:
     - ValueError: user가 None인 경우
     """
 
+    # -----------------------------------------------------------------------------
+    # 1) 입력 유효성 확인
+    # -----------------------------------------------------------------------------
     if user is None:
         raise ValueError("user is required to ensure a profile exists")
-    profile, _created = UserProfile.objects.get_or_create(user=user)
+
+    # -----------------------------------------------------------------------------
+    # 2) 기존 프로필 조회 및 생성 처리
+    # -----------------------------------------------------------------------------
+    with transaction.atomic():
+        profile = selectors.get_user_profile_by_user(user=user)
+        if profile is None:
+            try:
+                profile = UserProfile.objects.create(user=user)
+            except IntegrityError:
+                profile = selectors.get_user_profile_by_user(user=user)
+                if profile is None:
+                    raise
+
     return profile
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from ..models import Affiliation
@@ -185,13 +186,29 @@ def ensure_affiliation_option(
         raise ValueError("department/line/user_sdwt_prod is required")
 
     # -----------------------------------------------------------------------------
-    # 2) 옵션 업서트
+    # 2) 옵션 조회 및 생성 처리
     # -----------------------------------------------------------------------------
-    option, _created = Affiliation.objects.get_or_create(
-        department=normalized_department,
-        line=normalized_line,
-        user_sdwt_prod=normalized_user_sdwt,
-    )
+    with transaction.atomic():
+        option = selectors.get_affiliation_option(
+            department=normalized_department,
+            line=normalized_line,
+            user_sdwt_prod=normalized_user_sdwt,
+        )
+        if option is None:
+            try:
+                option = Affiliation.objects.create(
+                    department=normalized_department,
+                    line=normalized_line,
+                    user_sdwt_prod=normalized_user_sdwt,
+                )
+            except IntegrityError:
+                option = selectors.get_affiliation_option(
+                    department=normalized_department,
+                    line=normalized_line,
+                    user_sdwt_prod=normalized_user_sdwt,
+                )
+                if option is None:
+                    raise
 
     return option
 
@@ -284,12 +301,15 @@ def submit_affiliation_reconfirm_response(
     # -----------------------------------------------------------------------------
     # 6) 변경 요청 생성 및 결과 반환
     # -----------------------------------------------------------------------------
+    # 예측값과 다르면 승인 대기 강제
+    force_pending = selected_user_sdwt != predicted
     response_payload, status_code = request_affiliation_change(
         user=user,
         option=option,
         to_user_sdwt_prod=selected_user_sdwt,
         effective_from=timezone.now(),
         timezone_name=timezone_name,
+        force_pending=force_pending,
     )
 
     if status_code in (200, 202):

@@ -930,6 +930,39 @@ class DroneSopPop3SubjectFilterTests(TestCase):
         called_mail_ids = mock_delete.call_args.kwargs.get("mail_ids")
         self.assertEqual(called_mail_ids, [1, 3])
 
+    @override_settings(
+        DRONE_SOP_DUMMY_MODE=True,
+        DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
+        DRONE_INCLUDE_SUBJECT_PREFIXES="[drone_sop]",
+    )
+    @patch("api.drone.services.sop_pop3._delete_dummy_mail_messages")
+    @patch("api.drone.services.sop_pop3._upsert_drone_sop_rows")
+    @patch("api.drone.services.sop_pop3._list_dummy_mail_messages")
+    @patch("api.drone.services.sop_pop3.selectors.load_drone_sop_custom_end_step_map", return_value={})
+    def test_dummy_mode_filters_subject_prefix(
+        self,
+        _mock_end_step: Mock,
+        mock_list: Mock,
+        mock_upsert: Mock,
+        mock_delete: Mock,
+    ) -> None:
+        """제목 prefix가 포함된 경우에도 필터가 동작하는지 확인합니다."""
+        mock_list.return_value = [
+            {"id": 1, "subject": "[drone_sop] alert-1", "body_html": "<data><lot_id>LOT-1</lot_id></data>"},
+            {"id": 2, "subject": "other", "body_html": "<data><lot_id>LOT-2</lot_id></data>"},
+        ]
+        mock_upsert.return_value = 1
+        mock_delete.side_effect = lambda *, url, mail_ids, timeout: len(mail_ids)
+
+        result = services.run_drone_sop_pop3_ingest_from_env()
+
+        self.assertEqual(result.matched_mails, 1)
+        self.assertEqual(result.upserted_rows, 1)
+        self.assertEqual(result.deleted_mails, 1)
+
+        called_mail_ids = mock_delete.call_args.kwargs.get("mail_ids")
+        self.assertEqual(called_mail_ids, [1])
+
 
 class DroneSopJiraHtmlDescriptionTests(TestCase):
     """Jira 설명 HTML 렌더링을 검증합니다."""

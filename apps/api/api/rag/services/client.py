@@ -308,7 +308,10 @@ def _build_search_payload(
     # -----------------------------------------------------------------------------
     # 2) 질의/개수 정규화
     # -----------------------------------------------------------------------------
-    normalized_query = str(query_text).strip()
+    if query_text is None:
+        normalized_query = ""
+    else:
+        normalized_query = str(query_text).strip()
     normalized_num = int(num_result_doc) if isinstance(num_result_doc, int) else 5
     if normalized_num <= 0:
         normalized_num = 5

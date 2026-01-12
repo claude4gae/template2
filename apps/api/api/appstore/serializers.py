@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 def _user_display_name(user) -> str:
-    """사용자 표시 이름(이름/username/email)을 계산합니다.
+    """사용자 표시 이름(username/이름/email)을 계산합니다.
 
     인자:
         user: Django 사용자 객체(또는 None).
@@ -36,6 +36,27 @@ def _user_display_name(user) -> str:
     username = getattr(user, "username", "") or ""
     if username:
         return username
+
+    # -----------------------------------------------------------------------------
+    # 3) 이름(first_name/last_name)
+    # -----------------------------------------------------------------------------
+    first_name = getattr(user, "first_name", "") or ""
+    last_name = getattr(user, "last_name", "") or ""
+    full_name = " ".join([part for part in [first_name, last_name] if part]).strip()
+    if full_name:
+        return full_name
+
+    # -----------------------------------------------------------------------------
+    # 4) email
+    # -----------------------------------------------------------------------------
+    email = getattr(user, "email", "") or ""
+    if email:
+        return email
+
+    # -----------------------------------------------------------------------------
+    # 5) 기본값
+    # -----------------------------------------------------------------------------
+    return ""
 
 
 def _user_knoxid(user) -> str:

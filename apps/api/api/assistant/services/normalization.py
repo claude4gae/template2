@@ -21,7 +21,7 @@ def normalize_history(raw_history: object, *, limit: int = DEFAULT_HISTORY_LIMIT
 
     인자:
         raw_history: 원본 history 입력(list 기대).
-        limit: 최대 메시지 개수.
+        limit: 최대 메시지 개수(최신 N개 유지).
 
     반환:
         {"role": str, "content": str} 형태의 메시지 리스트.
@@ -38,8 +38,9 @@ def normalize_history(raw_history: object, *, limit: int = DEFAULT_HISTORY_LIMIT
         return normalized
 
     # -----------------------------------------------------------------------------
-    # 2) 항목 정규화 및 상한 적용
+    # 2) 항목 정규화 및 최신 N개 유지
     # -----------------------------------------------------------------------------
+    safe_limit = max(1, limit)
     for entry in raw_history:
         if not isinstance(entry, dict):
             continue
@@ -52,9 +53,8 @@ def normalize_history(raw_history: object, *, limit: int = DEFAULT_HISTORY_LIMIT
         content_clean = content.strip()
         if role_clean and content_clean:
             normalized.append({"role": role_clean, "content": content_clean})
-
-        if len(normalized) >= limit:
-            break
+    if len(normalized) > safe_limit:
+        normalized = normalized[-safe_limit:]
 
     return normalized
 

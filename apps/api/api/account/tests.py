@@ -36,6 +36,8 @@ from api.account.selectors import (
 from api.account.services import (
     approve_affiliation_change,
     auto_approve_affiliation_from_snapshot,
+    ensure_self_access,
+    ensure_user_profile,
     get_account_overview,
     get_affiliation_change_requests,
     get_affiliation_overview,
@@ -1447,3 +1449,53 @@ class ExternalAffiliationSyncTests(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.user_sdwt_prod, "group-auto")
         self.assertFalse(user.requires_affiliation_reconfirm)
+
+
+class AccountProfileAccessServiceTests(TestCase):
+    """프로필/접근 권한 서비스 로직을 검증합니다."""
+
+    def test_ensure_user_profile_creates_and_reuses(self) -> None:
+        """ensure_user_profile이 프로필을 생성하고 재사용하는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S80001", password="test-password")
+
+        # -----------------------------------------------------------------------------
+        # 2) 프로필 생성 및 재호출
+        # -----------------------------------------------------------------------------
+        profile = ensure_user_profile(user)
+        profile_again = ensure_user_profile(user)
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.id, profile_again.id)
+        self.assertEqual(UserProfile.objects.filter(user=user).count(), 1)
+
+    def test_ensure_self_access_normalizes_user_sdwt_prod(self) -> None:
+        """ensure_self_access가 user_sdwt_prod 공백을 정규화하는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S80002", password="test-password")
+        user.user_sdwt_prod = "  group-a  "
+        user.save(update_fields=["user_sdwt_prod"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 접근 권한 보장
+        # -----------------------------------------------------------------------------
+        access = ensure_self_access(user, role="member")
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertIsNotNone(access)
+        self.assertEqual(access.user_sdwt_prod, "group-a")
+        self.assertEqual(
+            UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod="group-a").count(),
+            1,
+        )

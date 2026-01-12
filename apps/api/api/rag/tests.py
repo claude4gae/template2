@@ -61,3 +61,24 @@ class RagSearchServiceTests(SimpleTestCase):
             },
         )
         self.assertEqual(kwargs["timeout"], 12)
+
+    def test_search_rag_rejects_none_query(self) -> None:
+        """query_text가 None이면 ValueError가 발생해야 합니다."""
+        # -------------------------------------------------------------------------
+        # 1) 설정/HTTP 호출 patch
+        # -------------------------------------------------------------------------
+        with patch("api.rag.services.RAG_SEARCH_URL", "http://rag/search"), patch(
+            "api.rag.services.RAG_HEADERS", {"Content-Type": "application/json"}
+        ), patch("api.rag.services.RAG_PERMISSION_GROUPS", ["group-a"]), patch(
+            "api.rag.services.RAG_INDEX_DEFAULT", "rp-idx-default"
+        ), patch("api.rag.services.RAG_INDEX_LIST", []), patch(
+            "api.rag.services.requests.post"
+        ) as post:
+            # ---------------------------------------------------------------------
+            # 2) 실행 및 오류 검증
+            # ---------------------------------------------------------------------
+            with self.assertRaises(ValueError) as context:
+                search_rag(None)
+
+        self.assertIn("query_text is empty", str(context.exception))
+        post.assert_not_called()

@@ -4,7 +4,7 @@
 # - 불변 조건: settings에 OIDC 설정이 존재해야 합니다.
 # =============================================================================
 
-"""id_token-only OIDC 플로우를 사용하는 세션 기반 인증 엔드포인트 모음.
+"""id_token 전용 OIDC 플로우를 사용하는 세션 기반 인증 엔드포인트 모음.
 
 - 주요 대상: auth_config, auth_login, auth_callback, auth_me, auth_logout
 - 주요 엔드포인트/클래스: auth_* 함수형 뷰
@@ -13,12 +13,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
 import jwt
 from django.conf import settings
 from django.contrib.auth import get_user_model, login, logout
+from django.db import IntegrityError, transaction
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -28,6 +29,7 @@ from django.http import (
 from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 
+import api.auth.selectors as auth_selectors
 import api.account.services as account_services
 from api.common.services import resolve_frontend_target
 from .oidc_utils import (
@@ -327,6 +329,121 @@ def _extract_user_info_from_claims(claims: Dict[str, Any]) -> Dict[str, Optional
 
 
 # =============================================================================
+# 내부 유틸: 사용자 생성/갱신
+# =============================================================================
+
+
+def _apply_user_updates(*, user: Any, candidate_updates: Dict[str, Optional[str]]) -> List[str]:
+    """사용자 필드 변경사항을 적용하고 업데이트 필드 목록을 반환합니다.
+
+    입력:
+    - user: Django 사용자 객체
+    - candidate_updates: 변경 후보 필드/값 딕셔너리
+
+    반환:
+    - List[str]: 변경된 필드 목록
+
+    부작용:
+    - user 객체 필드를 갱신(저장은 하지 않음)
+
+    오류:
+    - 없음
+    """
+    # -----------------------------------------------------------------------------
+    # 1) 변경 후보 순회 및 필드 갱신
+    # -----------------------------------------------------------------------------
+    update_fields: List[str] = []
+    for field_name, value in candidate_updates.items():
+        if not value:
+            continue
+        if not hasattr(user, field_name):
+            continue
+        if getattr(user, field_name) == value:
+            continue
+        setattr(user, field_name, value)
+        update_fields.append(field_name)
+
+    # -----------------------------------------------------------------------------
+    # 2) 결과 반환
+    # -----------------------------------------------------------------------------
+    return update_fields
+
+
+def _upsert_user_from_claims(
+    *,
+    info: Dict[str, Optional[str]],
+    sabun: str,
+    knox_id: str,
+    timezone_name: str,
+) -> tuple[Any, bool]:
+    """클레임 정보 기반으로 사용자를 생성/갱신하고 접근 권한을 보장합니다.
+
+    입력:
+    - info: 클레임에서 추출한 사용자 정보
+    - sabun: 사번 문자열
+    - knox_id: 로그인 ID 문자열
+    - timezone_name: 시간대 이름
+
+    반환:
+    - tuple[Any, bool]: (사용자 객체, 생성 여부)
+
+    부작용:
+    - 사용자 생성/갱신
+    - 소속 자동 승인/접근 권한 보장
+
+    오류:
+    - IntegrityError: 사용자 생성 경합 발생 시 재시도 후에도 실패
+    """
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화 및 모델 준비
+    # -----------------------------------------------------------------------------
+    normalized_sabun = str(sabun)
+    normalized_knox_id = str(knox_id)
+    UserModel = get_user_model()
+    defaults = {key: value for key, value in info.items() if key != "sabun"}
+    defaults["knox_id"] = normalized_knox_id
+
+    # -----------------------------------------------------------------------------
+    # 2) 트랜잭션 내 사용자 조회/생성
+    # -----------------------------------------------------------------------------
+    with transaction.atomic():
+        user = auth_selectors.get_user_by_sabun(sabun=normalized_sabun)
+        created = False
+        if user is None:
+            try:
+                user = UserModel.objects.create(sabun=normalized_sabun, **defaults)
+                created = True
+            except IntegrityError:
+                user = auth_selectors.get_user_by_sabun(sabun=normalized_sabun)
+                if user is None:
+                    raise
+
+        # -----------------------------------------------------------------------------
+        # 3) 변경 필드 적용 및 저장
+        # -----------------------------------------------------------------------------
+        candidate_updates = {**info, "knox_id": normalized_knox_id}
+        candidate_updates.pop("sabun", None)
+        update_fields = _apply_user_updates(user=user, candidate_updates=candidate_updates)
+        if created or update_fields:
+            user.save(update_fields=update_fields or None)
+
+        # -----------------------------------------------------------------------------
+        # 4) 소속 자동 승인/접근 권한 보장
+        # -----------------------------------------------------------------------------
+        if created:
+            account_services.auto_approve_affiliation_from_snapshot(
+                user=user,
+                timezone_name=timezone_name,
+            )
+        account_services.ensure_self_access(user, role="member")
+
+    # -----------------------------------------------------------------------------
+    # 5) 결과 반환
+    # -----------------------------------------------------------------------------
+    return user, created
+
+
+# =============================================================================
 # 공개 엔드포인트
 # =============================================================================
 
@@ -544,44 +661,14 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
         return _redirect_with_error(target, "missing_loginid")
 
     # -----------------------------------------------------------------------------
-    # 9) 사용자 생성/갱신
+    # 9) 사용자 생성/갱신 및 소속 접근 권한 보장
     # -----------------------------------------------------------------------------
-    # Django 유저 생성/업데이트
-    UserModel = get_user_model()
-    defaults = {key: value for key, value in info.items() if key != "sabun"}
-    user, created = UserModel.objects.get_or_create(sabun=str(sabun), defaults=defaults)
-
-    update_fields = []
-
-    candidate_updates = {**info, "knox_id": str(knox_id)}
-    candidate_updates.pop("sabun", None)
-
-    for field_name, value in candidate_updates.items():
-        if not value:
-            continue
-        if not hasattr(user, field_name):
-            continue
-        if getattr(user, field_name) == value:
-            continue
-        setattr(user, field_name, value)
-        update_fields.append(field_name)
-
-    if created or update_fields:
-        user.save(update_fields=update_fields or None)
-
-    # -----------------------------------------------------------------------------
-    # 9-1) 최초 생성 사용자 외부 소속 자동 승인(가능한 경우에만)
-    # -----------------------------------------------------------------------------
-    if created:
-        account_services.auto_approve_affiliation_from_snapshot(
-            user=user,
-            timezone_name=str(getattr(settings, "TIME_ZONE", "UTC") or "UTC"),
-        )
-
-    # -----------------------------------------------------------------------------
-    # 9-2) 현재 소속 접근 권한 행 보장
-    # -----------------------------------------------------------------------------
-    account_services.ensure_self_access(user, role="member")
+    user, _created = _upsert_user_from_claims(
+        info=info,
+        sabun=str(sabun),
+        knox_id=str(knox_id),
+        timezone_name=str(getattr(settings, "TIME_ZONE", "UTC") or "UTC"),
+    )
 
     # -----------------------------------------------------------------------------
     # 10) 세션 로그인 및 리다이렉트

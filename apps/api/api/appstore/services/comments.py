@@ -11,7 +11,7 @@ from django.db import transaction
 from django.db.models import F
 from django.db.models.functions import Greatest
 
-from ..selectors import get_comment_by_id
+from ..selectors import get_comment_by_id, get_comment_like_count
 from ..models import AppStoreApp, AppStoreComment, AppStoreCommentLike
 
 
@@ -127,5 +127,5 @@ def toggle_comment_like(*, comment: AppStoreComment, user: Any) -> Tuple[bool, i
     # -----------------------------------------------------------------------------
     # 2) 최신 like_count 재조회
     # -----------------------------------------------------------------------------
-    comment.refresh_from_db(fields=["like_count"])
-    return liked, int(comment.like_count or 0)
+    like_count = get_comment_like_count(app_id=comment.app_id, comment_id=comment.pk)
+    return liked, like_count

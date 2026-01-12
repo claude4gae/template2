@@ -370,6 +370,25 @@ def normalize_id(value: str | None) -> str:
     return (value or "").strip().upper()
 
 
+def _clone_items(items: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    """더미 항목 리스트를 얕은 복사해 반환합니다.
+
+    입력:
+    - items: 원본 항목 리스트
+
+    반환:
+    - List[Dict[str, object]]: 복사된 항목 리스트
+
+    부작용:
+    - 없음(원본 보호)
+
+    오류:
+    - 없음
+    """
+
+    return [dict(item) for item in items]
+
+
 def list_lines() -> List[Dict[str, str]]:
     """라인 목록을 반환합니다.
 
@@ -386,7 +405,7 @@ def list_lines() -> List[Dict[str, str]]:
     - 없음
     """
 
-    return LINE_LIST
+    return _clone_items(LINE_LIST)
 
 
 def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
@@ -405,7 +424,8 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
     - 없음
     """
 
-    return SDWT_MAP.get(line_id, [])
+    line_key = normalize_id(line_id)
+    return _clone_items(SDWT_MAP.get(line_key, []))
 
 
 def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
@@ -425,7 +445,9 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
     - 없음
     """
 
-    return PRC_GROUPS.get((line_id, sdwt_id), [])
+    line_key = normalize_id(line_id)
+    sdwt_key = normalize_id(sdwt_id)
+    return _clone_items(PRC_GROUPS.get((line_key, sdwt_key), []))
 
 
 def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[str, str]]:
@@ -446,7 +468,10 @@ def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[
     - 없음
     """
 
-    return EQUIPMENTS.get((line_id, sdwt_id, prc_group), [])
+    line_key = normalize_id(line_id)
+    sdwt_key = normalize_id(sdwt_id)
+    prc_key = normalize_id(prc_group)
+    return _clone_items(EQUIPMENTS.get((line_key, sdwt_key, prc_key), []))
 
 
 def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
@@ -465,7 +490,11 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     - 없음
     """
 
-    return EQUIPMENT_INFO.get(eqp_id)
+    eqp_key = normalize_id(eqp_id)
+    info = EQUIPMENT_INFO.get(eqp_key)
+    if not info:
+        return None
+    return dict(info)
 
 
 def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]:
@@ -484,7 +513,9 @@ def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]
     - 없음
     """
 
-    return LOGS.get(eqp_id, {})
+    eqp_key = normalize_id(eqp_id)
+    logs = LOGS.get(eqp_key, {})
+    return {key: _clone_items(values) for key, values in logs.items()}
 
 
 def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
@@ -504,7 +535,9 @@ def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
     - 없음
     """
 
-    return get_logs_for_equipment(eqp_id=eqp_id).get(log_key, [])
+    eqp_key = normalize_id(eqp_id)
+    type_key = (log_key or "").strip().lower()
+    return _clone_items(LOGS.get(eqp_key, {}).get(type_key, []))
 
 
 def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
@@ -523,10 +556,11 @@ def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     - 없음
     """
 
-    eqp_logs = get_logs_for_equipment(eqp_id=eqp_id)
+    eqp_key = normalize_id(eqp_id)
+    eqp_logs = LOGS.get(eqp_key, {})
     merged: List[Dict[str, object]] = []
     for key in ("eqp", "tip", "ctttm", "racb", "jira", "event"):
-        merged.extend(eqp_logs.get(key, []))
+        merged.extend(_clone_items(eqp_logs.get(key, [])))
 
     merged.sort(key=lambda log: str(log.get("eventTime") or ""))
     return merged

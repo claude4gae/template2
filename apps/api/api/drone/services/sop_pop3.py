@@ -420,7 +420,7 @@ def _load_include_subjects(raw: Any) -> tuple[str, ...]:
 
 
 def _subject_matches(subject: str, include_subjects: Sequence[str]) -> bool:
-    """제목이 허용 목록에 포함되는지 확인합니다.
+    """제목이 허용된 prefix로 시작하는지 확인합니다.
 
     인자:
         subject: 메일 제목.
@@ -434,12 +434,20 @@ def _subject_matches(subject: str, include_subjects: Sequence[str]) -> bool:
     """
 
     # -------------------------------------------------------------------------
-    # 1) 제목 정규화 및 포함 여부 확인
+    # 1) 제목 정규화 및 prefix 매칭
     # -------------------------------------------------------------------------
     normalized_subject = subject.strip().lower()
     if not normalized_subject:
         return False
-    return normalized_subject in include_subjects
+    for prefix in include_subjects:
+        if not isinstance(prefix, str):
+            continue
+        normalized_prefix = prefix.strip().lower()
+        if not normalized_prefix:
+            continue
+        if normalized_subject.startswith(normalized_prefix):
+            return True
+    return False
 
 
 def _build_drone_sop_row(

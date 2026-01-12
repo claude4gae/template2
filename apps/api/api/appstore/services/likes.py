@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import F
 from django.db.models.functions import Greatest
 
+from .. import selectors
 from ..models import AppStoreApp, AppStoreLike
 
 
@@ -47,8 +48,8 @@ def toggle_like(*, app: AppStoreApp, user: Any) -> Tuple[bool, int]:
     # -----------------------------------------------------------------------------
     # 2) 최신 like_count 재조회
     # -----------------------------------------------------------------------------
-    app.refresh_from_db(fields=["like_count"])
-    return liked, int(app.like_count or 0)
+    like_count = selectors.get_app_like_count(app_id=app.pk)
+    return liked, like_count
 
 
 def increment_view_count(*, app: AppStoreApp) -> int:
@@ -74,5 +75,4 @@ def increment_view_count(*, app: AppStoreApp) -> int:
     # -----------------------------------------------------------------------------
     # 2) 최신 값 재조회
     # -----------------------------------------------------------------------------
-    app.refresh_from_db(fields=["view_count"])
-    return int(app.view_count or 0)
+    return selectors.get_app_view_count(app_id=app.pk)

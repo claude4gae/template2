@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ObjectDoesNotExist
 from django.test import TestCase
 from django.urls import reverse
 
@@ -75,3 +76,42 @@ class ActivityLogEndpointTests(TestCase):
         payload = response.json()
         self.assertEqual(len(payload["results"]), 1)
         self.assertEqual(payload["results"][0]["action"], "UPDATE")
+
+    def test_activity_logs_handles_missing_profile(self) -> None:
+        """프로필이 없는 사용자도 오류 없이 응답되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 프로필 제거(있다면)
+        # -----------------------------------------------------------------------------
+        try:
+            self.user.profile.delete()
+        except ObjectDoesNotExist:
+            pass
+        self.user.refresh_from_db()
+
+        # -----------------------------------------------------------------------------
+        # 2) ActivityLog 생성
+        # -----------------------------------------------------------------------------
+        ActivityLog.objects.create(
+            user=self.user,
+            action="VIEW",
+            path="/api/v1/activity/logs",
+            method="GET",
+            status_code=200,
+            metadata={"note": "ok"},
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 권한 부여 및 요청 수행
+        # -----------------------------------------------------------------------------
+        permission = Permission.objects.get(
+            content_type__app_label="activity",
+            codename="view_activitylog",
+        )
+        self.user.user_permissions.add(permission)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("activity-logs"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertIsNone(payload["results"][0]["role"])

@@ -59,7 +59,9 @@ def parse_datetime_value(value: str | None) -> datetime | None:
         return None
     dt = parse_datetime(value)
     if dt:
-        return dt
+        if timezone.is_naive(dt):
+            return timezone.make_aware(dt, timezone.utc)
+        return dt.astimezone(timezone.utc)
 
     # -----------------------------------------------------------------------------
     # 2) date 단독 입력 처리
