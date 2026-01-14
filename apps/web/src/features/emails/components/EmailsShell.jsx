@@ -24,9 +24,12 @@ import {
   buildSentUrl,
   getMailboxFromSearchParams,
   isSentMailbox,
+  isUnassignedMailbox,
   normalizeMailbox,
+  resolveUnassignedMailboxId,
   SENT_MAILBOX_ID,
   SENT_MAILBOX_LABEL,
+  UNASSIGNED_MAILBOX_LABEL,
 } from "../utils/mailbox"
 
 const INBOX_PREFIX = "/emails/inbox"
@@ -45,7 +48,16 @@ function buildLineOptions(lineSdwtOptions) {
   return Array.from(new Set(lineIds))
 }
 
-function buildAffiliationOptions(lineSdwtOptions, mailboxes, { includeSent = false } = {}) {
+function buildAffiliationOptions(
+  lineSdwtOptions,
+  mailboxes,
+  {
+    includeSent = false,
+    includeUnassigned = false,
+    unassignedMailboxId = "",
+    unassignedLabel = UNASSIGNED_MAILBOX_LABEL,
+  } = {},
+) {
   const lines = Array.isArray(lineSdwtOptions?.lines) ? lineSdwtOptions.lines : []
   const mailboxSet = new Set(mailboxes)
 
@@ -65,6 +77,17 @@ function buildAffiliationOptions(lineSdwtOptions, mailboxes, { includeSent = fal
         userSdwtProd,
       }))
   })
+
+  const normalizedUnassigned = normalizeMailbox(unassignedMailboxId)
+  if (includeUnassigned && normalizedUnassigned) {
+    options.unshift({
+      id: normalizedUnassigned,
+      label: unassignedLabel,
+      description: "미분류 메일함",
+      lineId: null,
+      userSdwtProd: normalizedUnassigned,
+    })
+  }
 
   if (includeSent) {
     options.unshift({
@@ -149,7 +172,12 @@ function EmailsShellLayout({
   const normalizedMailboxParam = normalizeMailbox(mailboxParam)
   const currentUserSdwtProd = normalizeMailbox(user?.user_sdwt_prod)
   const normalizedMailboxes = mailboxes.map(normalizeMailbox).filter(Boolean)
-  const validMailboxes = normalizedMailboxes.filter((mailbox) => !isSentMailbox(mailbox))
+  const baseMailboxes = normalizedMailboxes.filter((mailbox) => !isSentMailbox(mailbox))
+  const canViewUnassigned = Boolean(user?.is_superuser)
+  const unassignedMailboxId = canViewUnassigned ? resolveUnassignedMailboxId(baseMailboxes) : ""
+  const validMailboxes = canViewUnassigned
+    ? Array.from(new Set([...baseMailboxes, unassignedMailboxId].filter(Boolean)))
+    : baseMailboxes.filter((mailbox) => !isUnassignedMailbox(mailbox))
   const firstMailbox = validMailboxes[0] || ""
 
   const isSentRoute = pathname.startsWith(SENT_PREFIX)
@@ -168,7 +196,10 @@ function EmailsShellLayout({
   const navigationMailbox = isSentRoute ? (storedMailbox || fallbackMailbox) : fallbackMailbox
   const switcherMailbox = isSentRoute ? (storedMailbox || fallbackMailbox) : activeMailbox
 
-  const affiliationOptions = buildAffiliationOptions(lineSdwtOptions, validMailboxes)
+  const affiliationOptions = buildAffiliationOptions(lineSdwtOptions, validMailboxes, {
+    includeUnassigned: canViewUnassigned,
+    unassignedMailboxId,
+  })
   const currentLineId = lineContext?.lineId ?? null
   const setLineId = lineContext?.setLineId
   const switcherOption = affiliationOptions.find((item) => item.id === switcherMailbox)
@@ -245,7 +276,10 @@ function EmailsShellLayout({
     navigate(nextUrl)
   }
 
-  const navigation = buildNavigationConfig({ mailbox: navigationMailbox })
+  const navigation = buildNavigationConfig({
+    mailbox: navigationMailbox,
+    disableEmailMembers: isUnassignedMailbox(navigationMailbox),
+  })
 
   return (
     <SdwtProvider userSdwtProd={activeMailbox} onChange={handleSelectMailbox}>

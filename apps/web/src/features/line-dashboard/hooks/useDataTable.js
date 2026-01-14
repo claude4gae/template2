@@ -65,21 +65,22 @@ export function useDataTableState({ lineId }) {
   const [sorting, setSorting] = React.useState([])
 
   // 셀 편집: comment
-  const [commentDrafts, setCommentDrafts] = React.useState({})   // { [rowId]: "draft text" }
-  const [commentEditing, setCommentEditing] = React.useState({}) // { [rowId]: true }
+  const [commentDrafts, setCommentDrafts] = React.useState({})   // { [rowId]: "임시 텍스트" } 형태
+  const [commentEditing, setCommentEditing] = React.useState({}) // { [rowId]: true } 형태
 
   // 셀 편집: needtosend
-  const [needToSendDrafts, setNeedToSendDrafts] = React.useState({}) // { [rowId]: number }
+  const [needToSendDrafts, setNeedToSendDrafts] = React.useState({}) // { [rowId]: 숫자 } 형태
 
   // 셀 편집: instant_inform
-  const [instantInformDrafts, setInstantInformDrafts] = React.useState({}) // { [rowId]: number }
+  const [instantInformDrafts, setInstantInformDrafts] = React.useState({}) // { [rowId]: 숫자 } 형태
 
   // 업데이트 진행중/에러 상태: 키 형식은 `${rowId}:${field}`
-  const [updatingCells, setUpdatingCells] = React.useState({})  // { ["1:comment"]: true, ... }
+  const [updatingCells, setUpdatingCells] = React.useState({})  // { ["1:comment"]: true, ... } 형태
   const [updateErrors, setUpdateErrors] = React.useState({})    // { ["1:comment"]: "에러메시지", ... }
 
   // 셀 하이라이트/토스트 등 시각 피드백 훅
   const { cellIndicators, begin, finalize } = useCellIndicators()
+
   React.useEffect(() => {
     setCommentDrafts({})
     setCommentEditing({})
@@ -207,8 +208,8 @@ export function useDataTableState({ lineId }) {
   )
 
   /* ────────────────────────────────────────────────────────────────────────
-   * handleInstantInform: 단건 즉시인폼(=Jira 강제 생성)
-   *  - comment는 저장하고, Jira 생성 성공 시 send_jira/jira_key 등 서버 업데이트 값을 반영합니다.
+   * handleInstantInform: 단건 즉시인폼 체크 요청
+   *  - comment/instant_inform 값을 서버에 저장하고, 배치 처리 대상에 포함합니다.
    * ──────────────────────────────────────────────────────────────────────── */
   const handleInstantInform = React.useCallback(
     async (recordId, { comment }) => {
@@ -264,7 +265,14 @@ export function useDataTableState({ lineId }) {
         finalize(cellKeys, updateSucceeded ? "success" : "error")
       }
     },
-    [begin, finalize, setRows, setInstantInformDrafts, setUpdateErrors, setUpdatingCells]
+    [
+      begin,
+      finalize,
+      setInstantInformDrafts,
+      setRows,
+      setUpdateErrors,
+      setUpdatingCells,
+    ]
   )
 
   /* ────────────────────────────────────────────────────────────────────────

@@ -32,8 +32,8 @@ from .sop_jira import (
     DroneSopJiraCreateResult,
     _jira_session,
     _update_drone_sop_jira_status,
+    enqueue_drone_sop_jira_instant_inform,
     run_drone_sop_jira_create_from_env,
-    run_drone_sop_jira_instant_inform,
 )
 from .sop_pop3 import (
     DroneSopPop3Config,
@@ -72,8 +72,8 @@ __all__ = [
     "_upsert_drone_sop_rows",
     "create_early_inform_entry",
     "delete_early_inform_entry",
+    "enqueue_drone_sop_jira_instant_inform",
     "run_drone_sop_jira_create_from_env",
-    "run_drone_sop_jira_instant_inform",
     "run_drone_sop_pop3_ingest_from_env",
     "upsert_drone_sop_jira_user_template",
     "update_early_inform_entry",

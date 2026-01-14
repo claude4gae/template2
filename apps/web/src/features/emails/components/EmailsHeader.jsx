@@ -10,11 +10,11 @@ import {
 } from "@/components/ui/breadcrumb"
 import { ThemeControls } from "@/components/common"
 import { SidebarHeaderBar } from "@/components/layout"
-import { isSentMailbox, SENT_MAILBOX_LABEL } from "../utils/mailbox"
+import { getMailboxLabel } from "../utils/mailbox"
 
 export function EmailsHeader({ activeMailbox = "" }) {
   const trimmedMailbox = typeof activeMailbox === "string" ? activeMailbox.trim() : ""
-  const displayMailbox = isSentMailbox(trimmedMailbox) ? SENT_MAILBOX_LABEL : trimmedMailbox
+  const displayMailbox = getMailboxLabel(trimmedMailbox)
 
   return (
     <SidebarHeaderBar right={<ThemeControls />}>

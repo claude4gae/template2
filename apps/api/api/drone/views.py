@@ -153,7 +153,7 @@ class DroneEarlyInformView(APIView):
                     "userSdwt": user_sdwt_values,
                 }
             )
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to load drone_early_inform rows")
             return JsonResponse({"error": "Failed to load settings"}, status=500)
 
@@ -243,7 +243,7 @@ class DroneEarlyInformView(APIView):
 
         except services.DroneEarlyInformDuplicateError as exc:
             return JsonResponse({"error": str(exc)}, status=409)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to create drone_early_inform row")
             return JsonResponse({"error": "Failed to create entry"}, status=500)
 
@@ -352,7 +352,7 @@ class DroneEarlyInformView(APIView):
             return JsonResponse({"error": str(exc)}, status=404)
         except services.DroneEarlyInformDuplicateError as exc:
             return JsonResponse({"error": str(exc)}, status=409)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to update drone_early_inform row")
             return JsonResponse({"error": "Failed to update entry"}, status=500)
 
@@ -413,7 +413,7 @@ class DroneEarlyInformView(APIView):
 
         except services.DroneEarlyInformNotFoundError as exc:
             return JsonResponse({"error": str(exc)}, status=404)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to delete drone_early_inform row")
             return JsonResponse({"error": "Failed to delete entry"}, status=500)
 
@@ -733,7 +733,7 @@ class LineHistoryView(APIView):
             return JsonResponse(payload)
         except (ValueError, LookupError) as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to load history data")
             return JsonResponse({"error": "Failed to load history data"}, status=500)
 
@@ -764,34 +764,33 @@ class LineIdListView(APIView):
         # -----------------------------------------------------------------------------
         try:
             return JsonResponse({"lineIds": selectors.list_distinct_line_ids()})
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to load distinct line ids")
             return JsonResponse({"error": "Failed to load line options"}, status=500)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 class DroneSopInstantInformView(APIView):
-    """Line dashboard에서 호출하는 Drone SOP 단건 즉시인폼(=Jira 강제 생성)."""
+    """라인 대시보드에서 호출하는 Drone SOP 단건 즉시인폼 체크 요청."""
 
     permission_classes: tuple = ()
 
     def post(self, request: HttpRequest, sop_id: int, *args: object, **kwargs: object) -> JsonResponse:
-        """Drone SOP 단건 Jira 즉시 생성 요청을 처리합니다.
+        """Drone SOP 단건 즉시인폼 체크 요청을 처리합니다.
 
         요청 예시:
             예시 요청: POST /api/v1/line-dashboard/sop/123/instant-inform
             예시 바디: {"comment":"추가 코멘트"}
 
         반환:
-            예시 응답: 200 {"created": true, "alreadyInformed": false, "jiraKey": "...", ...}
+            예시 응답: 200 {"status": "queued", "queued": true, "alreadyInformed": false, "updated": {...}}
 
         부작용:
-            Jira 생성 및 drone_sop 상태 업데이트가 발생합니다.
+            즉시인폼 체크는 배치 실행 시 Jira 생성으로 이어집니다.
 
         오류:
             400: 입력 검증 오류
             401: 비인증
-            502: Jira 생성 실패
             500: 서버 오류
 
         snake_case/camelCase 호환:
@@ -825,39 +824,33 @@ class DroneSopInstantInformView(APIView):
         # 4) 서비스 호출 및 응답 구성
         # -----------------------------------------------------------------------------
         try:
-            result = services.run_drone_sop_jira_instant_inform(sop_id=sop_id, comment=comment)
+            result = services.enqueue_drone_sop_jira_instant_inform(sop_id=sop_id, comment=comment)
+            if result.already_informed:
+                status = "already_informed"
+            else:
+                status = "queued"
+
             set_activity_new_state(
                 request,
                 {
-                    "created": result.created,
+                    "status": status,
                     "already_informed": result.already_informed,
+                    "queued": result.queued,
                     "jira_key": result.jira_key,
-                    "skipped": result.skipped,
-                    "skip_reason": result.skip_reason,
                 },
             )
 
-            status = 200
-            if result.skipped and result.skip_reason == "already_running":
-                status = 409
             payload = {
-                "created": result.created,
+                "status": status,
                 "alreadyInformed": result.already_informed,
+                "queued": result.queued,
                 "jiraKey": result.jira_key,
                 "updated": result.updated_fields,
-                "skipped": result.skipped,
-                "skipReason": result.skip_reason,
             }
-            if status != 200:
-                payload["error"] = "Jira pipeline is already running"
-
-            return JsonResponse(payload, status=status)
+            return JsonResponse(payload, status=200)
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        except RuntimeError as exc:
-            logger.exception("Drone SOP instant inform failed")
-            return JsonResponse({"error": str(exc) or "Jira create failed"}, status=502)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Drone SOP instant inform failed")
             return JsonResponse({"error": "Drone SOP instant inform failed"}, status=500)
 
@@ -930,7 +923,7 @@ class DroneSopPop3IngestTriggerView(APIView):
             )
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to trigger drone SOP POP3 ingest")
             return JsonResponse({"error": "Drone SOP POP3 ingest failed"}, status=500)
 
@@ -1018,7 +1011,7 @@ class DroneSopJiraTriggerView(APIView):
             )
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # pragma: no cover - 방어적 로깅
+        except Exception:  # 방어적 로깅 (pragma: no cover)
             logger.exception("Failed to trigger drone SOP Jira create")
             return JsonResponse({"error": "Drone SOP Jira create failed"}, status=500)
 

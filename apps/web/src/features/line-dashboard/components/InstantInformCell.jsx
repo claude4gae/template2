@@ -17,10 +17,10 @@ import { makeCellKey } from "../utils/dataTableCellState"
 import { composeComment, splitComment } from "../utils/commentUtils"
 import { deriveFlagState } from "../utils/dataTableFlagState"
 
-function showInstantInformSuccessToast(jiraKey) {
-  toast.success("즉시 인폼 완료", {
-    description: jiraKey ? `Jira 이슈가 생성되었습니다. (${jiraKey})` : "Jira 이슈가 생성되었습니다.",
-    ...buildToastOptions({ intent: "success", duration: 2000 }),
+function showInstantInformQueuedToast() {
+  toast.info("즉시 인폼 체크 완료", {
+    description: "다음 배치 실행 시 Jira 이슈가 생성됩니다.",
+    ...buildToastOptions({ intent: "info", duration: 2200 }),
   })
 }
 
@@ -33,7 +33,7 @@ function showInstantInformErrorToast(message) {
 }
 
 function showAlreadyInformedToast() {
-  toast.info("이미 Inform 되었습니다.", {
+  toast.info("이미 Jira 전송 완료되었습니다.", {
     ...buildToastOptions({ intent: "info", duration: 2400 }),
   })
 }
@@ -108,7 +108,12 @@ export function InstantInformCell({
     try {
       const result = await meta.handleInstantInform(recordId, { comment: composedComment })
       if (result) {
-        showInstantInformSuccessToast(result?.jiraKey)
+        if (result?.alreadyInformed) {
+          showAlreadyInformedToast()
+          setIsDialogOpen(false)
+          return
+        }
+        showInstantInformQueuedToast()
         setIsDialogOpen(false)
         return
       }
@@ -134,8 +139,8 @@ export function InstantInformCell({
     : isError
       ? "즉시인폼 오류 상태"
       : isChecked
-        ? "즉시인폼 등록 완료"
-        : "즉시인폼 진행"
+        ? "즉시인폼 체크 완료"
+        : "즉시인폼 체크"
 
   return (
     <div className="inline-flex justify-center">
@@ -197,7 +202,7 @@ export function InstantInformCell({
           <DialogFooter className="flex items-start gap-2">
             <div className="flex flex-col mr-auto text-[11px] text-muted-foreground">
               <span>Enter: 저장  |  Shift+Enter: 줄바꿈</span>
-              <span className="text-primary">조건과 무관하게 Jira 이슈를 즉시 생성합니다.</span>
+              <span className="text-primary">체크 후 배치에서 Jira 이슈가 생성됩니다.</span>
             </div>
 
             <Button onClick={() => void handleConfirm()} disabled={isSaving}>

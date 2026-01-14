@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: Drone SOP Jira 연동 서비스
-# 주요 기능: Jira 이슈 생성(배치/즉시), 템플릿 렌더링
+# 주요 기능: Jira 이슈 생성(배치) 및 즉시인폼 체크, 템플릿 렌더링
 # 주요 가정: Jira/CTTTM 설정은 settings/env에서 주입됩니다.
 # =============================================================================
 """Drone SOP Jira 연동 헬퍼 모듈입니다."""
@@ -36,7 +36,6 @@ from .jira_templates import TEMPLATE_SOURCES
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass(frozen=True)
 class DroneSopJiraCreateResult:
     """Drone SOP Jira 생성 실행 결과."""
@@ -50,12 +49,10 @@ class DroneSopJiraCreateResult:
 
 @dataclass(frozen=True)
 class DroneSopInstantInformResult:
-    """Drone SOP 단건 즉시인폼(Jira 생성) 결과."""
+    """Drone SOP 단건 즉시인폼 요청 결과."""
 
-    created: bool = False
     already_informed: bool = False
-    skipped: bool = False
-    skip_reason: str | None = None
+    queued: bool = False
     jira_key: str | None = None
     updated_fields: dict[str, Any] = field(default_factory=dict)
 
@@ -831,249 +828,85 @@ def _update_drone_sop_jira_status(
     return int(updated or 0)
 
 
-def _drone_sop_model_to_row(sop: DroneSOP) -> dict[str, Any]:
-    """DroneSOP 모델을 dict 형태로 변환합니다.
-
-    인자:
-        sop: DroneSOP 인스턴스.
-
-    반환:
-        Jira 생성에 필요한 필드를 담은 dict.
-
-    부작용:
-        없음. 읽기 전용 변환입니다.
-    """
-
-    return {
-        "id": int(sop.id),
-        "line_id": sop.line_id,
-        "sdwt_prod": sop.sdwt_prod,
-        "sample_type": sop.sample_type,
-        "sample_group": sop.sample_group,
-        "eqp_id": sop.eqp_id,
-        "chamber_ids": sop.chamber_ids,
-        "lot_id": sop.lot_id,
-        "proc_id": sop.proc_id,
-        "ppid": sop.ppid,
-        "main_step": sop.main_step,
-        "metro_current_step": sop.metro_current_step,
-        "metro_steps": sop.metro_steps,
-        "metro_end_step": sop.metro_end_step,
-        "status": sop.status,
-        "knox_id": sop.knox_id,
-        "user_sdwt_prod": sop.user_sdwt_prod,
-        "comment": sop.comment,
-        "defect_url": sop.defect_url,
-        "needtosend": sop.needtosend,
-        "custom_end_step": sop.custom_end_step,
-    }
-
-
-def run_drone_sop_jira_instant_inform(
+def enqueue_drone_sop_jira_instant_inform(
     *,
     sop_id: int,
     comment: str | None = None,
 ) -> DroneSopInstantInformResult:
-    """DroneSOP 단건에 대해 조건 무시하고 Jira 이슈를 즉시 생성합니다.
-
-    - needtosend/status 조건을 검사하지 않습니다.
-    - Jira 생성에 성공하면 send_jira=1로 업데이트하여 배치 파이프라인에서 재생성되지 않게 합니다.
+    """Drone SOP 단건 즉시인폼 체크를 요청합니다.
 
     인자:
         sop_id: DroneSOP ID(드론 SOP ID).
         comment: 덮어쓸 코멘트(옵션).
 
     반환:
-        DroneSopInstantInformResult 결과 객체.
+        DroneSopInstantInformResult 결과 객체(queued/already_informed/updated_fields 포함).
 
     부작용:
-        - drone_sop 레코드(comment/instant_inform/send_jira/jira_key/inform_step/informed_at) 업데이트
-        - Jira API 호출
+        - comment/instant_inform/send_jira 상태 업데이트(필요 시)
 
     오류:
-        입력 검증 실패/매핑 누락/요청 실패 시 ValueError 또는 RuntimeError를 발생시킵니다.
+        입력 검증 실패 시 ValueError를 발생시킵니다.
     """
 
     # -------------------------------------------------------------------------
-    # 1) 입력/설정 검증
+    # 1) 입력 검증
     # -------------------------------------------------------------------------
     if sop_id <= 0:
         raise ValueError("sop_id must be a positive integer")
 
-    config = DroneJiraConfig.from_settings()
-    if not config.base_url:
-        raise ValueError("DRONE_JIRA_BASE_URL 미설정")
+    updated_fields: dict[str, Any] = {}
 
     # -------------------------------------------------------------------------
-    # 2) advisory lock 획득
+    # 2) 상태 업데이트(체크 + 코멘트)
     # -------------------------------------------------------------------------
-    lock_id = _lock_key("drone_sop_jira_create")
-    acquired = _try_advisory_lock(lock_id)
-    if not acquired:
-        return DroneSopInstantInformResult(skipped=True, skip_reason="already_running")
+    with transaction.atomic():
+        sop = selectors.get_drone_sop_for_update(sop_id=sop_id)
+        if sop is None:
+            raise ValueError("DroneSOP not found")
 
-    try:
-        # ---------------------------------------------------------------------
-        # 3) 대상 레코드 조회 및 이미 처리 여부 확인
-        # ---------------------------------------------------------------------
-        with transaction.atomic():
-            sop = selectors.get_drone_sop_for_update(sop_id=sop_id)
-            if sop is None:
-                raise ValueError("DroneSOP not found")
-
-            if comment is not None:
-                sop.comment = comment
-                sop.save(update_fields=["comment", "updated_at"])
-
-            send_jira_value = int(sop.send_jira or 0)
-            if send_jira_value > 0:
-                updated_fields: dict[str, Any] = {}
-                if comment is not None:
-                    updated_fields["comment"] = sop.comment
-                if sop.jira_key:
-                    updated_fields["jira_key"] = sop.jira_key
-                updated_fields["send_jira"] = sop.send_jira
-                updated_fields["instant_inform"] = sop.instant_inform
-                updated_fields["inform_step"] = sop.inform_step
-                updated_fields["informed_at"] = sop.informed_at.isoformat() if sop.informed_at else None
-                return DroneSopInstantInformResult(
-                    already_informed=True,
-                    jira_key=sop.jira_key,
-                    updated_fields=updated_fields,
-                )
-
-            # -----------------------------------------------------------------
-            # 4) Jira 요청에 사용할 row payload 구성
-            # -----------------------------------------------------------------
-            row_payload = _drone_sop_model_to_row(sop)
-
-        # ---------------------------------------------------------------------
-        # 5) CTTTM URL 보강 및 프로젝트/템플릿 결정
-        # ---------------------------------------------------------------------
-        _enrich_rows_with_ctttm_urls(rows=[row_payload], config=DroneCtttmConfig.from_settings())
-
-        user_sdwt_prod = row_payload.get("user_sdwt_prod")
-        if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
-            raise ValueError("user_sdwt_prod is required to resolve Jira project key")
-        normalized_user_sdwt_prod = user_sdwt_prod.strip()
-
-        project_key = selectors.get_drone_sop_jira_project_key_for_user_sdwt_prod(
-            user_sdwt_prod=normalized_user_sdwt_prod,
-        )
-        if not project_key:
-            raise ValueError(f"jira_key missing for user_sdwt_prod={normalized_user_sdwt_prod!r}")
-
-        template_keys_by_user_sdwt = selectors.list_drone_sop_jira_templates_by_user_sdwt_prods(
-            user_sdwt_prod_values={row_payload.get("user_sdwt_prod")},
-        )
-        template_key = _resolve_template_key_for_row(
-            row=row_payload,
-            template_keys_by_user_sdwt=template_keys_by_user_sdwt,
-        )
-        if not template_key:
-            logger.warning(
-                "Missing Jira template mapping for user_sdwt_prod=%s",
-                row_payload.get("user_sdwt_prod"),
-            )
-            with transaction.atomic():
-                DroneSOP.objects.filter(id=sop_id).update(send_jira=-1)
-            return DroneSopInstantInformResult(skipped=True, skip_reason="template_missing")
-
-        # ---------------------------------------------------------------------
-        # 6) Jira API 호출
-        # ---------------------------------------------------------------------
-        sess = _jira_session(config)
-        resp = sess.post(
-            config.create_url,
-            json={
-                "fields": _build_jira_issue_fields(
-                    row=row_payload,
-                    project_key=project_key,
-                    template_key=template_key,
-                    config=config,
-                )
-            },
-            timeout=(config.connect_timeout, config.read_timeout),
-        )
-        if resp.status_code != 201:
-            with transaction.atomic():
-                DroneSOP.objects.filter(id=sop_id).update(instant_inform=-1)
-            raise RuntimeError(f"Jira create failed ({resp.status_code})")
-
-        data = _safe_json(resp)
-        key = data.get("key") if isinstance(data, dict) else None
-        jira_key = key.strip() if isinstance(key, str) and key.strip() else None
-
-        now = timezone.now()
-        # ---------------------------------------------------------------------
-        # 7) 생성 결과 반영 및 상태 업데이트
-        # ---------------------------------------------------------------------
-        with transaction.atomic():
-            sop = selectors.get_drone_sop_for_update(sop_id=sop_id)
-            if sop is None:
-                raise ValueError("DroneSOP not found")
-
-            send_jira_value = int(sop.send_jira or 0)
-            if send_jira_value > 0:
-                updated_fields: dict[str, Any] = {
-                    "send_jira": sop.send_jira,
-                    "instant_inform": sop.instant_inform,
-                    "jira_key": sop.jira_key,
-                    "inform_step": sop.inform_step,
-                    "informed_at": sop.informed_at.isoformat() if sop.informed_at else None,
-                }
-                if comment is not None:
-                    updated_fields["comment"] = sop.comment
-                return DroneSopInstantInformResult(
-                    already_informed=True,
-                    jira_key=sop.jira_key,
-                    updated_fields=updated_fields,
-                )
-
-            sop.send_jira = 1
-            sop.instant_inform = 1
-            if jira_key:
-                sop.jira_key = jira_key
-            if sop.metro_current_step:
-                sop.inform_step = sop.metro_current_step
-            if sop.informed_at is None:
-                sop.informed_at = now
-            sop.save(
-                update_fields=[
-                    "send_jira",
-                    "instant_inform",
-                    "jira_key",
-                    "inform_step",
-                    "informed_at",
-                    "updated_at",
-                ]
-            )
-
-        updated_fields: dict[str, Any] = {
-            "send_jira": 1,
-            "instant_inform": 1,
-            "jira_key": jira_key,
-            "inform_step": row_payload.get("metro_current_step"),
-            "informed_at": now.isoformat(),
-        }
+        update_fields: list[str] = []
         if comment is not None:
-            updated_fields["comment"] = comment
+            sop.comment = comment
+            updated_fields["comment"] = sop.comment
+            update_fields.append("comment")
 
-        return DroneSopInstantInformResult(
-            created=True,
-            jira_key=jira_key,
-            updated_fields=updated_fields,
-        )
-    finally:
-        # ---------------------------------------------------------------------
-        # 8) advisory lock 해제
-        # ---------------------------------------------------------------------
-        if acquired:
-            _release_advisory_lock(lock_id)
+        send_jira_value = int(sop.send_jira or 0)
+        if send_jira_value > 0:
+            if update_fields:
+                sop.save(update_fields=[*update_fields, "updated_at"])
+            updated_fields["send_jira"] = sop.send_jira
+            updated_fields["instant_inform"] = sop.instant_inform
+            updated_fields["jira_key"] = sop.jira_key
+            updated_fields["inform_step"] = sop.inform_step
+            updated_fields["informed_at"] = sop.informed_at.isoformat() if sop.informed_at else None
+            return DroneSopInstantInformResult(
+                already_informed=True,
+                jira_key=sop.jira_key,
+                updated_fields=updated_fields,
+            )
+
+        if sop.send_jira is not None and int(sop.send_jira) < 0:
+            sop.send_jira = 0
+            updated_fields["send_jira"] = 0
+            update_fields.append("send_jira")
+
+        if sop.instant_inform is None or int(sop.instant_inform) != 1:
+            sop.instant_inform = 1
+            updated_fields["instant_inform"] = 1
+            update_fields.append("instant_inform")
+
+        if update_fields:
+            sop.save(update_fields=[*update_fields, "updated_at"])
+
+    return DroneSopInstantInformResult(
+        queued=True,
+        updated_fields=updated_fields,
+    )
 
 
 def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJiraCreateResult:
-    """send_jira=0 & needtosend=1 & status=COMPLETE 대상 Jira 이슈를 생성합니다.
+    """send_jira=0 이면서 (needtosend=1 & status=COMPLETE 또는 instant_inform=1)인 대상 Jira 이슈를 생성합니다.
 
     인자:
         limit: 최대 처리 건수(옵션).
@@ -1084,6 +917,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
     부작용:
         - Jira API 호출
         - drone_sop 상태 컬럼(send_jira/inform_step/jira_key/informed_at) 업데이트
+        - 즉시인폼 실패 시 instant_inform=-1 업데이트
 
     오류:
         설정 누락 시 ValueError가 발생할 수 있습니다.
@@ -1131,6 +965,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
             )
             with transaction.atomic():
                 DroneSOP.objects.filter(id__in=missing_ids).update(send_jira=-1)
+                DroneSOP.objects.filter(id__in=missing_ids, instant_inform=1).update(instant_inform=-1)
 
         template_key_by_id, missing_template_ids = _resolve_template_keys_for_rows(rows=rows)
         if missing_template_ids:
@@ -1151,6 +986,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
             )
             with transaction.atomic():
                 DroneSOP.objects.filter(id__in=missing_template_ids).update(send_jira=-1)
+                DroneSOP.objects.filter(id__in=missing_template_ids, instant_inform=1).update(instant_inform=-1)
 
         # ---------------------------------------------------------------------
         # 4) 전송 대상 필터링 및 CTTTM URL 보강
@@ -1170,26 +1006,48 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         # ---------------------------------------------------------------------
         # 5) Jira API 호출(벌크/단건)
         # ---------------------------------------------------------------------
-        sess = _jira_session(config)
-        if config.use_bulk_api:
-            done_ids, key_by_id = _bulk_create_jira_issues(
-                rows=rows_to_send,
-                config=config,
-                session=sess,
-                project_key_by_id=project_key_by_id,
-                template_key_by_id=template_key_by_id,
-            )
-        else:
-            done_ids, key_by_id = _single_create_jira_issues(
-                rows=rows_to_send,
-                config=config,
-                session=sess,
-                project_key_by_id=project_key_by_id,
-                template_key_by_id=template_key_by_id,
-            )
+        instant_inform_ids: list[int] = []
+        for row in rows_to_send:
+            rid = row.get("id")
+            if isinstance(rid, int) and row.get("instant_inform") == 1:
+                instant_inform_ids.append(rid)
+
+        try:
+            sess = _jira_session(config)
+            if config.use_bulk_api:
+                done_ids, key_by_id = _bulk_create_jira_issues(
+                    rows=rows_to_send,
+                    config=config,
+                    session=sess,
+                    project_key_by_id=project_key_by_id,
+                    template_key_by_id=template_key_by_id,
+                )
+            else:
+                done_ids, key_by_id = _single_create_jira_issues(
+                    rows=rows_to_send,
+                    config=config,
+                    session=sess,
+                    project_key_by_id=project_key_by_id,
+                    template_key_by_id=template_key_by_id,
+                )
+        except Exception:
+            if instant_inform_ids:
+                with transaction.atomic():
+                    DroneSOP.objects.filter(id__in=instant_inform_ids, instant_inform=1).update(instant_inform=-1)
+            raise
 
         # ---------------------------------------------------------------------
-        # 6) 상태 업데이트 및 결과 반환
+        # 6) 실패한 즉시인폼 상태 반영
+        # ---------------------------------------------------------------------
+        if instant_inform_ids:
+            done_id_set = set(done_ids)
+            failed_instant_ids = [rid for rid in instant_inform_ids if rid not in done_id_set]
+            if failed_instant_ids:
+                with transaction.atomic():
+                    DroneSOP.objects.filter(id__in=failed_instant_ids, instant_inform=1).update(instant_inform=-1)
+
+        # ---------------------------------------------------------------------
+        # 7) 상태 업데이트 및 결과 반환
         # ---------------------------------------------------------------------
         updated = _update_drone_sop_jira_status(done_ids=done_ids, rows=rows_to_send, key_by_id=key_by_id)
         return DroneSopJiraCreateResult(
@@ -1199,7 +1057,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         )
     finally:
         # ---------------------------------------------------------------------
-        # 7) advisory lock 해제
+        # 8) advisory lock 해제
         # ---------------------------------------------------------------------
         if acquired:
             _release_advisory_lock(lock_id)

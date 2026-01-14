@@ -132,12 +132,15 @@ export const NAVIGATION_CONFIG = Object.freeze({
   ],
 })
 
-export function buildNavigationConfig({ mailbox } = {}) {
+export function buildNavigationConfig({ mailbox, disableEmailMembers = false } = {}) {
   const trimmedMailbox = normalizeMailbox(mailbox)
   if (!trimmedMailbox) return NAVIGATION_CONFIG
 
   const inboxUrl = buildMailboxUrl(trimmedMailbox)
   const membersUrl = buildMembersUrl(trimmedMailbox)
+  const membersItem = disableEmailMembers
+    ? { ...EMAIL_NAV_ITEMS[2], url: membersUrl, disabled: true }
+    : { ...EMAIL_NAV_ITEMS[2], url: membersUrl }
 
   const emailsGroup = {
     ...EMAILS_GROUP_BASE,
@@ -145,7 +148,7 @@ export function buildNavigationConfig({ mailbox } = {}) {
     items: [
       { ...EMAIL_NAV_ITEMS[0], url: inboxUrl },
       EMAIL_NAV_ITEMS[1],
-      { ...EMAIL_NAV_ITEMS[2], url: membersUrl },
+      membersItem,
     ],
   }
 

@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 from django.db import connection
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 import api.account.selectors as account_selectors
 from api.common.services import DEFAULT_TABLE, DIMENSION_CANDIDATES, LINE_SDWT_TABLE_NAME, SAFE_IDENTIFIER
@@ -188,8 +188,7 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
 
     조건:
         - send_jira = 0 (미전송)
-        - needtosend = 1 (전송 필요)
-        - status = 'COMPLETE' (완료 상태)
+        - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
 
     인자:
         limit: 최대 조회 건수(옵션).
@@ -204,7 +203,11 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
     # -----------------------------------------------------------------------------
     # 1) 대상 쿼리 구성
     # -----------------------------------------------------------------------------
-    qs = DroneSOP.objects.filter(send_jira=0, needtosend=1, status="COMPLETE").order_by("id")
+    qs = (
+        DroneSOP.objects.filter(send_jira=0)
+        .filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+        .order_by("id")
+    )
     if isinstance(limit, int) and limit > 0:
         qs = qs[:limit]
 
@@ -232,6 +235,7 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
         "comment",
         "defect_url",
         "needtosend",
+        "instant_inform",
         "custom_end_step",
     ]
 

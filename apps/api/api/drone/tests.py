@@ -150,7 +150,7 @@ class DroneSopJiraCandidateTests(TestCase):
     """Jira 후보 조회 로직을 검증합니다."""
 
     def test_list_drone_sop_jira_candidates_filters_rows(self) -> None:
-        """send_jira/needtosend/status 조건이 반영되는지 확인합니다."""
+        """send_jira/needtosend/status/instant_inform 조건이 반영되는지 확인합니다."""
         DroneSOP.objects.create(
             line_id="L1",
             eqp_id="EQP1",
@@ -171,10 +171,21 @@ class DroneSopJiraCandidateTests(TestCase):
             needtosend=1,
             send_jira=0,
         )
+        DroneSOP.objects.create(
+            line_id="L3",
+            eqp_id="EQP3",
+            chamber_ids="1",
+            lot_id="LOT.3",
+            main_step="MS",
+            status="IN_PROGRESS",
+            needtosend=0,
+            instant_inform=1,
+            send_jira=0,
+        )
 
         rows = selectors.list_drone_sop_jira_candidates()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["line_id"], "L1")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["line_id"] for row in rows}, {"L1", "L3"})
 
 
 class DroneSopJiraUpdateTests(TestCase):
@@ -209,30 +220,10 @@ class DroneSopJiraUpdateTests(TestCase):
 
 
 class DroneSopInstantInformTests(TestCase):
-    """즉시 인폼(Jira 강제 생성) 로직을 검증합니다."""
-    @override_settings(
-        DRONE_JIRA_BASE_URL="http://example.local/jira",
-        DRONE_JIRA_USE_BULK_API=False,
-    )
-    @patch("api.drone.services.sop_jira._jira_session")
-    def test_instant_inform_creates_jira_even_when_not_candidate(self, mock_session: Mock) -> None:
-        """후보 조건을 무시하고 Jira가 생성되는지 확인합니다."""
-        session = Mock()
-        resp = Mock(status_code=201)
-        resp.json.return_value = {"key": "DUMMY-123"}
-        session.post.return_value = resp
-        mock_session.return_value = session
+    """즉시 인폼 요청 로직을 검증합니다."""
 
-        account_services.ensure_affiliation_option(
-            department="D",
-            line="L1",
-            user_sdwt_prod="SDWT",
-        )
-        DroneSopJiraUserTemplate.objects.create(
-            user_sdwt_prod="SDWT",
-            template_key="line_a",
-            jira_key="DUMMY",
-        )
+    def test_enqueue_instant_inform_marks_requested(self) -> None:
+        """즉시 인폼 체크 요청 시 instant_inform/send_jira 값이 갱신되는지 확인합니다."""
         row = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
@@ -243,23 +234,48 @@ class DroneSopInstantInformTests(TestCase):
             main_step="MS",
             status="IN_PROGRESS",
             needtosend=0,
-            send_jira=0,
-            metro_current_step="ST001",
+            send_jira=-1,
+            instant_inform=-1,
+            comment="base",
         )
 
-        result = services.run_drone_sop_jira_instant_inform(sop_id=int(row.id), comment="hello")
-        self.assertTrue(result.created)
-        self.assertEqual(result.jira_key, "DUMMY-123")
-
-        session.post.assert_called_once()
-        sent_payload = session.post.call_args.kwargs.get("json") or {}
-        self.assertEqual(sent_payload.get("fields", {}).get("project", {}).get("key"), "DUMMY")
+        result = services.enqueue_drone_sop_jira_instant_inform(sop_id=int(row.id), comment="hello")
+        self.assertTrue(result.queued)
+        self.assertFalse(result.already_informed)
+        self.assertEqual(result.updated_fields.get("comment"), "hello")
+        self.assertEqual(result.updated_fields.get("instant_inform"), 1)
+        self.assertEqual(result.updated_fields.get("send_jira"), 0)
 
         refreshed = DroneSOP.objects.get(id=row.id)
-        self.assertEqual(refreshed.send_jira, 1)
-        self.assertEqual(refreshed.instant_inform, 1)
-        self.assertEqual(refreshed.jira_key, "DUMMY-123")
         self.assertEqual(refreshed.comment, "hello")
+        self.assertEqual(refreshed.instant_inform, 1)
+        self.assertEqual(refreshed.send_jira, 0)
+
+    def test_enqueue_instant_inform_returns_already_informed(self) -> None:
+        """이미 Jira 전송된 항목은 already_informed로 응답하는지 확인합니다."""
+        row = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            send_jira=1,
+            instant_inform=0,
+            jira_key="JIRA-1",
+        )
+
+        result = services.enqueue_drone_sop_jira_instant_inform(sop_id=int(row.id), comment="updated")
+        self.assertTrue(result.already_informed)
+        self.assertFalse(result.queued)
+        self.assertEqual(result.jira_key, "JIRA-1")
+        self.assertEqual(result.updated_fields.get("comment"), "updated")
+
+        refreshed = DroneSOP.objects.get(id=row.id)
+        self.assertEqual(refreshed.comment, "updated")
 
 
 class DroneEndpointTests(TestCase):
@@ -314,16 +330,14 @@ class DroneEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["lineIds"], ["L1"])
 
-    @patch("api.drone.views.services.run_drone_sop_jira_instant_inform")
+    @patch("api.drone.views.services.enqueue_drone_sop_jira_instant_inform")
     def test_drone_sop_instant_inform(self, mock_service) -> None:
         """즉시 인폼 API가 정상 응답하는지 확인합니다."""
         mock_service.return_value = SimpleNamespace(
-            created=True,
             already_informed=False,
+            queued=True,
             jira_key="JIRA-1",
-            updated_fields=[],
-            skipped=False,
-            skip_reason=None,
+            updated_fields={},
         )
         response = self.client.post(
             reverse("drone-sop-instant-inform", kwargs={"sop_id": 123}),
@@ -331,6 +345,7 @@ class DroneEndpointTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("status"), "queued")
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
     @patch("api.drone.views.services.run_drone_sop_pop3_ingest_from_env")
@@ -366,115 +381,6 @@ class DroneEndpointTests(TestCase):
             HTTP_AUTHORIZATION="Bearer token",
         )
         self.assertEqual(response.status_code, 200)
-
-    @override_settings(
-        DRONE_JIRA_BASE_URL="http://example.local/jira",
-        DRONE_JIRA_USE_BULK_API=False,
-    )
-    @patch("api.drone.services.sop_jira._jira_session")
-    def test_instant_inform_marks_missing_template_as_failed(self, mock_session: Mock) -> None:
-        """템플릿 누락 시 실패로 마킹되는지 확인합니다."""
-        account_services.ensure_affiliation_option(
-            department="D",
-            line="L1",
-            user_sdwt_prod="SDWT",
-        )
-        DroneSopJiraUserTemplate.objects.create(user_sdwt_prod="SDWT", jira_key="DUMMY")
-        row = DroneSOP.objects.create(
-            line_id="L1",
-            sdwt_prod="SDWT",
-            user_sdwt_prod="SDWT",
-            eqp_id="EQP1",
-            chamber_ids="1",
-            lot_id="LOT.1",
-            main_step="MS",
-            status="IN_PROGRESS",
-            needtosend=0,
-            send_jira=0,
-            metro_current_step="ST001",
-        )
-
-        result = services.run_drone_sop_jira_instant_inform(sop_id=int(row.id))
-        self.assertTrue(result.skipped)
-        self.assertEqual(result.skip_reason, "template_missing")
-        mock_session.assert_not_called()
-
-        refreshed = DroneSOP.objects.get(id=row.id)
-        self.assertEqual(refreshed.send_jira, -1)
-
-    @override_settings(
-        DRONE_JIRA_BASE_URL="http://example.local/jira",
-        DRONE_JIRA_USE_BULK_API=False,
-    )
-    @patch("api.drone.services.sop_jira._jira_session")
-    def test_instant_inform_uses_user_template_override(self, mock_session: Mock) -> None:
-        """user_sdwt_prod 템플릿 매핑이 적용되는지 확인합니다."""
-        session = Mock()
-        resp = Mock(status_code=201)
-        resp.json.return_value = {"key": "DUMMY-321"}
-        session.post.return_value = resp
-        mock_session.return_value = session
-
-        account_services.ensure_affiliation_option(
-            department="D",
-            line="L1",
-            user_sdwt_prod="SDWT",
-        )
-        DroneSopJiraUserTemplate.objects.create(
-            user_sdwt_prod="SDWT",
-            template_key="line_a",
-            jira_key="DUMMY",
-        )
-        row = DroneSOP.objects.create(
-            line_id="L1",
-            sdwt_prod="SDWT",
-            user_sdwt_prod="SDWT",
-            eqp_id="EQP1",
-            chamber_ids="1",
-            lot_id="LOT.1",
-            main_step="MS",
-            status="IN_PROGRESS",
-            needtosend=0,
-            send_jira=0,
-            metro_current_step="ST001",
-        )
-
-        result = services.run_drone_sop_jira_instant_inform(sop_id=int(row.id))
-        self.assertTrue(result.created)
-        self.assertEqual(result.jira_key, "DUMMY-321")
-
-        refreshed = DroneSOP.objects.get(id=row.id)
-        self.assertEqual(refreshed.send_jira, 1)
-
-    @override_settings(
-        DRONE_JIRA_BASE_URL="http://example.local/jira",
-        DRONE_JIRA_USE_BULK_API=False,
-    )
-    @patch("api.drone.services.sop_jira._jira_session")
-    def test_instant_inform_does_not_create_duplicate(self, mock_session: Mock) -> None:
-        """이미 생성된 이슈는 중복 생성하지 않는지 확인합니다."""
-        row = DroneSOP.objects.create(
-            line_id="L1",
-            eqp_id="EQP1",
-            chamber_ids="1",
-            lot_id="LOT.1",
-            main_step="MS",
-            status="COMPLETE",
-            needtosend=1,
-            send_jira=1,
-            jira_key="DUMMY-9",
-        )
-
-        result = services.run_drone_sop_jira_instant_inform(sop_id=int(row.id), comment="updated")
-        self.assertTrue(result.already_informed)
-        self.assertEqual(result.jira_key, "DUMMY-9")
-        mock_session.assert_not_called()
-
-        refreshed = DroneSOP.objects.get(id=row.id)
-        self.assertEqual(refreshed.send_jira, 1)
-        self.assertEqual(refreshed.jira_key, "DUMMY-9")
-        self.assertEqual(refreshed.comment, "updated")
-
 
 class DroneJiraKeyEndpointTests(TestCase):
     """Jira 키/템플릿 키 엔드포인트를 검증합니다."""
@@ -762,6 +668,73 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         self.assertEqual(refreshed1.send_jira, 1)
         self.assertEqual(refreshed2.send_jira, -1)
+
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_JIRA_USE_BULK_API=False,
+    )
+    @patch("api.drone.services.sop_jira._jira_session")
+    @patch("api.drone.services.sop_jira._single_create_jira_issues")
+    def test_jira_create_marks_instant_inform_failed_when_create_fails(
+        self,
+        mock_single_create: Mock,
+        mock_session: Mock,
+    ) -> None:
+        """즉시인폼 대상이 생성 실패 시 instant_inform이 실패로 표시되는지 확인합니다."""
+        mock_session.return_value = Mock()
+
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT1",
+            template_key="line_a",
+            jira_key="PROJ1",
+        )
+        DroneSopJiraUserTemplate.objects.create(
+            user_sdwt_prod="SDWT2",
+            template_key="line_a",
+            jira_key="PROJ2",
+        )
+
+        instant = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            status="IN_PROGRESS",
+            needtosend=0,
+            send_jira=0,
+            instant_inform=1,
+            metro_current_step="ST001",
+        )
+        normal = DroneSOP.objects.create(
+            line_id="L2",
+            sdwt_prod="SDWT2",
+            user_sdwt_prod="SDWT2",
+            eqp_id="EQP2",
+            chamber_ids="1",
+            lot_id="LOT.2",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            send_jira=0,
+            metro_current_step="ST002",
+        )
+
+        mock_single_create.return_value = ([normal.id], {normal.id: "PROJ2-1"})
+
+        result = services.run_drone_sop_jira_create_from_env()
+        self.assertEqual(result.candidates, 2)
+        self.assertEqual(result.created, 1)
+
+        refreshed_instant = DroneSOP.objects.get(id=instant.id)
+        refreshed_normal = DroneSOP.objects.get(id=normal.id)
+
+        self.assertEqual(refreshed_instant.instant_inform, -1)
+        self.assertEqual(refreshed_instant.send_jira, 0)
+        self.assertEqual(refreshed_normal.send_jira, 1)
+        mock_single_create.assert_called_once()
 
 class DroneTriggerAuthTests(TestCase):
     """트리거 엔드포인트 인증을 검증합니다."""

@@ -6,19 +6,22 @@ import { AccessListCard, MailboxAccessCard, useAccountOverview } from "@/feature
 
 import { EmailMailboxMembersDatatable } from "../components/EmailMailboxMembersDatatable"
 import { useEmailMailboxMembers } from "../hooks/useEmailMailboxMembers"
-import { getMailboxFromSearchParams } from "../utils/mailbox"
+import { getMailboxFromSearchParams, getMailboxLabel, isUnassignedMailbox } from "../utils/mailbox"
 
 export function EmailMembersPage() {
   const [searchParams] = useSearchParams()
   const mailboxParam = getMailboxFromSearchParams(searchParams)
+  const mailboxLabel = getMailboxLabel(mailboxParam)
+  const isUnassigned = isUnassignedMailbox(mailboxParam)
   const hasMailbox = Boolean(mailboxParam)
+  const canLoadMembers = hasMailbox && !isUnassigned
 
   const {
     members,
     isLoading,
     isError,
     error,
-  } = useEmailMailboxMembers(mailboxParam, { enabled: hasMailbox })
+  } = useEmailMailboxMembers(mailboxParam, { enabled: canLoadMembers })
 
   const {
     data: accountOverview,
@@ -27,7 +30,7 @@ export function EmailMembersPage() {
     error: accountError,
   } = useAccountOverview()
 
-  const safeMembers = Array.isArray(members) ? members : []
+  const safeMembers = canLoadMembers && Array.isArray(members) ? members : []
   const affiliation = accountOverview?.affiliation
   const mailboxAccess = accountOverview?.mailboxAccess || []
 
@@ -38,7 +41,9 @@ export function EmailMembersPage() {
         <h1 className="text-2xl font-semibold text-foreground">Members</h1>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
-            {hasMailbox ? `메일함: ${mailboxParam}` : "왼쪽에서 메일함(SDWT)을 선택하세요."}
+            {hasMailbox
+              ? `메일함: ${mailboxLabel || mailboxParam}`
+              : "왼쪽에서 메일함(SDWT)을 선택하세요."}
           </p>
           <Badge variant="secondary">{safeMembers.length}명</Badge>
         </div>
@@ -74,6 +79,12 @@ export function EmailMembersPage() {
             <div className="flex min-h-0 flex-col rounded-lg border bg-card p-6">
               <p className="text-sm text-muted-foreground">
                 메일함을 선택하면 멤버 목록을 보여줍니다.
+              </p>
+            </div>
+          ) : isUnassigned ? (
+            <div className="flex min-h-0 flex-col rounded-lg border bg-card p-6">
+              <p className="text-sm text-muted-foreground">
+                미분류 메일함은 멤버 목록을 제공하지 않습니다.
               </p>
             </div>
           ) : isLoading ? (

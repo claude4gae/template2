@@ -18,13 +18,27 @@ import {
 } from "@/components/ui/sidebar"
 
 function LeafItem({ item }) {
+  const content = (
+    <>
+      {item.icon && <item.icon />}
+      <span>{item.title}</span>
+    </>
+  )
+
+  if (item.disabled) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton type="button" disabled aria-disabled="true">
+          {content}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    )
+  }
+
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild tooltip={item.title}>
-        <Link to={item.url || "#"}>
-          {item.icon && <item.icon />}
-          <span>{item.title}</span>
-        </Link>
+        <Link to={item.url || "#"}>{content}</Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
@@ -48,11 +62,17 @@ function GroupItem({ item }) {
           <SidebarMenuSub>
             {children.map((sub) => (
               <SidebarMenuSubItem key={`${sub.title}-${sub.url || "no-url"}`}>
-                <SidebarMenuSubButton asChild>
-                  <Link to={sub.url || "#"}>
+                {sub.disabled ? (
+                  <SidebarMenuSubButton asChild aria-disabled="true" tabIndex={-1}>
                     <span>{sub.title}</span>
-                  </Link>
-                </SidebarMenuSubButton>
+                  </SidebarMenuSubButton>
+                ) : (
+                  <SidebarMenuSubButton asChild>
+                    <Link to={sub.url || "#"}>
+                      <span>{sub.title}</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                )}
               </SidebarMenuSubItem>
             ))}
           </SidebarMenuSub>
