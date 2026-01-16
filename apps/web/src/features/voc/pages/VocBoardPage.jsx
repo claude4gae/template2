@@ -1,6 +1,7 @@
 // 파일 경로: src/features/voc/pages/VocBoardPage.jsx
 // VOC 게시판: 새 글 작성, 답변, 상태 관리, 권한 기반 삭제를 제공하는 클라이언트 사이드 UI
 import * as React from "react"
+import { useOutletContext } from "react-router-dom"
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,9 +16,8 @@ import {
   Trash2,
 } from "lucide-react"
 
-import { useAuth } from "@/lib/auth"
-import { Badge } from "components/ui/badge"
-import { Button } from "components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -25,7 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "components/ui/input"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -43,9 +43,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { STATUS_OPTIONS } from "../utils/constants"
+import { APP_CATEGORIES, DEFAULT_APP_CATEGORY, STATUS_OPTIONS } from "../utils/constants"
 import { RichTextEditor } from "../components/RichTextEditor"
-import { useVocBoardState } from "../hooks/useVocBoardState"
 import { formatTimestamp, sanitizeContentHtml, hasMeaningfulContent } from "../utils"
 import "../utils/quill.css"
 import "quill/dist/quill.snow.css"
@@ -117,23 +116,11 @@ function PostContent({ content, className = "", allowResize = false }) {
 }
 
 export function VocBoardPage() {
-  const { user } = useAuth()
-  const currentUserName = user?.username || user?.email || "로그인 사용자"
-  const currentUserRoles = Array.isArray(user?.roles) ? user.roles : []
-  const currentUser = {
-    id: user?.id || user?.email || currentUserName,
-    name: currentUserName,
-    roles: currentUserRoles,
-  }
-  const isAdmin = currentUserRoles.some((role) => {
-    if (typeof role !== "string") return false
-    const lower = role.toLowerCase()
-    return lower === "admin" || lower === "administrator"
-  })
-
   const {
     statusCounts,
     statusFilter,
+    appFilter,
+    isMyPostsOnly,
     filteredPosts,
     visiblePosts,
     pagination,
@@ -154,6 +141,7 @@ export function VocBoardPage() {
     updateStatus,
     selectPost,
     toggleStatusFilter,
+    toggleMyPostsOnly,
     changePageSize,
     nextPage,
     prevPage,
@@ -168,12 +156,20 @@ export function VocBoardPage() {
     isUpdating,
     isRefreshing,
     isReplying,
-  } = useVocBoardState({ currentUser, isAdmin }) // 데이터 로직은 훅으로 모아 UI는 렌더링에 집중
+  } = useOutletContext()
 
   const totalPosts = Object.values(statusCounts || {}).reduce(
     (sum, count) => sum + (Number.isFinite(count) ? count : 0),
     0,
   )
+  const appFilterLabel = appFilter || "전체"
+
+  const handleCreateOpenChange = (open) => {
+    setIsCreateOpen(open)
+    if (open) {
+      updateForm("app", appFilter || form.app || DEFAULT_APP_CATEGORY)
+    }
+  }
 
   const handleCreatePost = React.useCallback(
     async (event) => {
@@ -242,7 +238,8 @@ export function VocBoardPage() {
     [sanitizedDraft],
   )
 
-  const isSubmitDisabled = isSubmitting || !form.title.trim() || !hasDraftContent
+  const isSubmitDisabled =
+    isSubmitting || !form.title.trim() || !form.app?.trim() || !hasDraftContent
   const canEditSelected = selectedPost ? canDeletePost(selectedPost) : false
   const replyDraftValue = selectedPost ? replyDrafts[selectedPost.id] || "" : ""
   const isReplyDisabled = !replyDraftValue.trim() || isReplying
@@ -273,20 +270,18 @@ export function VocBoardPage() {
       <Card className="flex-shrink-0">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3">
-                <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <MessageSquare className="size-5" aria-hidden="true" />
-                </div>
-                <div className="space-y-1">
-                  <CardTitle>VOC 게시판</CardTitle>
-                  <CardDescription className="text-sm text-muted-foreground">
-                    고객의 목소리를 남겨 주시면 빠르게 답변드리겠습니다.
-                  </CardDescription>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3">
+
+              <CardDescription className="text-sm text-muted-foreground">
+                VOC를 남겨 주시면 빠르게 답변드리겠습니다.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span className="rounded-full bg-muted px-2 py-1 text-foreground shadow-xs">
                 총 {totalPosts}건의 문의
+              </span>
+              <span className="rounded-full bg-muted px-2 py-1 text-foreground shadow-xs">
+                앱 {appFilterLabel}
               </span>
               {isRefreshing ? (
                 <span className="inline-flex items-center gap-1 text-primary">
@@ -311,7 +306,7 @@ export function VocBoardPage() {
                 <RefreshCw className="size-4" aria-hidden="true" />
               )}
             </Button>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <Dialog open={isCreateOpen} onOpenChange={handleCreateOpenChange}>
               <DialogTrigger asChild>
                 <Button className="self-start sm:ml-auto">
                   <PlusCircle className="size-4" aria-hidden="true" />
@@ -324,6 +319,24 @@ export function VocBoardPage() {
                   <DialogDescription className="sr-only">VOC 게시판 새 글을 작성합니다.</DialogDescription>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={handleCreatePost}>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground" htmlFor="voc-app">
+                      앱 카테고리
+                    </label>
+                    <select
+                      id="voc-app"
+                      value={form.app}
+                      onChange={(event) => updateForm("app", event.target.value)}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                      required
+                    >
+                      {APP_CATEGORIES.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground" htmlFor="voc-title">
                       제목
@@ -383,9 +396,19 @@ export function VocBoardPage() {
               <span>상태별 문의 현황</span>
               <span className="rounded-full bg-muted px-2 py-1 text-xs font-semibold text-foreground shadow-xs">
                 {statusFilter ? `${statusFilter}만 보기` : "전체 보기"}
+                {isMyPostsOnly ? " · 내 VOC" : ""}
               </span>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={isMyPostsOnly ? "secondary" : "outline"}
+                size="sm"
+                onClick={toggleMyPostsOnly}
+                aria-pressed={isMyPostsOnly}
+              >
+                내 VOC
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -436,35 +459,38 @@ export function VocBoardPage() {
         </CardContent>
       </Card>
 
-      <section className="flex w-full flex-1 min-h-0 flex-col gap-3 overflow-hidden">
+      <section className="grid flex-1 min-h-0 grid-rows-[1fr_auto] gap-3">
         <div
-          className="w-full flex-1 min-h-0 overflow-y-auto rounded-lg border bg-background"
+          className="min-h-0 overflow-y-auto rounded-lg border bg-background"
           aria-busy={isLoading || isRefreshing}
         >
           <Table stickyHeader className="table-fixed [&_th]:text-center [&_td]:text-center">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[70px]">No</TableHead>
-                <TableHead className="w-[50%] min-w-[280px]">제목</TableHead>
+                <TableHead className="w-[45%] min-w-[260px]">제목</TableHead>
+                <TableHead className="w-[120px]">카테고리</TableHead>
                 <TableHead className="w-[120px]">상태</TableHead>
                 <TableHead className="w-[120px]">작성자</TableHead>
                 <TableHead className="w-[150px]">작성일</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-                  {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                        <span className="inline-flex items-center justify-center gap-2">
-                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                          <span>VOC 게시글을 불러오는 중입니다...</span>
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredPosts.length === 0 ? (
-                    <TableRow>
-                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                    {statusFilter ? "선택한 상태의 글이 없습니다." : "아직 등록된 글이 없습니다. 첫 문의를 남겨보세요."}
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      <span>VOC 게시글을 불러오는 중입니다...</span>
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ) : filteredPosts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                    {statusFilter
+                      ? "선택한 상태의 글이 없습니다."
+                      : "아직 등록된 글이 없습니다. 첫 문의를 남겨보세요."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -484,13 +510,20 @@ export function VocBoardPage() {
                       <TableCell className="w-[90px] text-sm font-semibold text-muted-foreground">
                         {displayNumber}
                       </TableCell>
-                      <TableCell className="w-[50%] min-w-[280px] font-medium">
+                      <TableCell className="w-[45%] min-w-[260px] font-medium">
                         {post.title}
+                      </TableCell>
+                      <TableCell className="w-[120px]">
+                        <Badge variant="outline" className="text-[11px]">
+                          {post.app || DEFAULT_APP_CATEGORY}
+                        </Badge>
                       </TableCell>
                       <TableCell className="w-[120px]">
                         <StatusBadge status={post.status} />
                       </TableCell>
-                      <TableCell className="w-[120px]">{post.author?.name || "작성자"}</TableCell>
+                      <TableCell className="w-[120px]">
+                        {post.author?.name || "작성자"}
+                      </TableCell>
                       <TableCell className="w-[150px] text-xs text-muted-foreground">
                         {formatTimestamp(post.createdAt)}
                       </TableCell>
@@ -603,6 +636,9 @@ export function VocBoardPage() {
                   <DialogDescription className="flex flex-wrap items-center gap-2">
                     {selectedPost.author?.name || "작성자"} · {formatTimestamp(selectedPost.createdAt)}
                     <StatusBadge status={selectedPost.status} />
+                    <Badge variant="outline" className="text-[11px]">
+                      {selectedPost.app || DEFAULT_APP_CATEGORY}
+                    </Badge>
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex items-end">

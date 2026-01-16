@@ -51,6 +51,44 @@ def get_default_post_status() -> str:
     return VocPost.Status.RECEIVED
 
 
+def get_valid_post_apps() -> set[str]:
+    """VocPost.app으로 사용할 수 있는 값 집합을 반환합니다.
+
+    입력:
+    - 없음
+
+    반환:
+    - set[str]: VocPost.app 허용 값 집합
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    return {choice[0] for choice in VocPost.AppCategory.choices}
+
+
+def get_default_post_app() -> str:
+    """신규 VOC 게시글의 기본 앱 카테고리를 반환합니다.
+
+    입력:
+    - 없음
+
+    반환:
+    - str: 기본 앱 카테고리 값
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    return VocPost.AppCategory.OTHER
+
+
 def get_post_list(*, status: str | None = None) -> QuerySet[VocPost]:
     """VOC 게시글 목록을 조회합니다(선택적으로 status 필터 적용).
 

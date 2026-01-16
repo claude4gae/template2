@@ -6,10 +6,16 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { cn } from "@/lib/utils"
 
-export function AppSidebar({ header, nav, secondary, ...props }) {
+export function AppSidebar({ header, nav, secondary, className, ...props }) {
   return (
-    <Sidebar collapsible="icon" aria-label="App navigation" {...props}>
+    <Sidebar
+      collapsible="icon"
+      aria-label="App navigation"
+      className={cn("md:top-16 md:h-[calc(100svh-4rem)]", className)}
+      {...props}
+    >
       <SidebarHeader>{header ?? null}</SidebarHeader>
       <SidebarContent>
         {nav ?? null}

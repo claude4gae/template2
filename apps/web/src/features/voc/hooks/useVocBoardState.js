@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { DEFAULT_STATUS, STATUS_OPTIONS } from "../utils/constants"
+import { DEFAULT_APP_CATEGORY, DEFAULT_STATUS, STATUS_OPTIONS } from "../utils/constants"
 import { vocQueryKeys } from "../api/queryKeys"
 import {
   createVocPost,
@@ -22,8 +22,10 @@ const EMPTY_POSTS = []
 
 function sanitizePost(post) {
   if (!post || post.id == null) return null
+  const appValue = typeof post.app === "string" ? post.app.trim() : ""
   return {
     ...post,
+    app: appValue || DEFAULT_APP_CATEGORY,
     content: sanitizeContentHtml(post.content),
     replies: Array.isArray(post.replies)
       ? post.replies
@@ -61,7 +63,13 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   const queryClient = useQueryClient()
 
   const [statusFilter, setStatusFilter] = React.useState(null)
-  const [form, setForm] = React.useState({ title: "", content: "" })
+  const [appFilter, setAppFilter] = React.useState(null)
+  const [isMyPostsOnly, setIsMyPostsOnly] = React.useState(false)
+  const [form, setForm] = React.useState({
+    title: "",
+    content: "",
+    app: DEFAULT_APP_CATEGORY,
+  })
   const [replyDrafts, setReplyDrafts] = React.useState({})
   const [selectedPostId, setSelectedPostId] = React.useState(null)
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
@@ -95,9 +103,23 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   }, [postsQuery.isSuccess])
 
   const posts = postsQuery.data?.posts ?? EMPTY_POSTS
-  const statusCounts = postsQuery.data?.statusCounts ?? buildStatusCounts(posts)
+  const currentUserId = currentUser?.id
+  const getAuthorKey = (post) => post?.author?.id || post?.author?.email || post?.author?.name
+  const basePosts = isMyPostsOnly
+    ? posts.filter((post) => {
+        const authorKey = getAuthorKey(post)
+        return Boolean(authorKey && currentUserId && authorKey === currentUserId)
+      })
+    : posts
 
-  const filteredPosts = statusFilter ? posts.filter((post) => post.status === statusFilter) : posts
+  const appScopedPosts = appFilter
+    ? basePosts.filter((post) => post.app === appFilter)
+    : basePosts
+  const statusCounts = buildStatusCounts(appScopedPosts)
+
+  const filteredPosts = statusFilter
+    ? appScopedPosts.filter((post) => post.status === statusFilter)
+    : appScopedPosts
   const start = pagination.pageIndex * pagination.pageSize
   const end = start + pagination.pageSize
   const visiblePosts = filteredPosts.slice(start, end)
@@ -106,17 +128,17 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   const currentPage = pagination.pageIndex + 1
   const totalPages = pageCount
 
-  const selectedPost = posts.find((post) => post.id === selectedPostId) || null
+  const selectedPost = basePosts.find((post) => post.id === selectedPostId) || null
   const isRefreshing = postsQuery.isFetching && !postsQuery.isPending
 
   React.useEffect(() => {
     if (!selectedPostId) return
-    const exists = posts.some((post) => post.id === selectedPostId)
+    const exists = basePosts.some((post) => post.id === selectedPostId)
     if (!exists) {
       setSelectedPostId(null)
       setIsDetailOpen(false)
     }
-  }, [posts, selectedPostId])
+  }, [basePosts, selectedPostId])
 
   React.useEffect(() => {
     const lastPageIndex = Math.max(
@@ -137,7 +159,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   }
 
   const resetForm = () => {
-    setForm({ title: "", content: "" })
+    setForm({ title: "", content: "", app: DEFAULT_APP_CATEGORY })
   }
 
   const clearSelection = () => {
@@ -147,12 +169,22 @@ export function useVocBoardState({ currentUser, isAdmin }) {
 
   const canDeletePost = (post) => {
     if (isAdmin) return true
-    const authorKey = post.author?.id || post.author?.email || post.author?.name
-    return Boolean(authorKey && authorKey === currentUser.id)
+    const authorKey = getAuthorKey(post)
+    return Boolean(authorKey && currentUserId && authorKey === currentUserId)
   }
 
   const toggleStatusFilter = (status) => {
     setStatusFilter((prev) => (prev === status ? null : status))
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+  }
+
+  const selectAppFilter = (app) => {
+    setAppFilter(app)
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+  }
+
+  const toggleMyPostsOnly = () => {
+    setIsMyPostsOnly((prev) => !prev)
     setPagination((prev) => ({ ...prev, pageIndex: 0 }))
   }
 
@@ -171,7 +203,8 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   }
 
   const createPostMutation = useMutation({
-    mutationFn: ({ title, content, status }) => createVocPost({ title, content, status }),
+    mutationFn: ({ title, content, status, app }) =>
+      createVocPost({ title, content, status, app }),
     onMutate: () => {
       setError(null)
     },
@@ -253,10 +286,12 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     const title = form.title.trim()
     const content = sanitizeContentHtml(form.content)
     const status = DEFAULT_STATUS
+    const app = typeof form.app === "string" ? form.app.trim() : ""
 
     if (!title || !hasMeaningfulContent(content, { skipSanitize: true }) || !status) return null
+    if (!app) return null
     try {
-      const result = await createPostMutation.mutateAsync({ title, content, status })
+      const result = await createPostMutation.mutateAsync({ title, content, status, app })
       return result?.post ? sanitizePost(result.post) : null
     } catch {
       return null
@@ -363,6 +398,8 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   return {
     statusCounts,
     statusFilter,
+    appFilter,
+    isMyPostsOnly,
     filteredPosts,
     visiblePosts,
     pagination: {
@@ -391,6 +428,8 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     updatePost,
     selectPost,
     toggleStatusFilter,
+    selectAppFilter,
+    toggleMyPostsOnly,
     changePageSize,
     nextPage,
     prevPage,

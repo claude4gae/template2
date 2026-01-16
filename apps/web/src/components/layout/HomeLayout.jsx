@@ -3,18 +3,13 @@ import { ContentLayout } from "./ContentLayout"
 
 export function HomeLayout({
   children,
-  header,
-  headerClassName = "relative z-30 h-16 shrink-0 border-b bg-background",
   contentMaxWidthClass = "max-w-10xl",
   scrollAreaClassName = "overflow-y-auto",
-  paddingClassName = "p-3 md:p-3",
+  paddingClassName = "px-4 pb-3",
   innerClassName = "mx-auto flex h-full w-full flex-col gap-4",
 }) {
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <header className={headerClassName}>
-        <div className="h-full">{header ?? null}</div>
-      </header>
+    <div className="h-full flex flex-col bg-background">
       <main className="flex-1 min-h-0 min-w-0 overflow-hidden">
         <ContentLayout
           contentMaxWidthClass={contentMaxWidthClass}

@@ -7,7 +7,7 @@ import { useSearchParams } from "react-router-dom"
 
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/lib/theme"
-import { Button } from "components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,

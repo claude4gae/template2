@@ -6,7 +6,7 @@ import { AuthAutoLoginGate } from "@/lib/auth"
 import { appstoreRoutes } from "@/features/appstore"
 import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
-import { homeRoutes } from "@/features/home"
+import { GlobalNavbarShell, homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { modelsRoutes } from "@/features/models"
 import { timelineRoutes } from "@/features/timeline"
@@ -42,7 +42,12 @@ const assistantProtectedRoutes = {
 export const router = createBrowserRouter([
   {
     path: "/",
-    errorElement: <RouteErrorPage />,
+    element: <GlobalNavbarShell />,
+    errorElement: (
+      <GlobalNavbarShell>
+        <RouteErrorPage />
+      </GlobalNavbarShell>
+    ),
     children: [
       ...homeRoutes,
       ...authRoutes,

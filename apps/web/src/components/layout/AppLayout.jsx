@@ -6,7 +6,6 @@ import { SidebarLayout } from "./SidebarLayout"
 export function AppLayout({
   children,
   sidebar,
-  header,
   providerKey,
   defaultOpen,
   contentMaxWidthClass = "max-w-10xl",
@@ -23,7 +22,6 @@ export function AppLayout({
       providerKey={resolvedProviderKey}
       defaultOpen={resolvedDefaultOpen}
       sidebar={sidebar}
-      header={header}
       contentMaxWidthClass={contentMaxWidthClass}
       scrollAreaClassName={scrollAreaClassName}
       paddingClassName={paddingClassName}

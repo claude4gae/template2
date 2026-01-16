@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
+import { useLocation } from "react-router-dom"
 
 import { ChatWidgetLauncher } from "./ChatWidgetLauncher"
 import { ChatWidgetPanel } from "./ChatWidgetPanel"
@@ -18,6 +18,7 @@ import {
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isMaximized, setIsMaximized] = useState(false)
   const [input, setInput] = useState("")
   const [buttonPosition, setButtonPosition] = useState({ x: null, y: null })
   const [isDragging, setIsDragging] = useState(false)
@@ -25,7 +26,6 @@ export function ChatWidget() {
   const [isWidgetDragging, setIsWidgetDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [size, setSize] = useState(() => clampSize(DEFAULT_CHAT_WIDTH, DEFAULT_CHAT_HEIGHT))
-  const navigate = useNavigate()
   const location = useLocation()
   const sizeRef = useRef(size)
   const ragSettings = useAssistantRagIndex()
@@ -57,6 +57,7 @@ export function ChatWidget() {
   const widgetDragOffsetRef = useRef({ x: 0, y: 0 })
   const widgetDragStartRef = useRef({ x: 0, y: 0 })
   const widgetHasDraggedRef = useRef(false)
+  const lastWidgetPositionRef = useRef(null)
   const resizeStartRef = useRef({ width: 0, height: 0, left: 0, top: 0, right: 0, bottom: 0, x: 0, y: 0 })
   const resizeDirectionRef = useRef("se")
   const chatContainerRef = useRef(null)
@@ -140,6 +141,15 @@ export function ChatWidget() {
     if (!isOpen) return
 
     const ensureWidgetWithinBounds = () => {
+      if (isMaximized) {
+        if (typeof window === "undefined") return
+        const nextSize = { width: window.innerWidth, height: window.innerHeight }
+        sizeRef.current = nextSize
+        setSize(nextSize)
+        setWidgetPosition({ x: 0, y: 0 })
+        return
+      }
+
       setSize((prevSize) => {
         const nextSize = clampSize(prevSize.width, prevSize.height)
         sizeRef.current = nextSize
@@ -166,7 +176,7 @@ export function ChatWidget() {
 
     window.addEventListener("resize", ensureWidgetWithinBounds)
     return () => window.removeEventListener("resize", ensureWidgetWithinBounds)
-  }, [isOpen])
+  }, [isMaximized, isOpen])
 
   useEffect(() => {
     if (!isResizing) return
@@ -347,15 +357,51 @@ export function ChatWidget() {
     }
   }
 
-  const handleOpenFullChat = () => {
-    navigate("/assistant", {
-      state: {
-        initialRooms: rooms,
-        initialMessagesByRoom: messagesByRoom,
-        initialActiveRoomId: activeRoomId,
-      },
+  const resizeWidget = (nextSize) => {
+    sizeRef.current = nextSize
+    setSize(nextSize)
+    setWidgetPosition((prevPosition) => {
+      if (typeof window === "undefined") return prevPosition
+      const offset = 16
+      if (prevPosition.x === null || prevPosition.y === null) {
+        return clampPosition(
+          window.innerWidth - nextSize.width - offset,
+          window.innerHeight - nextSize.height - offset,
+          nextSize.width,
+          nextSize.height,
+        )
+      }
+      return clampPosition(prevPosition.x, prevPosition.y, nextSize.width, nextSize.height)
     })
-    closeWidget()
+  }
+
+  const handleOpenFullChat = () => {
+    if (isMaximized) return
+    if (widgetPosition.x !== null && widgetPosition.y !== null) {
+      lastWidgetPositionRef.current = { x: widgetPosition.x, y: widgetPosition.y }
+    }
+    setIsMaximized(true)
+    if (typeof window === "undefined") return
+    const nextSize = { width: window.innerWidth, height: window.innerHeight }
+    sizeRef.current = nextSize
+    setSize(nextSize)
+    setWidgetPosition({ x: 0, y: 0 })
+  }
+
+  const handleRestoreDefaultSize = () => {
+    const nextSize = clampSize(DEFAULT_CHAT_WIDTH, DEFAULT_CHAT_HEIGHT)
+    setIsMaximized(false)
+    resizeWidget(nextSize)
+    if (lastWidgetPositionRef.current) {
+      setWidgetPosition(
+        clampPosition(
+          lastWidgetPositionRef.current.x,
+          lastWidgetPositionRef.current.y,
+          nextSize.width,
+          nextSize.height,
+        ),
+      )
+    }
   }
 
   const handleFloatingButtonPointerDown = (event) => {
@@ -431,7 +477,7 @@ export function ChatWidget() {
   }
 
   const handleWidgetHeaderPointerDown = (event) => {
-    if (!chatContainerRef.current || isResizing) return
+    if (!chatContainerRef.current || isResizing || isMaximized) return
 
     const target = event.target
     const targetElement = target instanceof Element ? target : target?.parentElement
@@ -454,6 +500,7 @@ export function ChatWidget() {
   const handleResizePointerDown = (direction) => (event) => {
     event.preventDefault()
     event.stopPropagation()
+    if (isMaximized) return
     if (!chatContainerRef.current) return
 
     const rect = chatContainerRef.current.getBoundingClientRect()
@@ -492,6 +539,7 @@ export function ChatWidget() {
       containerRef={chatContainerRef}
       widgetPosition={widgetPosition}
       size={size}
+      isMaximized={isMaximized}
       onResizePointerDown={handleResizePointerDown}
       onHeaderPointerDown={handleWidgetHeaderPointerDown}
       isSidebarOpen={isSidebarOpen}
@@ -512,6 +560,7 @@ export function ChatWidget() {
       onInputChange={handleInputChange}
       onSubmit={handleSubmit}
       onOpenFullChat={handleOpenFullChat}
+      onRestoreDefaultSize={handleRestoreDefaultSize}
       onClose={closeWidget}
     />
   )

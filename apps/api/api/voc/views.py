@@ -30,10 +30,12 @@ from api.common.services import (
 from api.common.services import parse_json_body
 
 from .selectors import (
+    get_default_post_app,
     get_default_post_status,
     get_post_detail,
     get_post_list,
     get_status_counts,
+    get_valid_post_apps,
     get_valid_post_statuses,
 )
 from .serializers import serialize_post, serialize_reply
@@ -42,10 +44,12 @@ from .services import add_reply, can_manage_post, create_post, delete_post, upda
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# 상수: 상태 집합/제목 길이 제한
+# 상수: 상태/앱 집합 및 제목/앱 길이 제한
 # =============================================================================
 STATUS_SET = get_valid_post_statuses()
+APP_SET = get_valid_post_apps()
 MAX_TITLE_LENGTH = 255
+MAX_APP_LENGTH = 80
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -104,7 +108,7 @@ class VocPostsView(APIView):
         """게시글을 생성합니다.
 
         입력:
-        - 요청: Django HttpRequest(JSON 바디: title, content, status)
+        - 요청: Django HttpRequest(JSON 바디: title, content, status, app)
         - args/kwargs: URL 라우팅 인자
 
         반환:
@@ -116,15 +120,15 @@ class VocPostsView(APIView):
 
         오류:
         - 401: 인증 필요
-        - 400: JSON 파싱 실패/필수 필드 누락/상태 값 오류/제목 길이 초과
+        - 400: JSON 파싱 실패/필수 필드 누락/상태 값 오류/제목·앱 길이 초과/앱 값 오류
         - 500: 생성 실패
 
         예시 요청:
         - 예시 요청: POST /api/v1/voc/posts
-          예시 바디: {"title":"제목","content":"내용","status":"접수"}
+          예시 바디: {"title":"제목","content":"내용","status":"접수","app":"기타"}
 
         snake/camel 호환:
-        - title/content/status 키 동일
+        - title/content/status/app 키 동일
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -145,6 +149,7 @@ class VocPostsView(APIView):
         title = str(payload.get("title") or "").strip()
         content = str(payload.get("content") or "").strip()
         status = payload.get("status") or get_default_post_status()
+        app = str(payload.get("app") or "").strip()
 
         if not title:
             return JsonResponse({"error": "title is required"}, status=400)
@@ -154,6 +159,12 @@ class VocPostsView(APIView):
             return JsonResponse({"error": "content is required"}, status=400)
         if status not in STATUS_SET:
             return JsonResponse({"error": "Invalid status value"}, status=400)
+        if not app:
+            return JsonResponse({"error": "app is required"}, status=400)
+        if len(app) > MAX_APP_LENGTH:
+            return JsonResponse({"error": "app is too long"}, status=400)
+        if app not in APP_SET:
+            return JsonResponse({"error": "Invalid app value"}, status=400)
 
         # -----------------------------------------------------------------------------
         # 4) 생성 및 활동 로그 기록
@@ -163,6 +174,7 @@ class VocPostsView(APIView):
                 title=title,
                 content=content,
                 status=status,
+                app=app or get_default_post_app(),
                 author=request.user,
             )
 
@@ -186,7 +198,7 @@ class VocPostDetailView(APIView):
         """게시글을 수정합니다.
 
         입력:
-        - 요청: Django HttpRequest(JSON 바디: title/content/status 선택)
+        - 요청: Django HttpRequest(JSON 바디: title/content/status/app 선택)
         - post_id: 게시글 ID
         - args/kwargs: URL 라우팅 인자
 
@@ -199,17 +211,17 @@ class VocPostDetailView(APIView):
 
         오류:
         - 401: 인증 필요
-        - 400: JSON 파싱 실패/입력 오류/변경 없음
+        - 400: JSON 파싱 실패/입력 오류/앱 값 오류/변경 없음
         - 403: 권한 없음
         - 404: 게시글 없음
         - 500: 수정 실패
 
         예시 요청:
         - 예시 요청: PATCH /api/v1/voc/posts/1
-          예시 바디: {"title":"수정","status":"진행중"}
+          예시 바디: {"title":"수정","status":"진행중","app":"기타"}
 
         snake/camel 호환:
-        - title/content/status 키 동일
+        - title/content/status/app 키 동일
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -263,6 +275,16 @@ class VocPostDetailView(APIView):
             if status not in STATUS_SET:
                 return JsonResponse({"error": "Invalid status value"}, status=400)
             updates["status"] = status
+
+        if "app" in payload:
+            app = str(payload.get("app") or "").strip()
+            if not app:
+                return JsonResponse({"error": "app is required"}, status=400)
+            if len(app) > MAX_APP_LENGTH:
+                return JsonResponse({"error": "app is too long"}, status=400)
+            if app not in APP_SET:
+                return JsonResponse({"error": "Invalid app value"}, status=400)
+            updates["app"] = app
 
         if not updates:
             return JsonResponse({"error": "No changes provided"}, status=400)

@@ -1,10 +1,26 @@
+import { useLocation } from "react-router-dom"
+
 import { AppLayout } from "./AppLayout"
 import { AppSidebar } from "./AppSidebar"
 import { NavMain } from "./NavMain"
 
+const APP_PREFIXES = ["/esop_dashboard", "/emails", "/settings"]
+
+function getNormalizedPath(value) {
+  if (typeof value !== "string") return ""
+  return value.split("?")[0].toLowerCase()
+}
+
+function matchesPrefix(item, prefix) {
+  if (!item || !prefix) return false
+  const itemUrl = getNormalizedPath(item.url)
+  if (itemUrl.startsWith(prefix)) return true
+  if (!Array.isArray(item.items)) return false
+  return item.items.some((child) => getNormalizedPath(child?.url).startsWith(prefix))
+}
+
 export function AppShellLayout({
   children,
-  header,
   navItems,
   sidebarHeader,
   sidebarSecondary,
@@ -15,8 +31,13 @@ export function AppShellLayout({
   providerKey,
   defaultOpen,
 }) {
+  const { pathname } = useLocation()
   const safeNavItems = Array.isArray(navItems) ? navItems : []
-  const nav = <NavMain items={safeNavItems} />
+  const currentPrefix = APP_PREFIXES.find((prefix) => getNormalizedPath(pathname).startsWith(prefix))
+  const resolvedNavItems = currentPrefix
+    ? safeNavItems.filter((item) => matchesPrefix(item, currentPrefix))
+    : safeNavItems
+  const nav = <NavMain items={resolvedNavItems} />
   const sidebar = (
     <AppSidebar header={sidebarHeader ?? null} nav={nav} secondary={sidebarSecondary} />
   )
@@ -24,7 +45,6 @@ export function AppShellLayout({
   return (
     <AppLayout
       sidebar={sidebar}
-      header={header}
       contentMaxWidthClass={contentMaxWidthClass}
       scrollAreaClassName={scrollAreaClassName}
       paddingClassName={paddingClassName}

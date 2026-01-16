@@ -28,6 +28,7 @@ class VocEndpointTests(TestCase):
         response = self.client.get(reverse("voc-posts"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["total"], 1)
+        self.assertEqual(response.json()["results"][0]["app"], "기타")
 
     def test_voc_posts_create_update_delete_and_reply(self) -> None:
         # -----------------------------------------------------------------------------
@@ -35,7 +36,7 @@ class VocEndpointTests(TestCase):
         # -----------------------------------------------------------------------------
         create_response = self.client.post(
             reverse("voc-posts"),
-            data='{"title":"Title","content":"Body","status":"접수"}',
+            data='{"title":"Title","content":"Body","status":"접수","app":"기타"}',
             content_type="application/json",
         )
         self.assertEqual(create_response.status_code, 201)
@@ -68,6 +69,14 @@ class VocEndpointTests(TestCase):
         delete_response = self.client.delete(reverse("voc-post-detail", kwargs={"post_id": post_id}))
         self.assertEqual(delete_response.status_code, 200)
         self.assertTrue(delete_response.json()["success"])
+
+    def test_voc_posts_create_requires_app(self) -> None:
+        response = self.client.post(
+            reverse("voc-posts"),
+            data='{"title":"Title","content":"Body","status":"접수"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_voc_posts_status_counts_order(self) -> None:
         """statusCounts가 상태 정의 순서를 유지하는지 확인합니다."""

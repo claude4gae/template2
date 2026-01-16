@@ -14,7 +14,6 @@ import {
   useLineSwitcher,
 } from "@/lib/affiliation"
 
-import { LineDashboardHeader } from "./LineDashboardHeader"
 import { NavProjects } from "./NavProjects"
 import { useLineOptionsQuery } from "../hooks/useLineOptionsQuery"
 
@@ -53,14 +52,12 @@ function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }
   }, [isError, error])
 
   const navigation = buildNavigationConfig()
-  const header = <LineDashboardHeader showSidebarTrigger />
 
   return (
     <DepartmentProvider>
       <ActiveLineProvider lineOptions={lineOptions}>
         <LineDashboardShellLayout
           navigation={navigation}
-          header={header}
           lineOptions={lineOptions}
           contentMaxWidthClass={contentMaxWidthClass}
           scrollAreaClassName={scrollAreaClassName}
@@ -70,20 +67,13 @@ function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }
   )
 }
 
-function LineDashboardShellLayout({
-  navigation,
-  header,
-  lineOptions,
-  contentMaxWidthClass,
-  scrollAreaClassName,
-}) {
+function LineDashboardShellLayout({ navigation, lineOptions, contentMaxWidthClass, scrollAreaClassName }) {
   const { activeLineId, onSelect } = useLineSwitcher()
   const lineSwitcherOptions = buildLineSwitcherOptions(lineOptions)
 
   return (
     <AppShellLayout
       navItems={navigation.navMain}
-      header={header}
       sidebarHeader={(
         <TeamSwitcher
           options={lineSwitcherOptions}

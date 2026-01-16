@@ -4,7 +4,7 @@ import { BadgeCheck, Bell, ChevronsUpDown, LogOut, MessageSquare } from "lucide-
 
 import { useAuth } from "@/lib/auth"
 import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
-import { Avatar, AvatarFallback, AvatarImage } from "components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +13,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu"
 import {
   SidebarMenu,
   SidebarMenuButton,

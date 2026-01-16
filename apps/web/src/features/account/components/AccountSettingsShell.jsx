@@ -6,8 +6,6 @@ import { ChatWidget } from "@/features/assistant"
 import { RequireAuth } from "@/lib/auth"
 import { buildNavigationConfig } from "@/lib/config/navigationConfig"
 
-import { SettingsHeader } from "./SettingsHeader"
-
 export function AccountSettingsShell() {
   const navigation = buildNavigationConfig()
 
@@ -16,7 +14,6 @@ export function AccountSettingsShell() {
       <>
         <AppShellLayout
           navItems={navigation.navMain}
-          header={<SettingsHeader />}
           sidebarHeader={<TeamSwitcher disabled />}
         >
           <Outlet />

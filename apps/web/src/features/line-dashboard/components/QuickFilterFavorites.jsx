@@ -5,7 +5,7 @@ import { BookmarkCheck, BookmarkPlus, BookmarkX } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
-import { Button } from "components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu"
 import { QuickFilterFieldset } from "./QuickFilterSections"
 import { buildToastOptions } from "../utils/toast"
 

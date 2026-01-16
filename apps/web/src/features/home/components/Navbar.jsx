@@ -26,7 +26,7 @@ const HomeNavbar = ({ navigationItems }) => {
   const profileAvatarId = resolveProfileAvatarId(user)
   const avatarSrc = buildProfileImageUrl(profileAvatarId)
   const displayName = user?.username || user?.email || "U"
-  const initials = displayName.slice(0, 2).toUpperCase()
+  const initials = displayName.slice(0, 1).toUpperCase()
 
   const renderIcon = (Icon) => {
     if (!Icon) return null
@@ -71,7 +71,7 @@ const HomeNavbar = ({ navigationItems }) => {
                   {renderIcon(Icon)}
                   {navItem.title}
                 </NavigationMenuTrigger>
-                <NavigationMenuContent className="data-[motion=from-start]:slide-in-from-left-30! data-[motion=to-start]:slide-out-to-left-30! data-[motion=from-end]:slide-in-from-right-30! data-[motion=to-end]:slide-out-to-right-30! absolute w-auto">
+                <NavigationMenuContent className="data-[motion=from-start]:slide-in-from-left-30! data-[motion=to-start]:slide-out-to-left-30! data-[motion=from-end]:slide-in-from-right-30! data-[motion=to-end]:slide-out-to-right-30! absolute z-50 w-auto">
                   <ul className="grid w-38 gap-4 p-2">
                     <li>
                       {navItem.items?.map((item) => (

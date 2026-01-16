@@ -10,6 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+const LABEL_MAP = {
+  "rp-emails": "메일함",
+}
+
 function normalizeList(values) {
   if (!Array.isArray(values)) return []
   const normalized = values
@@ -26,11 +30,13 @@ export function RagIndexMultiSelect({
   helperText,
   placeholder = "선택하세요",
   isDisabled = false,
+  showSelectionBadges = true,
 }) {
   const normalizedValues = normalizeList(values)
   const normalizedOptions = normalizeList(options)
   const hasSelection = normalizedValues.length > 0
   const canDeselect = normalizedValues.length > 1
+  const formatLabel = (value) => LABEL_MAP[value] ?? value
 
   const handleCheckedChange = (value, checked) => {
     const isChecked = checked === true
@@ -48,7 +54,9 @@ export function RagIndexMultiSelect({
     event.preventDefault()
   }
 
-  const selectionLabel = hasSelection ? normalizedValues.join(", ") : placeholder
+  const selectionLabel = hasSelection
+    ? normalizedValues.map((value) => formatLabel(value)).join(", ")
+    : placeholder
 
   return (
     <div className="space-y-2">
@@ -87,7 +95,7 @@ export function RagIndexMultiSelect({
                   onCheckedChange={(checked) => handleCheckedChange(value, checked)}
                   disabled={isDisabled || (isChecked && !canDeselect)}
                 >
-                  {value}
+                  {formatLabel(value)}
                 </DropdownMenuCheckboxItem>
               )
             })
@@ -96,11 +104,11 @@ export function RagIndexMultiSelect({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      {hasSelection ? (
+      {showSelectionBadges && hasSelection ? (
         <div className="flex flex-wrap gap-1">
           {normalizedValues.map((value) => (
             <Badge key={value} variant="secondary" className="text-[11px]">
-              {value}
+              {formatLabel(value)}
             </Badge>
           ))}
         </div>

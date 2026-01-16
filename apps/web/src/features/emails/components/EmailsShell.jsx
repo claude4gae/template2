@@ -16,7 +16,6 @@ import {
   useLineSdwtOptionsQuery,
 } from "@/lib/affiliation"
 
-import { EmailsHeader } from "./EmailsHeader"
 import { useEmailMailboxes } from "../hooks/useEmailMailboxes"
 import {
   buildMailboxUrl,
@@ -285,7 +284,6 @@ function EmailsShellLayout({
     <SdwtProvider userSdwtProd={activeMailbox} onChange={handleSelectMailbox}>
       <AppShellLayout
         navItems={navigation.navMain}
-        header={<EmailsHeader activeMailbox={activeMailbox} />}
         sidebarHeader={(
           <TeamSwitcher
             options={affiliationOptions}

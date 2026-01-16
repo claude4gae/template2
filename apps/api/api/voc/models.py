@@ -11,7 +11,7 @@ from django.db import models
 
 
 class VocPost(models.Model):
-    """VOC 게시글(제목/내용/상태/작성자)을 저장하는 모델입니다."""
+    """VOC 게시글(제목/내용/상태/앱/작성자)을 저장하는 모델입니다."""
 
     class Status(models.TextChoices):
         RECEIVED = "접수", "접수"
@@ -19,9 +19,17 @@ class VocPost(models.Model):
         DONE = "완료", "완료"
         REJECTED = "반려", "반려"
 
+    class AppCategory(models.TextChoices):
+        OTHER = "기타", "기타"
+
     title = models.CharField(max_length=255)
     content = models.TextField()
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.RECEIVED)
+    app = models.CharField(
+        max_length=80,
+        choices=AppCategory.choices,
+        default=AppCategory.OTHER,
+    )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

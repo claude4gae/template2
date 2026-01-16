@@ -58,7 +58,7 @@ def run_drone_sop_jira_create(**_context):
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
 }
 

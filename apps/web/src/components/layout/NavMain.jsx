@@ -87,5 +87,5 @@ export function NavMain({ items }) {
     }
   })
 
-  return <SidebarNavMain items={resolvedItems} label="Platform" />
+  return <SidebarNavMain items={resolvedItems} label="" />
 }

@@ -1,7 +1,6 @@
 import { useState } from "react"
-import { Minus, PanelLeft, Settings, SquareArrowOutUpRight } from "lucide-react"
+import { Maximize, Minimize2, Minus, PanelLeft, Settings } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
 import { ChatComposer } from "./ChatComposer"
@@ -14,6 +13,7 @@ export function ChatWidgetPanel({
   containerRef,
   widgetPosition,
   size,
+  isMaximized,
   onResizePointerDown,
   onHeaderPointerDown,
   isSidebarOpen,
@@ -34,6 +34,7 @@ export function ChatWidgetPanel({
   onInputChange,
   onSubmit,
   onOpenFullChat,
+  onRestoreDefaultSize,
   onClose,
 }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -71,11 +72,13 @@ export function ChatWidgetPanel({
         left: widgetPosition.x,
         top: widgetPosition.y,
         width: size.width,
-        maxWidth: "calc(100vw - 16px)",
+        maxWidth: isMaximized ? "100vw" : "calc(100vw - 16px)",
       }}
     >
       <div
-        className="relative flex max-h-[80vh] flex-col overflow-hidden rounded-xl border bg-card shadow-2xl"
+        className={`relative flex flex-col overflow-hidden rounded-xl border bg-card shadow-2xl ${
+          isMaximized ? "max-h-none" : "max-h-[80vh]"
+        }`}
         style={{ height: size.height }}
       >
         <div className="pointer-events-none absolute inset-0">
@@ -153,7 +156,17 @@ export function ChatWidgetPanel({
                 onClick={onOpenFullChat}
                 aria-label="Open full chat page"
               >
-                <SquareArrowOutUpRight className="h-4 w-4" />
+                <Maximize className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={onRestoreDefaultSize}
+                aria-label="작게 보기"
+              >
+                <Minimize2 className="h-4 w-4" />
               </Button>
 
               <Button
@@ -168,23 +181,32 @@ export function ChatWidgetPanel({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-1">
-              <span>RAG 인덱스</span>
-              {ragIndexNames.map((value) => (
-                <Badge key={value} variant="secondary" className="text-[11px]">
-                  {value}
-                </Badge>
-              ))}
+          <div className="grid gap-2" data-chat-widget-no-drag="true">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <RagIndexMultiSelect
+                label="RAG 인덱스"
+                values={ragIndexNames}
+                onChange={setRagIndexNames}
+                placeholder="rp-unclassified"
+                options={ragIndexOptions}
+                isDisabled={isRagSettingsLoading}
+                showSelectionBadges={false}
+              />
+              <RagIndexMultiSelect
+                label="권한 그룹"
+                values={permissionGroups}
+                onChange={setPermissionGroups}
+                placeholder="rag-public"
+                options={permissionGroupOptions}
+                isDisabled={isRagSettingsLoading}
+                showSelectionBadges={false}
+              />
             </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <span>권한 그룹</span>
-              {permissionGroups.map((value) => (
-                <Badge key={value} variant="secondary" className="text-[11px]">
-                  {value}
-                </Badge>
-              ))}
-            </div>
+            {isRagSettingsError ? (
+              <p className="text-[11px] text-destructive">
+                {ragSettingsErrorMessage || "RAG 설정을 불러오지 못했어요."}
+              </p>
+            ) : null}
           </div>
         </div>
 

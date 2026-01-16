@@ -11,7 +11,7 @@ import {
 import { IconAlertCircle, IconRefresh } from "@tabler/icons-react"
 import { CalendarIcon, FilterIcon } from "lucide-react"
 
-import { Button } from "components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   ChartContainer,
   ChartTooltip,
@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu"
 import { DateRangeCalendar } from "@/components/common"
 import { cn } from "@/lib/utils"
 import { timeFormatter } from "../utils/formatters"

@@ -1,6 +1,6 @@
 // 경로: src/features/line-dashboard/components/CommentCell.jsx
 import * as React from "react"
-import { Button } from "components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,

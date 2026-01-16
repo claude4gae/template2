@@ -12,7 +12,7 @@ from ..selectors import get_post_detail, get_reply_by_id, is_admin_user
 from ..models import VocPost, VocReply
 
 
-def create_post(*, author: Any, title: str, content: str, status: str) -> VocPost:
+def create_post(*, author: Any, title: str, content: str, status: str, app: str) -> VocPost:
     """VOC 게시글을 생성하고 관계(prefetch)까지 포함해 반환합니다.
 
     입력:
@@ -20,6 +20,7 @@ def create_post(*, author: Any, title: str, content: str, status: str) -> VocPos
     - title: 게시글 제목
     - content: 게시글 내용
     - status: 게시글 상태
+    - app: 앱 카테고리
 
     반환:
     - VocPost: 관계가 로딩된 게시글
@@ -35,6 +36,7 @@ def create_post(*, author: Any, title: str, content: str, status: str) -> VocPos
         title=title,
         content=content,
         status=status,
+        app=app,
         author=author,
     )
     return get_post_detail(post_id=post.pk) or post
@@ -45,7 +47,7 @@ def update_post(*, post: VocPost, updates: Dict[str, Any]) -> VocPost:
 
     입력:
     - post: 대상 VocPost
-    - updates: 업데이트 필드/값 맵
+    - updates: 업데이트 필드/값 맵(title/content/status/app)
 
     반환:
     - VocPost: 관계가 로딩된 게시글

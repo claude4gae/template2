@@ -108,6 +108,7 @@ def serialize_post(post: Any) -> dict[str, Any]:
         "title": post.title,
         "content": post.content,
         "status": post.status,
+        "app": post.app,
         "createdAt": post.created_at.isoformat(),
         "updatedAt": post.updated_at.isoformat(),
         "author": serialize_user(getattr(post, "author", None)),

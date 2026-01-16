@@ -1,6 +1,8 @@
 // VOC API 래퍼
 import { buildBackendUrl, safeParseJson } from "@/lib/api"
 
+import { DEFAULT_APP_CATEGORY } from "../utils/constants"
+
 function buildApiError(response, payload, fallbackMessage) {
   const apiMessage =
     payload && typeof payload === "object" && typeof payload.error === "string"
@@ -68,12 +70,14 @@ function normalizePost(raw) {
     (typeof raw.updatedAt === "string" && raw.updatedAt) ||
     (typeof raw.updated_at === "string" && raw.updated_at) ||
     createdAt
+  const appValue = typeof raw.app === "string" ? raw.app.trim() : ""
 
   return {
     id,
     title: typeof raw.title === "string" ? raw.title : "",
     content: typeof raw.content === "string" ? raw.content : "",
     status: typeof raw.status === "string" ? raw.status : "",
+    app: appValue || DEFAULT_APP_CATEGORY,
     createdAt,
     updatedAt,
     author: normalizeAuthor(raw.author),
@@ -106,7 +110,7 @@ export async function fetchVocPosts() {
   return { posts, statusCounts }
 }
 
-export async function createVocPost({ title, content, status }) {
+export async function createVocPost({ title, content, status, app }) {
   const endpoint = buildBackendUrl("/api/v1/voc/posts")
   const response = await fetch(endpoint, {
     method: "POST",
@@ -116,6 +120,7 @@ export async function createVocPost({ title, content, status }) {
       title,
       content,
       ...(status ? { status } : {}),
+      ...(app ? { app } : {}),
     }),
   })
   const payload = await safeParseJson(response)
@@ -137,6 +142,7 @@ export async function updateVocPost(postId, updates = {}) {
   if ("title" in updates) body.title = updates.title
   if ("content" in updates) body.content = updates.content
   if ("status" in updates) body.status = updates.status
+  if ("app" in updates) body.app = updates.app
 
   const response = await fetch(endpoint, {
     method: "PATCH",

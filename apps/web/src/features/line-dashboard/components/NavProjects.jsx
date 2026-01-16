@@ -7,7 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu"
 
 import {
   SidebarGroup,
@@ -26,7 +26,7 @@ import {
  * 사이드바에 "Projects" 그룹을 표시하고,
  * 각 프로젝트 항목에 "더보기" 드롭다운 메뉴를 제공한다.
  *
- * props:
+ * 전달 속성:
  * - projects: { name, url, icon } 형태의 프로젝트 리스트
  * -------------------------------------------------------------
  */
