@@ -183,8 +183,15 @@ def sync_external_affiliations(
         existing_user_sdwt_prods = selectors.get_existing_affiliation_user_sdwt_prods(
             user_sdwt_prods=user_sdwt_prods
         )
+        most_common_departments = selectors.get_most_common_departments_by_user_sdwt_prods(
+            user_sdwt_prods=user_sdwt_prods
+        )
         missing = [
-            Affiliation(department=affiliation_candidates[user_sdwt_prod], line="", user_sdwt_prod=user_sdwt_prod)
+            Affiliation(
+                department=most_common_departments.get(user_sdwt_prod) or affiliation_candidates[user_sdwt_prod],
+                line="",
+                user_sdwt_prod=user_sdwt_prod,
+            )
             for user_sdwt_prod in user_sdwt_prods
             if user_sdwt_prod not in existing_user_sdwt_prods
         ]

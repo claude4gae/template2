@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.db.models import Q, QuerySet
+from django.db.models import Count, Min, Q, QuerySet
 from django.utils import timezone
 
 from api.common.services import UNKNOWN, UNCLASSIFIED_USER_SDWT_PROD
@@ -173,6 +173,57 @@ def get_existing_affiliation_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> s
     # -----------------------------------------------------------------------------
     rows = Affiliation.objects.filter(user_sdwt_prod__in=normalized).values_list("user_sdwt_prod", flat=True)
     return {value for value in rows if isinstance(value, str) and value.strip()}
+
+
+def get_most_common_departments_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> dict[str, str]:
+    """user_sdwt_prod별로 가장 많이 등장한 department를 조회합니다.
+
+    입력:
+    - user_sdwt_prods: 소속 식별자 목록
+
+    반환:
+    - dict[str, str]: user_sdwt_prod → department 매핑
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화
+    # -----------------------------------------------------------------------------
+    normalized = [value.strip() for value in user_sdwt_prods if isinstance(value, str) and value.strip()]
+    if not normalized:
+        return {}
+
+    # -----------------------------------------------------------------------------
+    # 2) department 빈도 집계(동률은 가장 먼저 등장한 id 우선)
+    # -----------------------------------------------------------------------------
+    rows = (
+        ExternalAffiliationSnapshot.objects.filter(predicted_user_sdwt_prod__in=normalized)
+        .exclude(department__isnull=True)
+        .exclude(department__exact="")
+        .values("predicted_user_sdwt_prod", "department")
+        .annotate(count=Count("id"), min_id=Min("id"))
+        .order_by("predicted_user_sdwt_prod", "-count", "min_id")
+    )
+
+    # -----------------------------------------------------------------------------
+    # 3) user_sdwt_prod별 최빈 department 선택
+    # -----------------------------------------------------------------------------
+    result: dict[str, str] = {}
+    for row in rows:
+        key = row.get("predicted_user_sdwt_prod")
+        department = row.get("department")
+        if not isinstance(key, str) or not key.strip():
+            continue
+        if not isinstance(department, str) or not department.strip():
+            continue
+        if key not in result:
+            result[key] = department
+    return result
 
 
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:

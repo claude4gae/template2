@@ -1345,6 +1345,47 @@ class ExternalAffiliationSyncTests(TestCase):
         self.assertEqual(option.department, "Dept")
         self.assertEqual(option.line, "")
 
+    def test_sync_external_affiliations_sets_department_by_majority(self) -> None:
+        """동일 user_sdwt_prod의 최빈 department로 소속 옵션이 생성되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사전 조건 확인
+        # -----------------------------------------------------------------------------
+        self.assertFalse(Affiliation.objects.filter(user_sdwt_prod="group-major").exists())
+
+        # -----------------------------------------------------------------------------
+        # 2) 외부 동기화 호출(DeptA 2회, DeptB 1회)
+        # -----------------------------------------------------------------------------
+        sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "loginid-ext-10",
+                    "department": "DeptA",
+                    "user_sdwt_prod": "group-major",
+                    "source_updated_at": timezone.now(),
+                },
+                {
+                    "knox_id": "loginid-ext-11",
+                    "department": "DeptA",
+                    "user_sdwt_prod": "group-major",
+                    "source_updated_at": timezone.now(),
+                },
+                {
+                    "knox_id": "loginid-ext-12",
+                    "department": "DeptB",
+                    "user_sdwt_prod": "group-major",
+                    "source_updated_at": timezone.now(),
+                },
+            ]
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        option = Affiliation.objects.filter(user_sdwt_prod="group-major").first()
+        self.assertIsNotNone(option)
+        self.assertEqual(option.department, "DeptA")
+        self.assertEqual(option.line, "")
+
     def test_reconfirm_response_auto_approves(self) -> None:
         """재확인 응답이 자동 승인으로 적용되는지 확인합니다."""
         # -----------------------------------------------------------------------------
