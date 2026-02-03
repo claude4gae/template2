@@ -1189,7 +1189,13 @@ class ExternalAffiliationSyncTests(TestCase):
         # -----------------------------------------------------------------------------
         sync_external_affiliations(
             records=[
-                {"knox_id": "loginid-ext-1", "user_sdwt_prod": "group-a", "source_updated_at": timezone.now()}
+                {
+                    "knox_id": "loginid-ext-1",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-a",
+                    "source_updated_at": timezone.now(),
+                }
             ]
         )
         user.refresh_from_db()
@@ -1200,7 +1206,13 @@ class ExternalAffiliationSyncTests(TestCase):
         # -----------------------------------------------------------------------------
         result = sync_external_affiliations(
             records=[
-                {"knox_id": "loginid-ext-1", "user_sdwt_prod": "group-b", "source_updated_at": timezone.now()}
+                {
+                    "knox_id": "loginid-ext-1",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-b",
+                    "source_updated_at": timezone.now(),
+                }
             ]
         )
         user.refresh_from_db()
@@ -1244,7 +1256,13 @@ class ExternalAffiliationSyncTests(TestCase):
         # -----------------------------------------------------------------------------
         sync_external_affiliations(
             records=[
-                {"knox_id": "loginid-ext-8", "user_sdwt_prod": "group-b", "source_updated_at": timezone.now()}
+                {
+                    "knox_id": "loginid-ext-8",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-b",
+                    "source_updated_at": timezone.now(),
+                }
             ]
         )
 
@@ -1277,8 +1295,20 @@ class ExternalAffiliationSyncTests(TestCase):
         # -----------------------------------------------------------------------------
         result = sync_external_affiliations(
             records=[
-                {"knox_id": "loginid-ext-3", "user_sdwt_prod": "group-b", "source_updated_at": timezone.now()},
-                {"knox_id": "loginid-ext-3", "user_sdwt_prod": "group-c", "source_updated_at": timezone.now()},
+                {
+                    "knox_id": "loginid-ext-3",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-b",
+                    "source_updated_at": timezone.now(),
+                },
+                {
+                    "knox_id": "loginid-ext-3",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-c",
+                    "source_updated_at": timezone.now(),
+                },
             ]
         )
 
@@ -1290,6 +1320,36 @@ class ExternalAffiliationSyncTests(TestCase):
         self.assertTrue(user.requires_affiliation_reconfirm)
         snapshot = ExternalAffiliationSnapshot.objects.get(knox_id="loginid-ext-3")
         self.assertEqual(snapshot.predicted_user_sdwt_prod, "group-c")
+
+    def test_sync_external_affiliations_creates_affiliation_option(self) -> None:
+        """외부 동기화 시 누락된 소속 옵션이 생성되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사전 조건 확인
+        # -----------------------------------------------------------------------------
+        self.assertFalse(Affiliation.objects.filter(user_sdwt_prod="group-new").exists())
+
+        # -----------------------------------------------------------------------------
+        # 2) 외부 동기화 호출
+        # -----------------------------------------------------------------------------
+        sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "loginid-ext-9",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-new",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        option = Affiliation.objects.filter(user_sdwt_prod="group-new").first()
+        self.assertIsNotNone(option)
+        self.assertEqual(option.department, "Dept")
+        self.assertEqual(option.line, "Line")
 
     def test_reconfirm_response_auto_approves(self) -> None:
         """재확인 응답이 자동 승인으로 적용되는지 확인합니다."""
@@ -1309,7 +1369,13 @@ class ExternalAffiliationSyncTests(TestCase):
         # -----------------------------------------------------------------------------
         sync_external_affiliations(
             records=[
-                {"knox_id": "loginid-ext-2", "user_sdwt_prod": "group-a", "source_updated_at": timezone.now()}
+                {
+                    "knox_id": "loginid-ext-2",
+                    "department": "Dept",
+                    "line": "Line",
+                    "user_sdwt_prod": "group-a",
+                    "source_updated_at": timezone.now(),
+                }
             ]
         )
 

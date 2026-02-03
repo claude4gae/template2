@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
@@ -80,6 +80,20 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
     : []
   const options = departmentOptions.length ? departmentOptions : allOptions
   const selected = options.find((opt) => optionKey(opt) === selectedKey)
+
+  useEffect(() => {
+    if (selectedKey || !options.length) return
+    if (!user?.department || !user?.line || !user?.user_sdwt_prod) return
+    const current = options.find(
+      (opt) =>
+        opt.department === user.department &&
+        opt.line === user.line &&
+        opt.user_sdwt_prod === user.user_sdwt_prod,
+    )
+    if (current) {
+      setSelectedKey(optionKey(current))
+    }
+  }, [options, selectedKey, user?.department, user?.line, user?.user_sdwt_prod])
 
   const handleSubmit = async (event) => {
     event.preventDefault()

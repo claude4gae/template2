@@ -614,7 +614,7 @@ class AccountExternalAffiliationSyncView(APIView):
         예시 요청:
         - 예시 요청: POST /api/v1/account/external-affiliations/sync
           헤더 예시: Authorization: Bearer <token>
-          요청 바디 예시: {"records":[{"knox_id":"K1","user_sdwt_prod":"G1","source_updated_at":"2025-01-01T00:00:00Z"}]}
+          요청 바디 예시: {"records":[{"knox_id":"K1","department":"Dept","line":"Line","user_sdwt_prod":"G1","source_updated_at":"2025-01-01T00:00:00Z"}]}
 
         snake/camel 호환:
         - 해당 없음(요청 바디는 snake_case만 허용)
