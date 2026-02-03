@@ -1192,7 +1192,6 @@ class ExternalAffiliationSyncTests(TestCase):
                 {
                     "knox_id": "loginid-ext-1",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-a",
                     "source_updated_at": timezone.now(),
                 }
@@ -1209,7 +1208,6 @@ class ExternalAffiliationSyncTests(TestCase):
                 {
                     "knox_id": "loginid-ext-1",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-b",
                     "source_updated_at": timezone.now(),
                 }
@@ -1259,7 +1257,6 @@ class ExternalAffiliationSyncTests(TestCase):
                 {
                     "knox_id": "loginid-ext-8",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-b",
                     "source_updated_at": timezone.now(),
                 }
@@ -1298,14 +1295,12 @@ class ExternalAffiliationSyncTests(TestCase):
                 {
                     "knox_id": "loginid-ext-3",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-b",
                     "source_updated_at": timezone.now(),
                 },
                 {
                     "knox_id": "loginid-ext-3",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-c",
                     "source_updated_at": timezone.now(),
                 },
@@ -1336,7 +1331,6 @@ class ExternalAffiliationSyncTests(TestCase):
                 {
                     "knox_id": "loginid-ext-9",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-new",
                     "source_updated_at": timezone.now(),
                 }
@@ -1349,7 +1343,7 @@ class ExternalAffiliationSyncTests(TestCase):
         option = Affiliation.objects.filter(user_sdwt_prod="group-new").first()
         self.assertIsNotNone(option)
         self.assertEqual(option.department, "Dept")
-        self.assertEqual(option.line, "Line")
+        self.assertEqual(option.line, "")
 
     def test_reconfirm_response_auto_approves(self) -> None:
         """재확인 응답이 자동 승인으로 적용되는지 확인합니다."""
@@ -1372,7 +1366,6 @@ class ExternalAffiliationSyncTests(TestCase):
                 {
                     "knox_id": "loginid-ext-2",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-a",
                     "source_updated_at": timezone.now(),
                 }

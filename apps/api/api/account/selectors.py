@@ -145,14 +145,14 @@ def list_affiliation_options() -> list[dict[str, str]]:
     )
 
 
-def get_affiliation_keys_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> set[tuple[str, str, str]]:
-    """user_sdwt_prod 목록으로 소속 키(부서/라인/user_sdwt_prod) 세트를 조회합니다.
+def get_existing_affiliation_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> set[str]:
+    """user_sdwt_prod 목록 중 기존 소속에 존재하는 값을 세트로 반환합니다.
 
     입력:
     - user_sdwt_prods: 소속 식별자 목록
 
     반환:
-    - set[tuple[str, str, str]]: (department, line, user_sdwt_prod) 조합 세트
+    - set[str]: 존재하는 user_sdwt_prod 값 세트
 
     부작용:
     - 없음(읽기 전용)
@@ -169,14 +169,10 @@ def get_affiliation_keys_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> se
         return set()
 
     # -----------------------------------------------------------------------------
-    # 2) 소속 키 조회
+    # 2) 기존 소속 조회
     # -----------------------------------------------------------------------------
-    rows = Affiliation.objects.filter(user_sdwt_prod__in=normalized).values(
-        "department",
-        "line",
-        "user_sdwt_prod",
-    )
-    return {(row["department"], row["line"], row["user_sdwt_prod"]) for row in rows}
+    rows = Affiliation.objects.filter(user_sdwt_prod__in=normalized).values_list("user_sdwt_prod", flat=True)
+    return {value for value in rows if isinstance(value, str) and value.strip()}
 
 
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:

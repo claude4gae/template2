@@ -134,7 +134,6 @@ class EmailAffiliationTests(TestCase):
                 {
                     "knox_id": "loginid-ext",
                     "department": "Dept",
-                    "line": "Line",
                     "user_sdwt_prod": "group-pred",
                     "source_updated_at": timezone.now(),
                 }

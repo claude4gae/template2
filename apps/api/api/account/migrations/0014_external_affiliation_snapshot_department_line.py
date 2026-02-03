@@ -12,9 +12,4 @@ class Migration(migrations.Migration):
             name="department",
             field=models.CharField(blank=True, max_length=128, null=True),
         ),
-        migrations.AddField(
-            model_name="externalaffiliationsnapshot",
-            name="line",
-            field=models.CharField(blank=True, max_length=64, null=True),
-        ),
     ]

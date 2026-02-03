@@ -30,7 +30,7 @@ def sync_external_affiliations(
     """외부 예측 소속 스냅샷을 업서트하고 변경 시 재확인 플래그를 세웁니다.
 
     입력:
-    - records: knox_id/department/line/user_sdwt_prod/source_updated_at을 포함한 레코드 목록
+    - records: knox_id/department/user_sdwt_prod/source_updated_at을 포함한 레코드 목록
 
     반환:
     - dict[str, int]: created/updated/unchanged/flagged 카운트
@@ -38,6 +38,7 @@ def sync_external_affiliations(
     부작용:
     - ExternalAffiliationSnapshot 업서트
     - 사용자 requires_affiliation_reconfirm 갱신
+    - Affiliation 누락분 생성(라인 공백 처리)
 
     오류:
     - 없음
@@ -53,7 +54,7 @@ def sync_external_affiliations(
     flagged = 0
 
     record_list = [record for record in records if isinstance(record, dict)]
-    affiliation_candidates: set[tuple[str, str, str]] = set()
+    affiliation_candidates: dict[str, str] = {}
     # 동일 knox_id 중복 입력으로 인한 고유 제약 충돌을 피하려고 마지막 레코드로 정규화합니다.
     normalized_records: dict[str, dict[str, object]] = {}
     for record in record_list:
@@ -73,10 +74,9 @@ def sync_external_affiliations(
     for record in normalized_records.values():
         knox_id = (record.get("knox_id") or "").strip()
         department = (record.get("department") or "").strip()
-        line = (record.get("line") or "").strip()
         predicted = (record.get("user_sdwt_prod") or record.get("predicted_user_sdwt_prod") or "").strip()
         source_updated_at = record.get("source_updated_at") or record.get("sourceUpdatedAt") or now
-        if not knox_id or not predicted or not department or not line:
+        if not knox_id or not predicted or not department:
             continue
         if isinstance(source_updated_at, datetime) and timezone.is_naive(source_updated_at):
             source_updated_at = timezone.make_aware(source_updated_at, timezone.utc)
@@ -88,14 +88,13 @@ def sync_external_affiliations(
             snapshot = ExternalAffiliationSnapshot.objects.create(
                 knox_id=knox_id,
                 department=department,
-                line=line,
                 predicted_user_sdwt_prod=predicted,
                 source_updated_at=source_updated_at,
                 last_seen_at=now,
             )
             created += 1
             existing[knox_id] = snapshot
-            affiliation_candidates.add((department, line, predicted))
+            affiliation_candidates[predicted] = department
             continue
 
         # -----------------------------------------------------------------------------
@@ -103,17 +102,14 @@ def sync_external_affiliations(
         # -----------------------------------------------------------------------------
         changed = snapshot.predicted_user_sdwt_prod != predicted
         changed_department = (snapshot.department or "").strip() != department
-        changed_line = (snapshot.line or "").strip() != line
-        if changed or changed_department or changed_line or snapshot.source_updated_at != source_updated_at:
+        if changed or changed_department or snapshot.source_updated_at != source_updated_at:
             snapshot.department = department
-            snapshot.line = line
             snapshot.predicted_user_sdwt_prod = predicted
             snapshot.source_updated_at = source_updated_at
             snapshot.last_seen_at = now
             snapshot.save(
                 update_fields=[
                     "department",
-                    "line",
                     "predicted_user_sdwt_prod",
                     "source_updated_at",
                     "last_seen_at",
@@ -124,7 +120,7 @@ def sync_external_affiliations(
             snapshot.last_seen_at = now
             snapshot.save(update_fields=["last_seen_at"])
             unchanged += 1
-        affiliation_candidates.add((department, line, predicted))
+        affiliation_candidates[predicted] = department
 
         # -----------------------------------------------------------------------------
         # 5) 사용자 재확인 플래그 갱신
@@ -154,12 +150,14 @@ def sync_external_affiliations(
     # 6) 소속 옵션 누락분 추가
     # -----------------------------------------------------------------------------
     if affiliation_candidates:
-        user_sdwt_prods = [value[2] for value in affiliation_candidates]
-        existing_keys = selectors.get_affiliation_keys_by_user_sdwt_prods(user_sdwt_prods=user_sdwt_prods)
+        user_sdwt_prods = list(affiliation_candidates.keys())
+        existing_user_sdwt_prods = selectors.get_existing_affiliation_user_sdwt_prods(
+            user_sdwt_prods=user_sdwt_prods
+        )
         missing = [
-            Affiliation(department=department, line=line, user_sdwt_prod=user_sdwt_prod)
-            for department, line, user_sdwt_prod in affiliation_candidates
-            if (department, line, user_sdwt_prod) not in existing_keys
+            Affiliation(department=affiliation_candidates[user_sdwt_prod], line="", user_sdwt_prod=user_sdwt_prod)
+            for user_sdwt_prod in user_sdwt_prods
+            if user_sdwt_prod not in existing_user_sdwt_prods
         ]
         if missing:
             with transaction.atomic():
