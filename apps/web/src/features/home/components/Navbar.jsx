@@ -100,7 +100,13 @@ const HomeNavbar = ({ navigationItems }) => {
   }
 
   return (
-    <div className="flex h-full w-full items-center gap-6 px-4 md:px-6">
+    <div
+      className="flex h-full w-full items-center gap-6 px-4 md:px-6"
+      onMouseEnter={showNavItems}
+      onMouseLeave={scheduleHideNavItems}
+      onFocusCapture={showNavItems}
+      onBlurCapture={handleBlur}
+    >
       <div className="flex flex-1 items-center gap-4">
         <HomeNavLink href="/" className="flex items-center gap-3">
           <Logo className="size-8" />
@@ -111,10 +117,6 @@ const HomeNavbar = ({ navigationItems }) => {
       <NavigationMenu
         viewport={false}
         className="hidden flex-1 justify-center lg:flex"
-        onMouseEnter={showNavItems}
-        onMouseLeave={scheduleHideNavItems}
-        onFocusCapture={showNavItems}
-        onBlurCapture={handleBlur}
       >
         <NavigationMenuList className="justify-center gap-1">
           {navigationItems.map((navItem) => {
