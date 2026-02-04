@@ -41,6 +41,8 @@ const LABELS = {
   jiraTitle: "Jira Project Key",
   jiraDescription: "User SDWT별 Jira 프로젝트 키를 설정합니다.",
   jiraHelper: "설정된 키는 Jira 이슈 생성 시 사용됩니다.",
+  badgesTitle: "User SDWT",
+  badgesDescription: "라인에 등록된 User SDWT를 표시합니다.",
   jiraUserSdwtLabel: "User SDWT",
   jiraUserSdwtPlaceholder: "User SDWT 선택",
   jiraPlaceholder: "ex) DRONE",
@@ -417,16 +419,22 @@ export function LineSettingsPage({ lineId = "" }) {
   )
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-2">
+    <section className="flex h-full min-h-0 flex-col gap-3">
+      {/* 헤더 */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2 text-lg font-semibold">
+          <div className="flex flex-wrap items-end gap-x-2 gap-y-1 text-lg font-semibold">
             <IconSettings className="size-5" />
-            {lineId ? `${lineId} ${LABELS.titleSuffix}` : LABELS.titleSuffix}
-            <div className="ml-2 self-end text-[10px] font-normal text-muted-foreground" aria-live="polite">
+            <span>{lineId ? `${lineId} ${LABELS.titleSuffix}` : LABELS.titleSuffix}</span>
+
+            <div
+              className="ml-0 md:ml-2 text-[10px] font-normal text-muted-foreground"
+              aria-live="polite"
+            >
               {LABELS.updated} {lastUpdatedLabel}
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">{LABELS.subtitle}</p>
         </div>
 
         <div className="flex items-center gap-2 self-end">
@@ -454,19 +462,16 @@ export function LineSettingsPage({ lineId = "" }) {
         </div>
       )}
 
-      <div className="grid flex-1 min-h-0 gap-4">
-        <div className="grid min-h-0 grid-rows-[160px_1fr] gap-2">
-          <div className="grid min-h-0 grid-cols-6 gap-2">
-            <div className="col-span-4 rounded-lg border bg-background px-4 py-2 shadow-sm">
-              <div className="flex justify-between">
-                <div className="flex flex-col gap-1 pb-4">
-                  <h2 className="text-md font-medium">{LABELS.addTitle}</h2>
-                  <p className="text-xs text-muted-foreground">{LABELS.addDescription}</p>
-                </div>
-
-                <div className="flex flex-col gap-2 ">
-                  <LineUserSdwtBadges lineId={lineId} values={userSdwtValues} />
-                </div>
+      {/* 본문 */}
+      <div className="grid flex-1 min-h-0 grid-rows-[auto_1fr] gap-3">
+        {/* 상단 카드 */}
+        <div className="grid grid-cols-[2fr_2fr_2fr] gap-3">
+          {/* E-SOP End Step 추가 카드 */}
+          <div className="rounded-lg border bg-background p-4 shadow-sm">
+            <div className="flex flex-col gap-3">
+              <div className="space-y-1">
+                <h2 className="text-base font-medium">{LABELS.addTitle}</h2>
+                <p className="text-xs text-muted-foreground">{LABELS.addDescription}</p>
               </div>
 
               {formError ? (
@@ -474,305 +479,320 @@ export function LineSettingsPage({ lineId = "" }) {
                   {formError}
                 </p>
               ) : (
-                <p className="text-xs">&nbsp;</p>
+                <p className="text-xs text-muted-foreground">&nbsp;</p>
               )}
 
-              <div className="mb-2 flex flex-wrap items-end justify-between">
-                <form className="flex flex-row flex-wrap items-center gap-3" onSubmit={handleCreate}>
-                  <div className="w-48 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="main-step-input">
-                      {LABELS.mainStep}
-                    </label>
-                    <Input
-                      id="main-step-input"
-                      value={formValues.mainStep}
-                      onChange={(event) => handleFormChange("mainStep", event.target.value)}
-                      placeholder="ex) AB123456"
-                      required
-                      maxLength={MAX_FIELD_LENGTH}
-                    />
-                  </div>
+              <form
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:items-end"
+                onSubmit={handleCreate}
+              >
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="main-step-input">
+                    {LABELS.mainStep}
+                  </label>
+                  <Input
+                    id="main-step-input"
+                    value={formValues.mainStep}
+                    onChange={(event) => handleFormChange("mainStep", event.target.value)}
+                    placeholder="ex) AB123456"
+                    required
+                    maxLength={MAX_FIELD_LENGTH}
+                  />
+                </div>
 
-                  <div className="w-48 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="custom-step-input">
-                      {LABELS.customEndStep}
-                    </label>
-                    <Input
-                      id="custom-step-input"
-                      value={formValues.customEndStep}
-                      onChange={(event) => handleFormChange("customEndStep", event.target.value)}
-                      placeholder="조기 알람 받을 스텝"
-                      maxLength={MAX_FIELD_LENGTH}
-                    />
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="custom-step-input">
+                    {LABELS.customEndStep}
+                  </label>
+                  <Input
+                    id="custom-step-input"
+                    value={formValues.customEndStep}
+                    onChange={(event) => handleFormChange("customEndStep", event.target.value)}
+                    placeholder="조기 알람 받을 스텝"
+                    maxLength={MAX_FIELD_LENGTH}
+                  />
+                </div>
 
-                  </div>
-
-                  <Button type="submit" className="md:self-end" disabled={isCreating || !lineId}>
+                <div className="flex sm:justify-end lg:justify-start">
+                  <Button type="submit" disabled={isCreating || !lineId} className="w-full sm:w-auto">
                     <IconPlus className="mr-1 size-4" />
                     {LABELS.addButton}
                   </Button>
-                </form>
+                </div>
+              </form>
+            </div>
+          </div>
 
-              </div>
+          {/* User SDWT 카드 */}
+          <div className="rounded-lg border bg-background p-4 shadow-sm">
+            <div className="space-y-1 pb-3">
+              <h2 className="text-base font-medium">{LABELS.badgesTitle}</h2>
+              <p className="text-xs text-muted-foreground">{LABELS.badgesDescription}</p>
+
             </div>
 
-            <div className="col-span-2 rounded-lg border bg-background px-4 py-3 shadow-sm">
-              <div className="flex flex-col gap-1 pb-3">
-                <h2 className="text-md font-medium">{LABELS.jiraTitle}</h2>
-                <p className="text-xs text-muted-foreground">{LABELS.jiraDescription}</p>
-              </div>
+            <div className="pt-1">
+              <LineUserSdwtBadges lineId={lineId} values={userSdwtValues} />
+            </div>
+          </div>
 
-              {jiraKeyFormError ? (
-                <p className="text-xs text-destructive" role="alert">
-                  {jiraKeyFormError}
-                </p>
-              ) : jiraKeyError ? (
-                <p className="text-xs text-destructive" role="alert">
-                  {jiraKeyError}
-                </p>
-              ) : (
-                <p className="text-xs">&nbsp;</p>
-              )}
+          {/* Jira 카드 */}
+          <div className="rounded-lg border bg-background p-4 shadow-sm">
+            <div className="space-y-1 pb-3">
+              <h2 className="text-base font-medium">{LABELS.jiraTitle}</h2>
+              <p className="text-xs text-muted-foreground">{LABELS.jiraDescription}</p>
+              <p className="text-xs text-muted-foreground">{LABELS.jiraHelper}</p>
+            </div>
 
-              {isSuperuser ? (
-                <form className="flex flex-wrap items-end gap-3" onSubmit={handleJiraKeySave}>
-                  <div className="w-36 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
-                      {LABELS.jiraUserSdwtLabel}
-                    </label>
-                    <Select
-                      value={selectedUserSdwtProd || undefined}
-                      onValueChange={setSelectedUserSdwtProd}
-                      disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
-                    >
-                      <SelectTrigger id="jira-user-sdwt-select" className="w-full">
-                        <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {userSdwtValues.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {value}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="w-36 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
-                      {LABELS.jiraTitle}
-                    </label>
-                    <Input
-                      id="jira-key-input"
-                      value={jiraKeyDraft}
-                      onChange={(event) => setJiraKeyDraft(event.target.value)}
-                      placeholder={LABELS.jiraPlaceholder}
-                      maxLength={MAX_JIRA_KEY_LENGTH}
-                      disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
-                    />
-                  </div>
+            {jiraKeyFormError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {jiraKeyFormError}
+              </p>
+            ) : jiraKeyError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {jiraKeyError}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">&nbsp;</p>
+            )}
+
+            {isSuperuser ? (
+              <form
+                className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3"
+                onSubmit={handleJiraKeySave}
+              >
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
+                    {LABELS.jiraUserSdwtLabel}
+                  </label>
+                  <Select
+                    value={selectedUserSdwtProd || undefined}
+                    onValueChange={setSelectedUserSdwtProd}
+                    disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
+                  >
+                    <SelectTrigger id="jira-user-sdwt-select" className="w-full">
+                      <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {userSdwtValues.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
+                    {LABELS.jiraTitle}
+                  </label>
+                  <Input
+                    id="jira-key-input"
+                    value={jiraKeyDraft}
+                    onChange={(event) => setJiraKeyDraft(event.target.value)}
+                    placeholder={LABELS.jiraPlaceholder}
+                    maxLength={MAX_JIRA_KEY_LENGTH}
+                    disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
+                  />
+                </div>
+
+                <div className="flex items-end justify-end">
                   <Button
                     type="submit"
-                    className="md:self-end"
                     disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
+                    className="w-auto"
                   >
                     <IconDeviceFloppy className="mr-1 size-4" />
                     {LABELS.jiraSave}
                   </Button>
-                </form>
-              ) : (
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="w-36 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
-                      {LABELS.jiraUserSdwtLabel}
-                    </label>
-                    <Select
-                      value={selectedUserSdwtProd || undefined}
-                      onValueChange={setSelectedUserSdwtProd}
-                      disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
-                    >
-                      <SelectTrigger id="jira-user-sdwt-select" className="w-full">
-                        <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {userSdwtValues.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {value}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="w-36 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
-                      {LABELS.jiraTitle}
-                    </label>
-                    <Input
-                      id="jira-key-input"
-                      value={jiraKeyDraft}
-                      placeholder={LABELS.jiraPlaceholder}
-                      maxLength={MAX_JIRA_KEY_LENGTH}
-                      disabled
-                    />
-                  </div>
                 </div>
-              )}
+              </form>
+            ) : (
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
+                    {LABELS.jiraUserSdwtLabel}
+                  </label>
+                  <Select
+                    value={selectedUserSdwtProd || undefined}
+                    onValueChange={setSelectedUserSdwtProd}
+                    disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
+                  >
+                    <SelectTrigger id="jira-user-sdwt-select" className="w-full">
+                      <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {userSdwtValues.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
+                    {LABELS.jiraTitle}
+                  </label>
+                  <Input
+                    id="jira-key-input"
+                    value={jiraKeyDraft}
+                    placeholder={LABELS.jiraPlaceholder}
+                    maxLength={MAX_JIRA_KEY_LENGTH}
+                    disabled
+                  />
+                </div>
+              </div>
+            )}
           </div>
+        </div>
 
-          <div className="min-h-0 rounded-lg border bg-background">
-            <div className="max-h-full min-h-0 overflow-y-auto">
-              <Table stickyHeader className="w-full table-fixed">
-                <colgroup>
-                  <col className="w-30" />
-                  <col className="w-40" />
-                  <col className="w-40" />
-                  <col className="w-32" />
-                  <col className="w-40" />
-                  <col className="w-60" />
-                </colgroup>
+        {/* 테이블 */}
+        <div className="min-h-0 rounded-lg border bg-background overflow-hidden">
+          <div className="h-full min-h-0 overflow-auto">
+            <Table stickyHeader className="w-full table-fixed">
+              <colgroup>
+                <col className="w-30" />
+                <col className="w-40" />
+                <col className="w-40" />
+                <col className="w-32" />
+                <col className="w-40" />
+                <col className="w-60" />
+              </colgroup>
 
-                <TableHeader className="sticky top-0 z-10 bg-muted">
+              <TableHeader className="sticky top-0 z-10 bg-muted">
+                <TableRow>
+                  <TableHead className="text-center">{LABELS.lineId}</TableHead>
+                  <TableHead className="text-center">{LABELS.mainStep}</TableHead>
+                  <TableHead className="text-center">{LABELS.customEndStep}</TableHead>
+                  <TableHead className="text-center">{LABELS.updatedBy}</TableHead>
+                  <TableHead className="text-center">{LABELS.updatedAt}</TableHead>
+                  <TableHead className="text-right" />
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {isLoading && !hasLoadedOnce && (
                   <TableRow>
-                    <TableHead className="text-center">{LABELS.lineId}</TableHead>
-                    <TableHead className="text-center">{LABELS.mainStep}</TableHead>
-                    <TableHead className="text-center">{LABELS.customEndStep}</TableHead>
-                    <TableHead className="text-center">{LABELS.updatedBy}</TableHead>
-                    <TableHead className="text-center">{LABELS.updatedAt}</TableHead>
-                    <TableHead className="text-right" />
+                    <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                      {LABELS.loading}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
+                )}
 
-                <TableBody>
-                  {isLoading && !hasLoadedOnce && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
-                        {LABELS.loading}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                {!isLoading && entries.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                      {lineId ? LABELS.empty : "Select a line to view overrides."}
+                    </TableCell>
+                  </TableRow>
+                )}
 
-                  {!isLoading && entries.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
-                        {lineId ? LABELS.empty : "Select a line to view overrides."}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                {entries.map((entry) => {
+                  const isEditing = editingId === entry.id
+                  const isSaving = Boolean(savingMap[entry.id])
+                  const rowError = rowErrors[entry.id]
 
-                  {entries.map((entry) => {
-                    const isEditing = editingId === entry.id
-                    const isSaving = Boolean(savingMap[entry.id])
-                    const rowError = rowErrors[entry.id]
+                  return (
+                    <React.Fragment key={entry.id}>
+                      <TableRow className={isSaving ? "opacity-60" : ""}>
+                        <TableCell className="text-center font-light">{entry.lineId || "-"}</TableCell>
 
-                    return (
-                      <React.Fragment key={entry.id}>
+                        <TableCell className="text-center">
+                          {isEditing ? (
+                            <Input
+                              value={editDraft.mainStep}
+                              onChange={(event) => handleEditChange("mainStep", event.target.value)}
+                              maxLength={MAX_FIELD_LENGTH}
+                              disabled={isSaving}
+                              className="text-center"
+                            />
+                          ) : (
+                            <span className="font-light">{entry.mainStep}</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-center font-light">
+                          {isEditing ? (
+                            <Input
+                              value={editDraft.customEndStep ?? ""}
+                              onChange={(event) => handleEditChange("customEndStep", event.target.value)}
+                              maxLength={MAX_FIELD_LENGTH}
+                              disabled={isSaving}
+                              className="text-center"
+                            />
+                          ) : entry.customEndStep && entry.customEndStep.trim().length > 0 ? (
+                            entry.customEndStep
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-center text-xs text-muted-foreground">
+                          {entry.updatedBy || "-"}
+                        </TableCell>
+
+                        <TableCell className="text-center text-xs text-muted-foreground">
+                          {formatUpdatedAt(entry.updatedAt)}
+                        </TableCell>
+
+                        <TableCell className="text-end">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {isEditing ? (
+                              <>
+                                <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1">
+                                  <IconDeviceFloppy className="size-4" />
+                                  Save
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={cancelEditing}
+                                  disabled={isSaving}
+                                  className="gap-1"
+                                >
+                                  <IconX className="size-4" />
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => startEditing(entry)} className="gap-1">
+                                  <IconPencil className="size-4" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDelete(entry)}
+                                  className="gap-1 text-destructive"
+                                >
+                                  <IconTrash className="size-4" />
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+
+                      {rowError && (
                         <TableRow>
-                          <TableCell className="text-center font-light">
-                            {entry.lineId || "-"}
-                          </TableCell>
-
-                          <TableCell className="text-center">
-                            {isEditing ? (
-                              <Input
-                                value={editDraft.mainStep}
-                                onChange={(event) => handleEditChange("mainStep", event.target.value)}
-                                maxLength={MAX_FIELD_LENGTH}
-                                disabled={isSaving}
-                                className="text-center"
-                              />
-                            ) : (
-                              <span className="font-light">{entry.mainStep}</span>
-                            )}
-                          </TableCell>
-
-                          <TableCell className="text-center font-light ">
-                            {isEditing ? (
-                              <Input
-                                value={editDraft.customEndStep ?? ""}
-                                onChange={(event) =>
-                                  handleEditChange("customEndStep", event.target.value)
-                                }
-                                maxLength={MAX_FIELD_LENGTH}
-                                disabled={isSaving}
-                                className="text-center"
-                              />
-                            ) : entry.customEndStep && entry.customEndStep.trim().length > 0 ? (
-                              entry.customEndStep
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-
-                          <TableCell className="text-center text-xs text-muted-foreground">
-                            {entry.updatedBy || "-"}
-                          </TableCell>
-
-                          <TableCell className="text-center text-xs text-muted-foreground">
-                            {formatUpdatedAt(entry.updatedAt)}
-                          </TableCell>
-
-                          <TableCell className="text-end">
-                            <div className="inline-flex items-center justify-end gap-2">
-                              {isEditing ? (
-                                <>
-                                  <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1">
-                                    <IconDeviceFloppy className="size-4" />
-                                    Save
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={cancelEditing}
-                                    disabled={isSaving}
-                                    className="gap-1"
-                                  >
-                                    <IconX className="size-4" />
-                                    Cancel
-                                  </Button>
-                                </>
-                              ) : (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => startEditing(entry)}
-                                    className="gap-1"
-                                  >
-                                    <IconPencil className="size-4" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleDelete(entry)}
-                                    className="gap-1 text-destructive"
-                                  >
-                                    <IconTrash className="size-4" />
-                                    Delete
-                                  </Button>
-                                </>
-                              )}
-                            </div>
+                          <TableCell
+                            colSpan={6}
+                            className="bg-destructive/5 px-4 py-2 text-center text-xs text-destructive"
+                          >
+                            {rowError}
                           </TableCell>
                         </TableRow>
-
-                        {rowError && (
-                          <TableRow>
-                            <TableCell
-                              colSpan={6}
-                              className="bg-destructive/5 px-4 py-2 text-center text-xs text-destructive"
-                            >
-                              {rowError}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </React.Fragment>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+              </TableBody>
+            </Table>
           </div>
         </div>
       </div>

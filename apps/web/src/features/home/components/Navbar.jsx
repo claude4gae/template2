@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react"
+import { useLocation } from "react-router-dom"
 import { BellIcon, SearchIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -21,8 +23,72 @@ import NotificationDropdown from "./NotificationDropdown"
 import { HomeNavLink } from "./HomeNavLink"
 import ProfileDropdown from "./ProfileDropdown"
 
+const NAV_HIDE_DELAY_MS = 3000
+
 const HomeNavbar = ({ navigationItems }) => {
   const { user } = useAuth()
+  const { pathname } = useLocation()
+  const isHomeRoute = pathname === "/"
+  const shouldFadeNavItems = !isHomeRoute
+  const hideTimerRef = useRef(null)
+  const [isNavVisible, setIsNavVisible] = useState(() => pathname === "/")
+
+  useEffect(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+
+    if (!shouldFadeNavItems) {
+      setIsNavVisible(true)
+      return
+    }
+
+    setIsNavVisible(false)
+  }, [shouldFadeNavItems])
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const showNavItems = () => {
+    if (!shouldFadeNavItems) return
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setIsNavVisible(true)
+  }
+
+  const scheduleHideNavItems = () => {
+    if (!shouldFadeNavItems) return
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+    }
+    hideTimerRef.current = setTimeout(() => {
+      setIsNavVisible(false)
+      hideTimerRef.current = null
+    }, NAV_HIDE_DELAY_MS)
+  }
+
+  const handleBlur = (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return
+    }
+    scheduleHideNavItems()
+  }
+
+  const navItemVisibilityClassName = shouldFadeNavItems
+    ? cn(
+      "transition-opacity duration-700",
+      isNavVisible ? "opacity-100" : "opacity-0 pointer-events-none",
+    )
+    : ""
   const profileAvatarId = resolveProfileAvatarId(user)
   const avatarSrc = buildProfileImageUrl(profileAvatarId)
   const displayName = user?.username || user?.email || "U"
@@ -42,7 +108,14 @@ const HomeNavbar = ({ navigationItems }) => {
         </HomeNavLink>
       </div>
 
-      <NavigationMenu viewport={false} className="hidden flex-1 justify-center lg:flex">
+      <NavigationMenu
+        viewport={false}
+        className="hidden flex-1 justify-center lg:flex"
+        onMouseEnter={showNavItems}
+        onMouseLeave={scheduleHideNavItems}
+        onFocusCapture={showNavItems}
+        onBlurCapture={handleBlur}
+      >
         <NavigationMenuList className="justify-center gap-1">
           {navigationItems.map((navItem) => {
             const Icon = navItem.icon
@@ -54,6 +127,7 @@ const HomeNavbar = ({ navigationItems }) => {
                     className={cn(
                       navigationMenuTriggerStyle(),
                       "flex flex-row items-center gap-1.5",
+                      navItemVisibilityClassName,
                     )}
                   >
                     <HomeNavLink href={navItem.href}>
@@ -67,7 +141,7 @@ const HomeNavbar = ({ navigationItems }) => {
 
             return (
               <NavigationMenuItem key={navItem.title}>
-                <NavigationMenuTrigger className="gap-1.5">
+                <NavigationMenuTrigger className={cn("gap-1.5", navItemVisibilityClassName)}>
                   {renderIcon(Icon)}
                   {navItem.title}
                 </NavigationMenuTrigger>
