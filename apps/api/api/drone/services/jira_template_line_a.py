@@ -11,7 +11,7 @@ from typing import Any
 
 TEMPLATE_KEY = "line_a"
 
-SUMMARY_TEMPLATE = "{sdwt_initial} {normalized_step}"
+SUMMARY_TEMPLATE = "{sdwt_initial} {normalized_step} {eqp_cb}"
 
 DESCRIPTION_TEMPLATE = """<div>
   <div style="margin:8px 0;">
@@ -88,13 +88,17 @@ def _build_summary_context(row: dict[str, Any]) -> dict[str, str]:
     sdwt = str(row.get("sdwt_prod") or "?").strip() or "?"
     step = str(row.get("main_step") or "??").strip() or "??"
     normalized_step = step[2:].upper() if len(step) >= 3 else step.upper()
+    eqp_id = str(row.get("eqp_id") or "-").strip() or "-"
+    chamber_ids = str(row.get("chamber_ids") or "-").strip() or "-"
     return {
         "sdwt_initial": sdwt[:1],
         "normalized_step": normalized_step,
         "main_step": step,
         "sdwt_prod": sdwt,
         "line_id": str(row.get("line_id") or "").strip(),
-        "eqp_id": str(row.get("eqp_id") or "").strip(),
+        "eqp_id": eqp_id,
+        "chamber_ids": chamber_ids,
+        "eqp_cb": f"{eqp_id}-{chamber_ids}",
         "lot_id": str(row.get("lot_id") or "").strip(),
         "ppid": str(row.get("ppid") or "").strip(),
     }
