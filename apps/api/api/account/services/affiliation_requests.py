@@ -373,24 +373,31 @@ def request_affiliation_change(
     - 자동 적용 조건 충족 시 즉시 승인/반영
 
     오류:
-    - 없음
+    - 400: 동일 소속 요청
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 자기 접근 권한 보장
+    # 1) 대상 소속 정규화 및 동일 소속 요청 차단
+    # -----------------------------------------------------------------------------
+    normalized_target = (to_user_sdwt_prod or "").strip()
+    current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+    if current_user_sdwt and normalized_target and current_user_sdwt == normalized_target:
+        return {"error": "already current affiliation"}, 400
+
+    # -----------------------------------------------------------------------------
+    # 2) 자기 접근 권한 보장
     # -----------------------------------------------------------------------------
     ensure_self_access(user, role="member")
 
     # -----------------------------------------------------------------------------
-    # 2) 기존 대기 요청 확인 및 대체 여부 판단
+    # 3) 기존 대기 요청 확인 및 대체 여부 판단
     # -----------------------------------------------------------------------------
     existing_pending = selectors.get_pending_user_sdwt_prod_change(user=user)
     has_existing_pending = existing_pending is not None
 
     # -----------------------------------------------------------------------------
-    # 3) 예측 소속/승인자 존재 여부 확인 및 자동 적용 판단
+    # 4) 예측 소속 일치 여부 확인 및 자동 적용 판단
     # -----------------------------------------------------------------------------
-    normalized_target = (to_user_sdwt_prod or "").strip()
     knox_id = (getattr(user, "knox_id", None) or "").strip()
     predicted_user_sdwt = ""
     if knox_id:
@@ -398,15 +405,14 @@ def request_affiliation_change(
         predicted_user_sdwt = (snapshot.predicted_user_sdwt_prod or "").strip() if snapshot else ""
 
     predicted_match = bool(predicted_user_sdwt and predicted_user_sdwt == normalized_target)
-    has_approver = selectors.has_approver_for_user_sdwt_prod(user_sdwt_prod=normalized_target)
-    should_auto_apply = predicted_match or not has_approver
+    should_auto_apply = predicted_match
     if force_pending:
         should_auto_apply = False
     if has_existing_pending:
         should_auto_apply = False
 
     # -----------------------------------------------------------------------------
-    # 4) effective_from 보정
+    # 5) effective_from 보정
     # -----------------------------------------------------------------------------
     if should_auto_apply:
         effective_from = timezone.now()
@@ -416,7 +422,7 @@ def request_affiliation_change(
         elif timezone.is_naive(effective_from):
             effective_from = timezone.make_aware(effective_from, timezone.utc)
     # -----------------------------------------------------------------------------
-    # 5) 변경 요청 생성 및 자동 적용 분기
+    # 6) 변경 요청 생성 및 자동 적용 분기
     # -----------------------------------------------------------------------------
     with transaction.atomic():
         if existing_pending is not None:
@@ -458,7 +464,7 @@ def request_affiliation_change(
             user.save(update_fields=["requires_affiliation_reconfirm"])
 
     # -----------------------------------------------------------------------------
-    # 6) 승인 대기 응답 반환
+    # 7) 승인 대기 응답 반환
     # -----------------------------------------------------------------------------
     return (
         {

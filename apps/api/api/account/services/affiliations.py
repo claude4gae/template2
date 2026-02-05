@@ -337,7 +337,7 @@ def submit_affiliation_reconfirm_response(
     - Tuple[dict[str, object], int]: (payload, status_code) (응답 본문, 상태 코드)
 
     부작용:
-    - 예측값 일치 또는 승인자 부재 시 UserSdwtProdChange 생성/즉시 적용
+    - 예측값 일치 시 UserSdwtProdChange 생성/즉시 적용
     - 불일치 선택 시 UserSdwtProdChange 승인 대기 생성
     - 사용자 재확인 플래그 해제(기존 유지/적용/승인 대기 생성 성공 시)
 

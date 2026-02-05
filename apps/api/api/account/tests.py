@@ -1067,8 +1067,33 @@ class AffiliationChangeRequestTests(TestCase):
         self.assertFalse(change.applied)
         self.assertEqual(change.status, UserSdwtProdChange.Status.PENDING)
 
-    def test_request_affiliation_change_auto_applies_when_no_approver(self) -> None:
-        """승인자가 없으면 첫 소속 변경 요청이 자동 승인되는지 확인합니다."""
+    def test_request_affiliation_change_rejects_same_as_current(self) -> None:
+        """현재 소속과 동일한 값으로 요청하면 거절되는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S50010",
+            password="test-password",
+            knox_id="knox-50010",
+        )
+        user.user_sdwt_prod = "group-a"
+        user.save(update_fields=["user_sdwt_prod"])
+
+        option = Affiliation.objects.create(department="Dept", line="Line", user_sdwt_prod="group-a")
+
+        payload, status_code = request_affiliation_change(
+            user=user,
+            option=option,
+            to_user_sdwt_prod="group-a",
+            effective_from=timezone.now(),
+            timezone_name="Asia/Seoul",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(payload["error"], "already current affiliation")
+        self.assertFalse(UserSdwtProdChange.objects.filter(user=user).exists())
+
+    def test_request_affiliation_change_creates_pending_when_no_approver_and_no_prediction(self) -> None:
+        """승인자가 없어도 예측 소속이 없으면 승인 대기가 생성되는지 확인합니다."""
         User = get_user_model()
         user = User.objects.create_user(
             sabun="S50020",
@@ -1077,6 +1102,52 @@ class AffiliationChangeRequestTests(TestCase):
         )
 
         option = Affiliation.objects.create(department="Dept", line="Line", user_sdwt_prod="group-auto")
+
+        payload, status_code = request_affiliation_change(
+            user=user,
+            option=option,
+            to_user_sdwt_prod="group-auto",
+            effective_from=timezone.now() - timedelta(days=30),
+            timezone_name="Asia/Seoul",
+        )
+
+        self.assertEqual(status_code, 202)
+        self.assertEqual(payload["status"], "pending")
+
+        user.refresh_from_db()
+        self.assertIsNone(user.user_sdwt_prod)
+
+        change = UserSdwtProdChange.objects.get(id=payload["changeId"])
+        self.assertEqual(change.status, UserSdwtProdChange.Status.PENDING)
+        self.assertFalse(change.approved)
+        self.assertFalse(change.applied)
+
+    def test_request_affiliation_change_auto_applies_when_predicted_match(self) -> None:
+        """예측 소속과 일치하면 승인자 유무와 관계없이 자동 승인되는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S50021",
+            password="test-password",
+            knox_id="knox-50021",
+        )
+
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="knox-50021",
+            predicted_user_sdwt_prod="group-auto",
+            source_updated_at=timezone.now(),
+            last_seen_at=timezone.now(),
+        )
+
+        option = Affiliation.objects.create(department="Dept", line="Line", user_sdwt_prod="group-auto")
+
+        approver = User.objects.create_user(
+            sabun="S50022",
+            password="test-password",
+            knox_id="knox-50022",
+        )
+        approver.user_sdwt_prod = "group-auto"
+        approver.save(update_fields=["user_sdwt_prod"])
+        UserSdwtProdAccess.objects.create(user=approver, user_sdwt_prod="group-auto", role="member")
 
         payload, status_code = request_affiliation_change(
             user=user,

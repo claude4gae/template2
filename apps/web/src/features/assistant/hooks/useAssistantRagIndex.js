@@ -1,12 +1,14 @@
 import { useEffect, useMemo } from "react"
 
 import { useAuth } from "@/lib/auth"
+import { useEmailMailboxes } from "@/features/emails"
 
 import { useAssistantRagIndexes } from "./useAssistantRagIndexes"
 import { useAssistantRagIndexStore } from "../store/useAssistantRagIndexStore"
 
 const DEFAULT_RAG_PUBLIC_GROUP = "rag-public"
 const DEFAULT_RAG_INDEX = "rp-unclassified"
+const SENT_MAILBOX_ID = "__sent__"
 
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : ""
@@ -27,6 +29,7 @@ function buildSortedOptions(values) {
 export function useAssistantRagIndex() {
   const { user } = useAuth()
   const ragIndexesQuery = useAssistantRagIndexes()
+  const mailboxesQuery = useEmailMailboxes()
   const ragData = ragIndexesQuery.data || {}
   const currentUserSdwtProd =
     normalizeString(user?.user_sdwt_prod) || normalizeString(ragData.currentUserSdwtProd)
@@ -41,15 +44,16 @@ export function useAssistantRagIndex() {
   const defaultRagIndex =
     normalizeString(ragData.defaultRagIndex) || rawRagIndexes[0] || DEFAULT_RAG_INDEX
   const ragIndexOptions = buildSortedOptions([...rawRagIndexes, defaultRagIndex])
+  const rawMailboxes = Array.isArray(mailboxesQuery.data?.results) ? mailboxesQuery.data.results : []
+  const accessibleMailboxes = normalizeList(rawMailboxes).filter((value) => value !== SENT_MAILBOX_ID)
 
   const defaultPermissionGroups = useMemo(() => {
-    const base = []
-    if (currentUserSdwtProd) {
-      base.push(currentUserSdwtProd)
+    const mailboxGroups = accessibleMailboxes.filter((value) => permissionGroupOptions.includes(value))
+    if (mailboxGroups.length) {
+      return mailboxGroups
     }
-    base.push(ragPublicGroup)
-    return normalizeList(base)
-  }, [currentUserSdwtProd, ragPublicGroup])
+    return normalizeList([ragPublicGroup])
+  }, [accessibleMailboxes, permissionGroupOptions, ragPublicGroup])
 
   const defaultRagIndexNames = useMemo(() => {
     return normalizeList([defaultRagIndex])
