@@ -45,6 +45,11 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
     manageable = [entry["userSdwtProd"] for entry in access_list if entry["role"] == "manager"]
     options = selectors.list_affiliation_options()
 
+    knox_id = (getattr(user, "knox_id", None) or "").strip()
+    snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(knox_id=knox_id) if knox_id else None
+    snapshot_user_sdwt_prod = (snapshot.predicted_user_sdwt_prod or "").strip() if snapshot else None
+    snapshot_department = (snapshot.department or "").strip() if snapshot else None
+
     return {
         "currentUserSdwtProd": getattr(user, "user_sdwt_prod", None),
         "currentDepartment": getattr(user, "department", None),
@@ -53,6 +58,8 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
         "accessibleUserSdwtProds": access_list,
         "manageableUserSdwtProds": manageable,
         "affiliationOptions": options,
+        "snapshotUserSdwtProd": snapshot_user_sdwt_prod or None,
+        "snapshotDepartment": snapshot_department or None,
     }
 
 

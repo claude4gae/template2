@@ -79,10 +79,18 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
     ? allOptions.filter((opt) => opt.department === userDepartment)
     : []
   const options = departmentOptions.length ? departmentOptions : allOptions
+  const snapshotUserSdwtProd = affiliationQuery.data?.snapshotUserSdwtProd
+  const snapshotOption = snapshotUserSdwtProd
+    ? options.find((opt) => opt.user_sdwt_prod === snapshotUserSdwtProd)
+    : null
   const selected = options.find((opt) => optionKey(opt) === selectedKey)
 
   useEffect(() => {
     if (selectedKey || !options.length) return
+    if (snapshotOption) {
+      setSelectedKey(optionKey(snapshotOption))
+      return
+    }
     if (!user?.department || !user?.line || !user?.user_sdwt_prod) return
     const current = options.find(
       (opt) =>
@@ -93,7 +101,7 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
     if (current) {
       setSelectedKey(optionKey(current))
     }
-  }, [options, selectedKey, user?.department, user?.line, user?.user_sdwt_prod])
+  }, [options, selectedKey, snapshotOption, user?.department, user?.line, user?.user_sdwt_prod])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -113,7 +121,7 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
 
   return (
     <Dialog open={needsOnboarding} onOpenChange={() => {}}>
-      <DialogContent showCloseButton={false} className="sm:max-w-xl">
+      <DialogContent showCloseButton={false} className="sm:max-w-[calc(100%-2rem)]">
         <DialogHeader>
           <DialogTitle>소속 설정</DialogTitle>
           <DialogDescription>
@@ -155,7 +163,7 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
                 </Label>
                 <select
                   id="onboardingAffiliationSelect"
-                  className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 rounded-md border px-3 text-sm outline-none"
+                  className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 w-full min-w-0 rounded-md border px-3 text-sm outline-none"
                   value={selectedKey}
                   onChange={(e) => setSelectedKey(e.target.value)}
                   required

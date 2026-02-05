@@ -1003,6 +1003,29 @@ class AffiliationOverviewTests(TestCase):
         self.assertEqual(payload["currentUserSdwtProd"], "group-a")
         self.assertEqual(payload["accessibleUserSdwtProds"][0]["userSdwtProd"], "group-a")
 
+    def test_get_affiliation_overview_includes_external_snapshot(self) -> None:
+        """외부 소속 스냅샷 값이 개요 응답에 포함되는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S60001",
+            password="test-password",
+            knox_id="knox-60001",
+        )
+
+        now = timezone.now()
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="knox-60001",
+            department="Dept-External",
+            predicted_user_sdwt_prod="group-external",
+            source_updated_at=now,
+            last_seen_at=now,
+        )
+
+        payload = get_affiliation_overview(user=user, timezone_name="Asia/Seoul")
+
+        self.assertEqual(payload["snapshotUserSdwtProd"], "group-external")
+        self.assertEqual(payload["snapshotDepartment"], "Dept-External")
+
 
 class AffiliationChangeRequestTests(TestCase):
     """소속 변경 요청을 검증합니다."""

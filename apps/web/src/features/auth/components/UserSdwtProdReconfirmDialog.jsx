@@ -106,10 +106,9 @@ export function UserSdwtProdReconfirmDialog({ user, onCompleted }) {
   const options = allOptions
 
   useEffect(() => {
-    if (predictedOption) {
-      setSelectedKey(optionKey(predictedOption))
-    }
-  }, [predictedOption])
+    if (selectedKey || !predictedOption) return
+    setSelectedKey(optionKey(predictedOption))
+  }, [predictedOption, selectedKey])
 
   const selected = options.find((option) => optionKey(option) === selectedKey)
 
