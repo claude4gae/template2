@@ -452,6 +452,40 @@ def get_drone_sop_jira_user_template(
     return DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).first()
 
 
+def list_drone_sop_jira_user_sdwt_prods() -> list[str]:
+    """drone_sop_jira_user_template에 등록된 user_sdwt_prod 목록을 조회합니다.
+
+    반환:
+        user_sdwt_prod 문자열 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) user_sdwt_prod 목록 조회
+    # -----------------------------------------------------------------------------
+    rows = (
+        DroneSopJiraUserTemplate.objects.exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .distinct()
+        .order_by("user_sdwt_prod")
+    )
+
+    # -----------------------------------------------------------------------------
+    # 2) 공백 제거 및 반환
+    # -----------------------------------------------------------------------------
+    return [
+        value.strip()
+        for value in rows
+        if isinstance(value, str) and value.strip()
+    ]
+
+
 def get_drone_sop_jira_project_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str | None:
     """user_sdwt_prod에 해당하는 Jira project key를 조회합니다.
 

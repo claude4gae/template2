@@ -14,6 +14,7 @@
 - 예시 요청: PATCH  /api/v1/line-dashboard/early-inform { id, lineId?, mainStep?, customEndStep? }
 - 예시 요청: DELETE /api/v1/line-dashboard/early-inform?id=123
 - 예시 요청: GET    /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
+- 예시 요청: GET    /api/v1/line-dashboard/jira-user-sdwt-prods
 - 예시 요청: POST   /api/v1/line-dashboard/jira-keys { userSdwtProd, jiraKey?, templateKey? }
 - 예시 요청: POST   /api/v1/line-dashboard/sop/jira/precheck
 
@@ -693,6 +694,50 @@ class DroneJiraKeyView(APIView):
                 "updated": updated,
             }
         )
+
+
+class JiraUserSdwtProdListView(APIView):
+    """Jira 템플릿에 등록된 user_sdwt_prod 목록을 반환합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """Jira 템플릿에 등록된 user_sdwt_prod 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: {"userSdwtProds": ["..."]}
+
+        부작용:
+        - 없음(읽기 전용)
+
+        오류:
+        - 401: 미인증
+        - 500: 서버 오류
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/line-dashboard/jira-user-sdwt-prods
+
+        snake/camel 호환:
+        - 해당 없음(요청 바디 없음)
+        """
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        auth_response = _ensure_authenticated(request)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) 목록 조회 및 응답 반환
+        # -----------------------------------------------------------------------------
+        try:
+            user_sdwt_prods = selectors.list_drone_sop_jira_user_sdwt_prods()
+            return JsonResponse({"userSdwtProds": user_sdwt_prods})
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            logger.exception("Failed to load Jira user SDWT prods")
+            return JsonResponse({"error": "Failed to load Jira user SDWT prods"}, status=500)
 
 
 class LineHistoryView(APIView):

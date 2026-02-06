@@ -349,6 +349,16 @@ class DroneEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["lineIds"], ["L1"])
 
+    @patch(
+        "api.drone.views.selectors.list_drone_sop_jira_user_sdwt_prods",
+        return_value=["SDWT-A", "SDWT-B"],
+    )
+    def test_drone_jira_user_sdwt_prods(self, _mock_user_sdwt) -> None:
+        """Jira user_sdwt_prod 목록 API가 정상 응답하는지 확인합니다."""
+        response = self.client.get(reverse("line-dashboard-jira-user-sdwt-prods"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["userSdwtProds"], ["SDWT-A", "SDWT-B"])
+
     @patch("api.drone.views.services.enqueue_drone_sop_jira_instant_inform")
     def test_drone_sop_instant_inform(self, mock_service) -> None:
         """즉시 인폼 API가 정상 응답하는지 확인합니다."""

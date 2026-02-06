@@ -14,6 +14,7 @@ from .views import (
     DroneSopJiraPrecheckView,
     DroneSopJiraTriggerView,
     DroneSopPop3IngestTriggerView,
+    JiraUserSdwtProdListView,
     LineHistoryView,
     LineIdListView,
 )
@@ -21,6 +22,11 @@ from .views import (
 urlpatterns = [
     path("early-inform", DroneEarlyInformView.as_view(), name="drone-early-inform"),
     path("jira-keys", DroneJiraKeyView.as_view(), name="line-dashboard-jira-keys"),
+    path(
+        "jira-user-sdwt-prods",
+        JiraUserSdwtProdListView.as_view(),
+        name="line-dashboard-jira-user-sdwt-prods",
+    ),
     path("history", LineHistoryView.as_view(), name="line-dashboard-history"),
     path("line-ids", LineIdListView.as_view(), name="line-dashboard-line-ids"),
     path(
