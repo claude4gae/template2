@@ -35,6 +35,7 @@ def upsert_drone_sop_user_sdwt_channel(
     - jira_template_key: Jira 템플릿 키(없으면 None, 미지정 시 _UNSET)
     - mail_template_key: 메일 템플릿 키(없으면 None, 미지정 시 _UNSET)
     - messenger_template_key: 메신저 템플릿 키(없으면 None, 미지정 시 _UNSET)
+      (미지정이고 기존 messenger_template_key가 비어 있으면 jira_template_key를 기본값으로 동기화)
     - jira_enabled: Jira 채널 활성 여부(미지정 시 _UNSET)
     - messenger_enabled: 메신저 채널 활성 여부(미지정 시 _UNSET)
     - mail_enabled: 메일 채널 활성 여부(미지정 시 _UNSET)
@@ -78,6 +79,13 @@ def upsert_drone_sop_user_sdwt_channel(
         if not isinstance(value, int) or value <= 0:
             raise ValueError("chatroom_id must be positive int or None")
 
+    def _normalize_optional_template_key(value: object) -> str | None | object:
+        if value is _UNSET or value is None:
+            return value
+        assert isinstance(value, str)
+        cleaned = value.strip()
+        return cleaned or None
+
     _validate_optional_str(jira_key, "jira_key")
     _validate_optional_chatroom_id(chatroom_id)
     _validate_optional_str(jira_template_key, "jira_template_key")
@@ -89,6 +97,10 @@ def upsert_drone_sop_user_sdwt_channel(
         raise ValueError("messenger_enabled must be bool")
     if mail_enabled is not _UNSET and not isinstance(mail_enabled, bool):
         raise ValueError("mail_enabled must be bool")
+
+    normalized_jira_template_key = _normalize_optional_template_key(jira_template_key)
+    normalized_mail_template_key = _normalize_optional_template_key(mail_template_key)
+    normalized_messenger_template_key = _normalize_optional_template_key(messenger_template_key)
 
     normalized_target = target_user_sdwt_prod.strip()
 
@@ -108,14 +120,30 @@ def upsert_drone_sop_user_sdwt_channel(
             if channel.chatroom_id != chatroom_id:
                 channel.chatroom_id = chatroom_id
                 update_fields.append("chatroom_id")
-        if jira_template_key is not _UNSET and channel.jira_template_key != jira_template_key:
-            channel.jira_template_key = jira_template_key
+        if (
+            normalized_jira_template_key is not _UNSET
+            and channel.jira_template_key != normalized_jira_template_key
+        ):
+            channel.jira_template_key = normalized_jira_template_key
             update_fields.append("jira_template_key")
-        if mail_template_key is not _UNSET and channel.mail_template_key != mail_template_key:
-            channel.mail_template_key = mail_template_key
+        if (
+            normalized_mail_template_key is not _UNSET
+            and channel.mail_template_key != normalized_mail_template_key
+        ):
+            channel.mail_template_key = normalized_mail_template_key
             update_fields.append("mail_template_key")
-        if messenger_template_key is not _UNSET and channel.messenger_template_key != messenger_template_key:
-            channel.messenger_template_key = messenger_template_key
+        resolved_messenger_template_key = normalized_messenger_template_key
+        if (
+            resolved_messenger_template_key is _UNSET
+            and normalized_jira_template_key is not _UNSET
+            and not channel.messenger_template_key
+        ):
+            resolved_messenger_template_key = normalized_jira_template_key
+        if (
+            resolved_messenger_template_key is not _UNSET
+            and channel.messenger_template_key != resolved_messenger_template_key
+        ):
+            channel.messenger_template_key = resolved_messenger_template_key
             update_fields.append("messenger_template_key")
         if jira_enabled is not _UNSET and channel.jira_enabled != jira_enabled:
             channel.jira_enabled = jira_enabled

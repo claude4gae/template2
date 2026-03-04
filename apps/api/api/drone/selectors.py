@@ -52,6 +52,7 @@ _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "status",
     "knox_id",
     "user_sdwt_prod",
+    "target_user_sdwt_prod",
     "comment",
     "defect_url",
     "defect_png_url",

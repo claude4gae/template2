@@ -126,7 +126,14 @@ export function useTableQuery({ lineId }) {
 
       const baseColumns = fetchedColumns.filter((column) => {
         const normalized = column ? column.toLowerCase() : ""
-        return normalized !== "id" && normalized !== "sop_key"
+        return (
+          normalized !== "id" &&
+          normalized !== "sop_key" &&
+          normalized !== "defect_png_url" &&
+          normalized !== "messenger_reason" &&
+          normalized !== "mail_reason" &&
+          normalized !== "jira_reason"
+        )
       })
 
       const composedRows = fetchedRows.map((row) => {

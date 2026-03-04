@@ -129,6 +129,7 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["defect_url"], "https://example.com")
         self.assertEqual(row["defect_png_url"], "https://example.com/defect.png")
         self.assertEqual(row["custom_end_step"], "ST002")
+        self.assertEqual(row["target_user_sdwt_prod"], "dummy-target")
 
     def test_build_drone_sop_row_applies_needtosend_db_rule(self) -> None:
         """DB 규칙이 needtosend 계산에 적용되는지 확인합니다."""
@@ -161,6 +162,7 @@ class DroneSopPop3ParsingTests(TestCase):
         row = services._build_drone_sop_row(html=html, early_inform_map={})
         assert row is not None
         self.assertEqual(row["needtosend"], 0)
+        self.assertIsNone(row["target_user_sdwt_prod"])
 
     def test_build_drone_sop_row_needtosend_zero_for_engr_production(self) -> None:
         """ENGR_PRODUCTION 샘플 타입의 needtosend가 0인지 확인합니다."""
@@ -188,6 +190,7 @@ class DroneSopUpsertTests(TestCase):
             status="IN_PROGRESS",
             metro_current_step="ST001",
             defect_png_url="https://example.com/old.png",
+            target_user_sdwt_prod="old-target",
         )
 
         services._upsert_drone_sop_rows(
@@ -203,6 +206,7 @@ class DroneSopUpsertTests(TestCase):
                     "status": "COMPLETE",
                     "metro_current_step": "ST002",
                     "defect_png_url": "https://example.com/new.png",
+                    "target_user_sdwt_prod": "new-target",
                 }
             ]
         )
@@ -213,6 +217,7 @@ class DroneSopUpsertTests(TestCase):
         self.assertEqual(refreshed.status, "COMPLETE")
         self.assertEqual(refreshed.metro_current_step, "ST002")
         self.assertEqual(refreshed.defect_png_url, "https://example.com/new.png")
+        self.assertEqual(refreshed.target_user_sdwt_prod, "new-target")
 
 
 class DroneSopJiraCandidateTests(TestCase):
@@ -556,6 +561,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
         self.assertEqual(refreshed.jira_key, "PROJ")
         self.assertEqual(refreshed.jira_template_key, "line_a")
+        self.assertEqual(refreshed.messenger_template_key, "line_a")
 
     def test_jira_key_post_accepts_snake_case_user_sdwt_prod(self) -> None:
         """POST 갱신은 user_sdwt_prod(snake_case) 키도 허용하는지 확인합니다."""
@@ -592,6 +598,31 @@ class DroneJiraKeyEndpointTests(TestCase):
         refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
         self.assertEqual(refreshed.jira_key, "PROJ2")
         self.assertEqual(refreshed.jira_template_key, "line_b")
+        self.assertEqual(refreshed.messenger_template_key, "line_b")
+
+    def test_jira_key_post_keeps_existing_messenger_template_key(self) -> None:
+        """Jira 템플릿 갱신 시 기존 메신저 템플릿 키는 덮어쓰지 않는지 확인합니다."""
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT",
+            messenger_template_key="line_b",
+        )
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(
+                {
+                    "userSdwtProd": "SDWT",
+                    "templateKey": "line_a",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
+        self.assertEqual(refreshed.jira_template_key, "line_a")
+        self.assertEqual(refreshed.messenger_template_key, "line_b")
 
     def test_jira_key_post_rejects_non_string_jira_key(self) -> None:
         """POST 갱신은 jiraKey에 문자열/Null 외 타입을 허용하지 않는지 확인합니다."""

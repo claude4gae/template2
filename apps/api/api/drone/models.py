@@ -77,6 +77,7 @@ class DroneSOP(models.Model):
     knox_id = models.CharField(max_length=50, null=True, blank=True)
     comment = models.TextField(null=True, blank=True)
     user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
+    target_user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
     defect_url = models.TextField(null=True, blank=True)
     defect_png_url = models.TextField(null=True, blank=True)
     send_jira = models.SmallIntegerField(null=True, blank=True, default=0, db_default=0)

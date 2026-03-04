@@ -414,6 +414,7 @@ def _build_drone_sop_row(
         needtosend_rule_cache = {}
 
     target_user_sdwt_prod = resolve_target_user_sdwt_prod(row=row, index=user_sdwt_map_index)
+    row["target_user_sdwt_prod"] = target_user_sdwt_prod
     row["needtosend"] = _compute_needtosend_by_target(
         row=row,
         target_user_sdwt_prod=target_user_sdwt_prod,
@@ -522,6 +523,7 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
         "status",
         "knox_id",
         "user_sdwt_prod",
+        "target_user_sdwt_prod",
         "comment",
         "defect_url",
         "defect_png_url",
