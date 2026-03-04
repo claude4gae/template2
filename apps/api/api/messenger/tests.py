@@ -74,8 +74,8 @@ class KnoxClientUtilsTests(SimpleTestCase):
         restored = gzip.decompress(gzipped).decode("utf-8")
         self.assertEqual(restored, value)
 
-    def test_send_chat_message_default_msg_type_and_string(self) -> None:
-        """send_chat_message가 기본 msg_type과 문자열 전송을 사용함을 확인합니다."""
+    def test_send_chat_message_sends_given_msg_type_and_string(self) -> None:
+        """send_chat_message가 전달받은 msg_type과 문자열 본문을 전송하는지 확인합니다."""
 
         # ---------------------------------------------------------------------
         # 1) 더미 컨텍스트 및 캡처 변수 준비
@@ -104,7 +104,7 @@ class KnoxClientUtilsTests(SimpleTestCase):
             "api.messenger.services.knox_client._post_encrypted",
             side_effect=_capture_payload,
         ):
-            send_chat_message(chatroom_id=1, chat_msg={"a": 1})
+            send_chat_message(chatroom_id=1, msg_type=7, chat_msg="{\"a\": 1}")
 
         # ---------------------------------------------------------------------
         # 3) payload 내용 검증
@@ -112,5 +112,5 @@ class KnoxClientUtilsTests(SimpleTestCase):
         payload = captured.get("payload")
         self.assertIsInstance(payload, dict)
         params = payload["chatMessageParams"][0]
-        self.assertEqual(params["msgType"], 0)
-        self.assertEqual(params["chatMsg"], str({"a": 1}))
+        self.assertEqual(params["msgType"], 7)
+        self.assertEqual(params["chatMsg"], "{\"a\": 1}")

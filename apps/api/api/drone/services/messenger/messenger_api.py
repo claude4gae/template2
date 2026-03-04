@@ -52,7 +52,7 @@ class DroneMessengerConfig:
         return cls(
             msg_type=msg_type,
             ttl=ttl,
-            knox_config=messenger_services.KnoxMessengerConfig.from_settings(),
+            knox_config=messenger_services.KnoxMessengerConfig.from_env(),
         )
 
     def is_ready(self) -> bool:
@@ -61,8 +61,8 @@ class DroneMessengerConfig:
         return self.knox_config.is_ready()
 
 
-def _resolve_chat_message(card_payload: dict[str, Any], msg_type: int) -> Any:
-    """msg_type과 무관하게 문자열 chatMsg 값을 반환합니다."""
+def _resolve_chat_message(card_payload: dict[str, Any]) -> str:
+    """카드 payload를 Knox chatMsg 문자열로 변환합니다."""
 
     return json.dumps(card_payload, ensure_ascii=False)
 
@@ -103,7 +103,7 @@ def send_drone_sop_messenger_message(
     # 2) 메시지 payload 구성
     # -------------------------------------------------------------------------
     card_payload = build_drone_sop_messenger_card(template_key=messenger_template_key, row=row)
-    chat_msg = _resolve_chat_message(card_payload, config.msg_type)
+    chat_msg = _resolve_chat_message(card_payload)
 
     # -------------------------------------------------------------------------
     # 3) Knox 메신저 전송

@@ -99,7 +99,7 @@ def post_defect_png_sidecar_if_needed(
     # 2) payload 구성
     # -------------------------------------------------------------------------
     payload = {
-        "lot_id": str(row.get("lot_id") or "").strip(),
+        "lotid": str(row.get("lot_id") or "").strip(),
         "scandate": _format_scandate_at_kst(scanned_at=scanned_at),
         "step": str(row.get("main_step") or "").strip(),
         "stepid": str(row.get("metro_current_step") or "").strip(),
