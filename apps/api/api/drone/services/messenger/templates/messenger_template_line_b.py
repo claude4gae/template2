@@ -77,21 +77,21 @@ def build_excel_table_html(*, context: dict[str, str], actions: list[dict[str, A
     return (
         "<div>"
         '<div style="margin:8px 0;">'
-        '<table style="border:1px solid #ccc; border-collapse:collapse; width:auto;">'
+        '<table style="border:1px solid #ccc; border-collapse:collapse; width:100%; min-width:920px; table-layout:fixed;">'
         '<caption style="caption-side:bottom; text-align:right; font-size:11px; color:#888; margin:0; padding:0;">'
         f"SOP by : {escape(knoxid)} ({escape(user_sdwt_prod)})"
         "</caption>"
         "<thead><tr>"
-        '<th style="border:1px solid #ccc; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px;">Step_seq</th>'
-        '<th style="border:1px solid #ccc; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px;">PPID</th>'
-        '<th style="border:1px solid #ccc; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px;">EQP_CB</th>'
-        '<th style="border:1px solid #ccc; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px;">Lot_id</th>'
+        '<th style="border:1px solid #ccc; width:25%; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px; white-space:nowrap;">Step_seq</th>'
+        '<th style="border:1px solid #ccc; width:25%; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px; white-space:nowrap;">PPID</th>'
+        '<th style="border:1px solid #ccc; width:25%; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px; white-space:nowrap;">EQP_CB</th>'
+        '<th style="border:1px solid #ccc; width:25%; background-color:#F2F2F2; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:12px; white-space:nowrap;">Lot_id</th>'
         "</tr></thead>"
         "<tbody><tr>"
-        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px;">{escape(main_step)}</td>'
-        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px;">{escape(ppid)}</td>'
-        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px;">{escape(eqp_cb)}</td>'
-        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px;">{escape(lot_id)}</td>'
+        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px; white-space:nowrap;">{escape(main_step)}</td>'
+        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px; white-space:nowrap;">{escape(ppid)}</td>'
+        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px; white-space:nowrap;">{escape(eqp_cb)}</td>'
+        f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px; white-space:nowrap;">{escape(lot_id)}</td>'
         "</tr></tbody></table></div>"
         '<div style="margin:4px 0;"><div style="font-size:14px;">'
         "📄 CTTTM URL : "
