@@ -327,7 +327,12 @@ class DroneSopInstantInformTests(TestCase):
     """즉시 인폼 요청 로직을 검증합니다."""
 
     def test_enqueue_instant_inform_marks_requested(self) -> None:
-        """즉시 인폼 체크 요청 시 instant_inform 값만 갱신되는지 확인합니다."""
+        """즉시 인폼 체크 요청 시 instant_inform과 target 보정이 반영되는지 확인합니다."""
+        _ensure_target_mapping(
+            sdwt_prod="SDWT",
+            user_sdwt_prod="SDWT",
+            target_user_sdwt_prod="TARGET-SDWT",
+        )
         row = _create_drone_sop(
             sdwt_prod="SDWT",
             user_sdwt_prod="SDWT",
@@ -343,11 +348,13 @@ class DroneSopInstantInformTests(TestCase):
         self.assertFalse(result.already_informed)
         self.assertEqual(result.updated_fields.get("comment"), "hello")
         self.assertEqual(result.updated_fields.get("instant_inform"), 1)
+        self.assertEqual(result.updated_fields.get("target_user_sdwt_prod"), "TARGET-SDWT")
         self.assertIsNone(result.updated_fields.get("send_jira"))
 
         refreshed = DroneSOP.objects.get(id=row.id)
         self.assertEqual(refreshed.comment, "hello")
         self.assertEqual(refreshed.instant_inform, 1)
+        self.assertEqual(refreshed.target_user_sdwt_prod, "TARGET-SDWT")
         self.assertEqual(refreshed.send_jira, -1)
 
     def test_enqueue_instant_inform_returns_already_informed(self) -> None:
@@ -603,29 +610,31 @@ class DroneEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
-    @patch("api.drone.views.services.run_drone_sop_jira_create_from_env")
-    def test_drone_sop_jira_trigger(self, mock_service) -> None:
-        """Jira 트리거 API가 정상 응답하는지 확인합니다."""
+    @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
+    def test_drone_sop_pipeline_trigger(self, mock_service) -> None:
+        """통합 파이프라인 트리거 API가 정상 응답하는지 확인합니다."""
         mock_service.return_value = SimpleNamespace(
             candidates=1,
-            created=1,
-            updated_rows=0,
+            jira_created=1,
+            jira_updated_rows=0,
+            messenger_sent=0,
+            mail_sent=0,
             skipped=False,
             skip_reason=None,
         )
         response = self.client.post(
-            reverse("drone-sop-jira-trigger"),
+            reverse("drone-sop-pipeline-trigger"),
             HTTP_AUTHORIZATION="Bearer token",
         )
         self.assertEqual(response.status_code, 200)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
-    @patch("api.drone.views.selectors.has_drone_sop_jira_candidates")
-    def test_drone_sop_jira_precheck(self, mock_selector) -> None:
-        """Jira precheck API가 정상 응답하는지 확인합니다."""
-        mock_selector.return_value = True
+    @patch("api.drone.views.services.has_drone_sop_pipeline_candidates")
+    def test_drone_sop_pipeline_precheck(self, mock_service) -> None:
+        """통합 파이프라인 precheck API가 정상 응답하는지 확인합니다."""
+        mock_service.return_value = True
         response = self.client.post(
-            reverse("drone-sop-jira-precheck"),
+            reverse("drone-sop-pipeline-precheck"),
             HTTP_AUTHORIZATION="Bearer token",
         )
         self.assertEqual(response.status_code, 200)
@@ -1088,6 +1097,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_jira, 1)
+        self.assertEqual(refreshed.target_user_sdwt_prod, "TARGET")
 
     @override_settings(
         DRONE_JIRA_BASE_URL="http://example.local/jira",
@@ -1435,6 +1445,25 @@ class DroneSopInformPolicyTests(TestCase):
         self.assertEqual(refreshed.messenger_reason, "target_missing")
         self.assertEqual(refreshed.mail_reason, "target_missing")
         self.assertEqual(refreshed.instant_inform, 1)
+
+    def test_inform_persists_target_for_non_jira_pending_channel(self) -> None:
+        """Jira 미대상 행도 target_user_sdwt_prod가 저장되는지 확인합니다."""
+        sop = _create_drone_sop(
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            send_jira=-1,
+            send_messenger=0,
+            send_mail=1,
+            instant_inform=1,
+            metro_current_step="ST001",
+        )
+
+        result = services.run_drone_sop_inform_from_env()
+        self.assertEqual(result.candidates, 1)
+
+        refreshed = DroneSOP.objects.get(id=sop.id)
+        self.assertEqual(refreshed.target_user_sdwt_prod, "SDWT1")
+        self.assertEqual(refreshed.send_jira, -1)
 
     @override_settings(DRONE_JIRA_BASE_URL="")
     def test_inform_marks_jira_failed_when_base_url_missing(self) -> None:
@@ -2240,99 +2269,20 @@ class DroneTriggerAuthTests(TestCase):
         self.assertEqual(mock_run.call_count, 1)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
-    @patch("api.drone.views.services.run_drone_sop_jira_create_from_env")
-    def test_jira_trigger_requires_token(self, mock_run: Mock) -> None:
-        """Jira 트리거가 토큰을 요구하는지 확인합니다."""
-        mock_run.return_value = SimpleNamespace(
-            candidates=1,
-            created=1,
-            updated_rows=0,
-            skipped=False,
-            skip_reason=None,
-        )
-
-        url = reverse("drone-sop-jira-trigger")
-
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 401)
-        self.assertEqual(mock_run.call_count, 0)
-
-        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["created"], 1)
-        mock_run.assert_called_once_with(limit=None)
-
-    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
-    @patch("api.drone.views.selectors.has_drone_sop_jira_candidates")
-    def test_jira_precheck_requires_token(self, mock_selector: Mock) -> None:
-        """Jira precheck가 토큰을 요구하는지 확인합니다."""
-        mock_selector.return_value = True
-        url = reverse("drone-sop-jira-precheck")
-
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 401)
-        self.assertEqual(mock_selector.call_count, 0)
-
-        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.json().get("hasCandidates"))
-        mock_selector.assert_called_once()
-
-    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
-    @patch("api.drone.views.services.run_drone_sop_jira_create_from_env")
-    def test_jira_trigger_prefers_payload_limit_over_query_param(self, mock_run: Mock) -> None:
-        """payload limit가 query param보다 우선되는지 확인합니다."""
-        mock_run.return_value = SimpleNamespace(
-            candidates=1,
-            created=1,
-            updated_rows=0,
-            skipped=False,
-            skip_reason=None,
-        )
-
-        url = reverse("drone-sop-jira-trigger") + "?limit=5"
-        payload = json.dumps({"limit": 2})
-        resp = self.client.post(
-            url,
-            data=payload,
-            content_type="application/json",
-            HTTP_AUTHORIZATION="Bearer expected-token",
-        )
-
-        self.assertEqual(resp.status_code, 200)
-        mock_run.assert_called_once_with(limit=2)
-
-    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
-    @patch("api.drone.views.selectors.has_drone_sop_inform_candidates")
-    def test_inform_precheck_requires_token(self, mock_selector: Mock) -> None:
-        """멀티 채널 precheck가 토큰을 요구하는지 확인합니다."""
-        mock_selector.return_value = True
-        url = reverse("drone-sop-inform-precheck")
-
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 401)
-        self.assertEqual(mock_selector.call_count, 0)
-
-        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.json().get("hasCandidates"))
-        mock_selector.assert_called_once()
-
-    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
-    @patch("api.drone.views.services.run_drone_sop_inform_from_env")
-    def test_inform_trigger_requires_token(self, mock_run: Mock) -> None:
-        """멀티 채널 트리거가 토큰을 요구하는지 확인합니다."""
+    @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
+    def test_pipeline_trigger_requires_token(self, mock_run: Mock) -> None:
+        """통합 파이프라인 트리거가 토큰을 요구하는지 확인합니다."""
         mock_run.return_value = SimpleNamespace(
             candidates=1,
             jira_created=1,
-            jira_updated_rows=1,
-            messenger_sent=1,
-            mail_sent=1,
+            jira_updated_rows=0,
+            messenger_sent=0,
+            mail_sent=0,
             skipped=False,
             skip_reason=None,
         )
 
-        url = reverse("drone-sop-inform-trigger")
+        url = reverse("drone-sop-pipeline-trigger")
 
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 401)
@@ -2341,12 +2291,47 @@ class DroneTriggerAuthTests(TestCase):
         resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["jiraCreated"], 1)
-        mock_run.assert_called_once_with(limit=None)
+        mock_run.assert_called_once_with(limit=None, channels=None)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
-    @patch("api.drone.views.services.run_drone_sop_inform_from_env")
-    def test_inform_trigger_prefers_payload_limit_over_query_param(self, mock_run: Mock) -> None:
-        """멀티 채널 payload limit가 query param보다 우선되는지 확인합니다."""
+    @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
+    def test_legacy_inform_trigger_alias_works(self, mock_run: Mock) -> None:
+        """레거시 inform 트리거 경로가 통합 파이프라인으로 연결되는지 확인합니다."""
+        mock_run.return_value = SimpleNamespace(
+            candidates=1,
+            jira_created=1,
+            jira_updated_rows=0,
+            messenger_sent=0,
+            mail_sent=0,
+            skipped=False,
+            skip_reason=None,
+        )
+        url = reverse("drone-sop-inform-trigger")
+        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["jiraCreated"], 1)
+        mock_run.assert_called_once_with(limit=None, channels=None)
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
+    @patch("api.drone.views.services.has_drone_sop_pipeline_candidates")
+    def test_pipeline_precheck_requires_token(self, mock_service: Mock) -> None:
+        """통합 파이프라인 precheck가 토큰을 요구하는지 확인합니다."""
+        mock_service.return_value = True
+        url = reverse("drone-sop-pipeline-precheck")
+
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(mock_service.call_count, 0)
+
+        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("hasCandidates"))
+        mock_service.assert_called_once_with(channels=None)
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
+    @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
+    def test_pipeline_trigger_prefers_payload_limit_over_query_param(self, mock_run: Mock) -> None:
+        """통합 파이프라인에서 payload limit가 query param보다 우선되는지 확인합니다."""
         mock_run.return_value = SimpleNamespace(
             candidates=1,
             jira_created=1,
@@ -2357,7 +2342,7 @@ class DroneTriggerAuthTests(TestCase):
             skip_reason=None,
         )
 
-        url = reverse("drone-sop-inform-trigger") + "?limit=5"
+        url = reverse("drone-sop-pipeline-trigger") + "?limit=5"
         payload = json.dumps({"limit": 2})
         resp = self.client.post(
             url,
@@ -2367,7 +2352,50 @@ class DroneTriggerAuthTests(TestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        mock_run.assert_called_once_with(limit=2)
+        mock_run.assert_called_once_with(limit=2, channels=None)
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
+    @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
+    def test_pipeline_trigger_supports_channels(self, mock_run: Mock) -> None:
+        """통합 파이프라인 트리거가 channels를 서비스로 전달하는지 확인합니다."""
+        mock_run.return_value = SimpleNamespace(
+            candidates=1,
+            jira_created=1,
+            jira_updated_rows=1,
+            messenger_sent=1,
+            mail_sent=1,
+            skipped=False,
+            skip_reason=None,
+        )
+
+        url = reverse("drone-sop-pipeline-trigger")
+        payload = json.dumps({"channels": ["jira", "mail"]})
+        resp = self.client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer expected-token",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json().get("channels"), ["jira", "mail"])
+        mock_run.assert_called_once_with(limit=None, channels=["jira", "mail"])
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
+    @patch("api.drone.views.services.has_drone_sop_pipeline_candidates")
+    def test_pipeline_precheck_supports_channels(self, mock_service: Mock) -> None:
+        """통합 파이프라인 precheck가 channels를 서비스로 전달하는지 확인합니다."""
+        mock_service.return_value = True
+        url = reverse("drone-sop-pipeline-precheck")
+        payload = json.dumps({"channels": ["messenger"]})
+        resp = self.client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer expected-token",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json().get("channels"), ["messenger"])
+        mock_service.assert_called_once_with(channels=["messenger"])
 
 
 class DroneEarlyInformAuthTests(TestCase):

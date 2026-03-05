@@ -29,7 +29,15 @@ from .early_inform.early_inform import (
     delete_early_inform_entry,
     update_early_inform_entry,
 )
-from .inform.sop_inform import DroneSopInformResult, run_drone_sop_inform_from_env
+from .inform.sop_inform import (
+    CHANNEL_JIRA,
+    CHANNEL_MAIL,
+    CHANNEL_MESSENGER,
+    DroneSopInformResult,
+    has_drone_sop_pipeline_candidates,
+    run_drone_sop_inform_from_env,
+    run_drone_sop_pipeline_from_env,
+)
 from .inform.retry_channel import DroneSopRetryChannelResult, retry_drone_sop_channel
 from .jira.config import DroneJiraConfig
 from .jira.sop_jira import (
@@ -67,6 +75,9 @@ __all__ = [
     "DroneSopPop3Config",
     "DroneSopPop3IngestResult",
     "NeedToSendRule",
+    "CHANNEL_JIRA",
+    "CHANNEL_MAIL",
+    "CHANNEL_MESSENGER",
     "_build_drone_sop_row",
     "_jira_session",
     "_lock_key",
@@ -79,9 +90,11 @@ __all__ = [
     "create_early_inform_entry",
     "delete_early_inform_entry",
     "enqueue_drone_sop_jira_instant_inform",
+    "has_drone_sop_pipeline_candidates",
     "retry_drone_sop_channel",
     "run_drone_sop_inform_from_env",
     "run_drone_sop_jira_create_from_env",
+    "run_drone_sop_pipeline_from_env",
     "run_drone_sop_pop3_ingest_from_env",
     "upsert_drone_sop_user_sdwt_channel",
     "update_early_inform_entry",

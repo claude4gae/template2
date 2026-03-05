@@ -10,7 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from django.db import transaction
+
 from ... import selectors
+from ...models import DroneSOP
 
 
 def _normalize_user_sdwt_value(value: Any) -> str | None:
@@ -164,12 +167,14 @@ def resolve_target_user_sdwt_prod_values(
     *,
     rows: list[dict[str, Any]],
     index: UserSdwtProdMapIndex | None = None,
+    persist: bool = False,
 ) -> tuple[set[str], list[int]]:
     """row 목록을 해석하고 target_user_sdwt_prod 목록을 반환합니다.
 
     인자:
         rows: Drone SOP 행 dict 목록.
         index: 매핑 인덱스(옵션).
+        persist: True면 해석 결과를 drone_sop.target_user_sdwt_prod에 반영합니다.
 
     반환:
         (target_user_sdwt_prod 집합, target 누락 row id 리스트) 튜플.
@@ -189,16 +194,34 @@ def resolve_target_user_sdwt_prod_values(
     # -----------------------------------------------------------------------------
     targets: set[str] = set()
     missing_ids: list[int] = []
+    changed_target_by_id: dict[int, str | None] = {}
     for row in rows:
+        persisted_target = _normalize_user_sdwt_value(row.get("target_user_sdwt_prod"))
         target = resolve_target_user_sdwt_prod(row=row, index=index)
         row["target_user_sdwt_prod"] = target
 
         if isinstance(target, str) and target.strip():
             targets.add(target.strip())
-            continue
-
         row_id = row.get("id")
         if isinstance(row_id, int):
-            missing_ids.append(row_id)
+            if persist and target != persisted_target:
+                changed_target_by_id[row_id] = target
+            if not isinstance(target, str) or not target.strip():
+                missing_ids.append(row_id)
+
+    if persist and changed_target_by_id:
+        _persist_target_user_sdwt_prod(target_by_id=changed_target_by_id)
 
     return targets, missing_ids
+
+
+def _persist_target_user_sdwt_prod(*, target_by_id: dict[int, str | None]) -> None:
+    """해석된 target_user_sdwt_prod 값을 DroneSOP에 저장합니다."""
+
+    grouped_ids: dict[str | None, list[int]] = {}
+    for sop_id, target in target_by_id.items():
+        grouped_ids.setdefault(target, []).append(sop_id)
+
+    with transaction.atomic():
+        for target, sop_ids in grouped_ids.items():
+            DroneSOP.objects.filter(id__in=sop_ids).update(target_user_sdwt_prod=target)

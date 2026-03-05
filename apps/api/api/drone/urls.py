@@ -9,13 +9,11 @@ from django.urls import path
 
 from .views import (
     DroneEarlyInformView,
-    DroneSopInformPrecheckView,
-    DroneSopInformTriggerView,
     DroneJiraKeyView,
     DroneSopInstantInformView,
+    DroneSopPipelinePrecheckView,
+    DroneSopPipelineTriggerView,
     DroneSopRetryChannelView,
-    DroneSopJiraPrecheckView,
-    DroneSopJiraTriggerView,
     DroneSopPop3IngestTriggerView,
     JiraUserSdwtProdListView,
     LineHistoryView,
@@ -48,23 +46,23 @@ urlpatterns = [
         name="drone-sop-pop3-ingest-trigger",
     ),
     path(
-        "sop/jira/precheck",
-        DroneSopJiraPrecheckView.as_view(),
-        name="drone-sop-jira-precheck",
-    ),
-    path(
-        "sop/jira/trigger",
-        DroneSopJiraTriggerView.as_view(),
-        name="drone-sop-jira-trigger",
+        "sop/precheck",
+        DroneSopPipelinePrecheckView.as_view(),
+        name="drone-sop-pipeline-precheck",
     ),
     path(
         "sop/inform/precheck",
-        DroneSopInformPrecheckView.as_view(),
+        DroneSopPipelinePrecheckView.as_view(),
         name="drone-sop-inform-precheck",
     ),
     path(
+        "sop/trigger",
+        DroneSopPipelineTriggerView.as_view(),
+        name="drone-sop-pipeline-trigger",
+    ),
+    path(
         "sop/inform/trigger",
-        DroneSopInformTriggerView.as_view(),
+        DroneSopPipelineTriggerView.as_view(),
         name="drone-sop-inform-trigger",
     ),
 ]

@@ -27,10 +27,8 @@
 - `GET /api/v1/line-dashboard/jira-user-sdwt-prods`
 - `POST /api/v1/line-dashboard/sop/<sop_id>/instant-inform`
 - `POST /api/v1/line-dashboard/sop/ingest/pop3/trigger`
-- `POST /api/v1/line-dashboard/sop/jira/precheck`
-- `POST /api/v1/line-dashboard/sop/jira/trigger`
-- `POST /api/v1/line-dashboard/sop/inform/precheck`
-- `POST /api/v1/line-dashboard/sop/inform/trigger`
+- `POST /api/v1/line-dashboard/sop/precheck`
+- `POST /api/v1/line-dashboard/sop/trigger`
 
 ## 핵심 모델
 - `DroneSOP` (`drone_sop`)
@@ -68,25 +66,19 @@
 4. `target_user_sdwt_prod`/`needtosend` 계산 후 `drone_sop` 업서트
 5. 처리된 메일 삭제 및 오래된 데이터 prune
 
-### 4) Jira 생성 배치
-1. 락 획득(`drone_sop_jira_create`)
-2. 후보 조회(`send_jira=0` and 완료/즉시인폼 조건)
-3. 대상 소속 해석 실패 건 즉시 실패 처리
-4. 채널 계획(`project_key/template_key`) 해석
-5. Jira API 호출(벌크/단건) 후 `send_jira/jira_key/inform_step/informed_at` 갱신
-6. 즉시 인폼 실패 건은 `instant_inform=-1` 반영
+### 4) 통합 채널 파이프라인
+1. 락 획득(`drone_sop_pipeline_create`)
+2. 선택 채널(`jira/messenger/mail`) 기준 후보 조회
+3. `target_user_sdwt_prod`를 해석 후 `drone_sop`에 저장
+4. 대상 소속 해석 실패 건은 선택 채널에 한해 실패 처리
+5. Jira/메신저/메일 채널을 독립 파이프라인으로 실행
+6. 채널별 성공/실패/비활성 사유를 `send_*`/`*_reason`에 반영
 
-### 5) 멀티 채널 알림 배치
-1. 락 획득(`drone_sop_inform_create`)
-2. 후보 조회(`send_jira/send_messenger/send_mail` 중 미전송 존재)
-3. 대상 소속 해석 및 채널 설정 로딩
-4. Jira/메신저/메일 채널을 독립 파이프라인으로 실행
-5. 채널별 성공/실패/비활성 사유를 `send_*`/`*_reason`에 반영
-
-### 6) 단건 즉시 인폼
+### 5) 단건 즉시 인폼
 1. `sop_id` 행 잠금 조회
 2. 이미 Jira 전송 완료면 `already_informed` 반환
-3. 미전송이면 `instant_inform=1`로 큐잉
+3. `target_user_sdwt_prod`가 비어 있으면 매핑 규칙으로 보정 후 저장
+4. 미전송이면 `instant_inform=1`로 큐잉
 
 ## 설정/환경 변수
 - POP3

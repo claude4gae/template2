@@ -17,7 +17,11 @@ from django.utils import timezone
 
 from ... import selectors
 from ...models import DroneSOP
-from ..shared.notify_resolver import resolve_target_user_sdwt_prod_values
+from ..shared.notify_resolver import (
+    load_user_sdwt_prod_map_index,
+    resolve_target_user_sdwt_prod,
+    resolve_target_user_sdwt_prod_values,
+)
 from ..shared.policy import (
     REASON_CHANNEL_CONFIG_INVALID,
     REASON_CHANNEL_CONFIG_MISSING,
@@ -252,6 +256,22 @@ def enqueue_drone_sop_jira_instant_inform(
             raise ValueError("DroneSOP not found")
 
         update_fields: list[str] = []
+        raw_target = sop.target_user_sdwt_prod
+        current_target = raw_target.strip() if isinstance(raw_target, str) else ""
+        if not current_target:
+            resolved_target = resolve_target_user_sdwt_prod(
+                row={
+                    "target_user_sdwt_prod": sop.target_user_sdwt_prod,
+                    "sdwt_prod": sop.sdwt_prod,
+                    "user_sdwt_prod": sop.user_sdwt_prod,
+                },
+                index=load_user_sdwt_prod_map_index(),
+            )
+            if isinstance(resolved_target, str) and resolved_target.strip():
+                sop.target_user_sdwt_prod = resolved_target
+                updated_fields["target_user_sdwt_prod"] = resolved_target
+                update_fields.append("target_user_sdwt_prod")
+
         if comment is not None:
             sop.comment = comment
             updated_fields["comment"] = sop.comment
@@ -307,6 +327,7 @@ def _run_drone_sop_jira_create_with_rows(
     *,
     rows: list[dict[str, Any]],
     config: DroneJiraConfig,
+    pre_resolved_targets: tuple[set[str], list[int]] | None = None,
 ) -> DroneSopJiraCreateResult:
     """락 획득 후 Jira 생성 로직 본체를 실행합니다."""
 
@@ -326,7 +347,11 @@ def _run_drone_sop_jira_create_with_rows(
     # ---------------------------------------------------------------------
     # 2) target_user_sdwt_prod 해석 및 채널 설정 조회
     # ---------------------------------------------------------------------
-    target_values, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows)
+    if pre_resolved_targets is None:
+        target_values, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows)
+    else:
+        target_values, missing_ids = pre_resolved_targets
+
     if missing_ids:
         mark_missing_target_as_failed(
             sop_ids=missing_ids,
@@ -426,11 +451,17 @@ def _run_drone_sop_jira_create_with_rows(
     )
 
 
-def run_drone_sop_jira_create_from_rows(*, rows: Sequence[dict[str, Any]]) -> DroneSopJiraCreateResult:
+def run_drone_sop_jira_create_from_rows(
+    *,
+    rows: Sequence[dict[str, Any]],
+    pre_resolved_targets: tuple[set[str], list[int]] | None = None,
+) -> DroneSopJiraCreateResult:
     """전달받은 row 목록으로 Jira 생성 파이프라인을 실행합니다.
 
     인자:
         rows: Jira 후보 row 목록(미전송 상태만 처리).
+        pre_resolved_targets: 상위 레이어에서 계산한
+            (target_user_sdwt_prod 집합, 누락 sop_id 목록) 튜플(옵션).
 
     반환:
         DroneSopJiraCreateResult 결과 객체.
@@ -461,10 +492,17 @@ def run_drone_sop_jira_create_from_rows(*, rows: Sequence[dict[str, Any]]) -> Dr
     # 2) 공통 락으로 실행
     # ---------------------------------------------------------------------
     config = DroneJiraConfig.from_settings()
+    if pre_resolved_targets is None:
+        pre_resolved_targets = resolve_target_user_sdwt_prod_values(rows=pending_rows)
+
     with _advisory_lock("drone_sop_jira_create") as acquired:
         if not acquired:
             return DroneSopJiraCreateResult(skipped=True, skip_reason="already_running")
-        return _run_drone_sop_jira_create_with_rows(rows=pending_rows, config=config)
+        return _run_drone_sop_jira_create_with_rows(
+            rows=pending_rows,
+            config=config,
+            pre_resolved_targets=pre_resolved_targets,
+        )
 
 
 def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJiraCreateResult:
@@ -496,7 +534,12 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         # 2) 대상 행 조회 후 공통 실행 로직 호출
         # ---------------------------------------------------------------------
         rows = selectors.list_drone_sop_jira_candidates(limit=limit)
-        return _run_drone_sop_jira_create_with_rows(rows=rows, config=config)
+        pre_resolved_targets = resolve_target_user_sdwt_prod_values(rows=rows, persist=True)
+        return _run_drone_sop_jira_create_with_rows(
+            rows=rows,
+            config=config,
+            pre_resolved_targets=pre_resolved_targets,
+        )
 
 
 __all__ = [

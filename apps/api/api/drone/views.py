@@ -16,7 +16,8 @@
 - 예시 요청: GET    /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
 - 예시 요청: GET    /api/v1/line-dashboard/jira-user-sdwt-prods
 - 예시 요청: POST   /api/v1/line-dashboard/jira-keys { userSdwtProd, jiraKey?, templateKey? }
-- 예시 요청: POST   /api/v1/line-dashboard/sop/jira/precheck
+- 예시 요청: POST   /api/v1/line-dashboard/sop/precheck { channels? }
+- 예시 요청: POST   /api/v1/line-dashboard/sop/trigger  { channels?, limit? }
 
 # 응답(예시)
 GET 예시:
@@ -43,7 +44,7 @@ DELETE 예시:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from django.http import HttpRequest, JsonResponse
 from django.utils.decorators import method_decorator
@@ -64,6 +65,8 @@ from . import selectors, services
 from .serializers import serialize_early_inform_entry
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_PIPELINE_CHANNELS = frozenset({"jira", "messenger", "mail"})
 
 
 def _ensure_authenticated(request: HttpRequest) -> JsonResponse | None:
@@ -179,6 +182,56 @@ def _parse_limit_param(request: HttpRequest) -> tuple[int | None, JsonResponse |
     return limit, None
 
 
+def _parse_channels_param(request: HttpRequest) -> tuple[list[str] | None, JsonResponse | None]:
+    """channels 파라미터를 파싱합니다.
+
+    우선순위:
+        1) JSON 바디의 channels
+        2) query parameter의 channels(쉼표 구분)
+
+    인자:
+        request: Django HttpRequest 객체.
+
+    반환:
+        (channels, error_response) 튜플.
+        - channels가 None이면 서비스 기본 채널 정책을 사용합니다.
+    """
+
+    payload = _parse_json_body_or_empty(request)
+    raw_channels = payload.get("channels")
+    if raw_channels is None:
+        query_value = request.GET.get("channels")
+        if isinstance(query_value, str):
+            raw_channels = [item.strip() for item in query_value.split(",")]
+
+    if raw_channels is None:
+        return None, None
+
+    if isinstance(raw_channels, str):
+        raw_channel_values: list[Any] = [raw_channels]
+    elif isinstance(raw_channels, list):
+        raw_channel_values = [*raw_channels]
+    else:
+        return None, _json_error("channels must be an array of strings", status=400)
+
+    normalized_channels: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_channel_values:
+        if not isinstance(raw, str):
+            return None, _json_error("channels must be an array of strings", status=400)
+        key = raw.strip().lower()
+        if not key:
+            continue
+        if key not in _ALLOWED_PIPELINE_CHANNELS:
+            return None, _json_error("channels must contain only: jira, messenger, mail", status=400)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_channels.append(key)
+
+    return normalized_channels, None
+
+
 def _parse_positive_int_or_error(
     value: Any,
     *,
@@ -273,13 +326,24 @@ def _record_activity_state_and_respond(
     return JsonResponse(response_payload, status=status)
 
 
-def _respond_precheck_has_candidates(request: HttpRequest, *, has_candidates: bool) -> JsonResponse:
+def _respond_precheck_has_candidates(
+    request: HttpRequest,
+    *,
+    has_candidates: bool,
+    channels: Sequence[str] | None = None,
+) -> JsonResponse:
     """사전 확인(precheck) 응답을 구성합니다."""
+
+    response_payload: dict[str, Any] = {"hasCandidates": has_candidates}
+    activity_state: dict[str, Any] = {"has_candidates": has_candidates}
+    if channels:
+        response_payload["channels"] = [*channels]
+        activity_state["channels"] = [*channels]
 
     return _record_activity_state_and_respond(
         request,
-        activity_state={"has_candidates": has_candidates},
-        response_payload={"hasCandidates": has_candidates},
+        activity_state=activity_state,
+        response_payload=response_payload,
     )
 
 
@@ -307,51 +371,40 @@ def _respond_pop3_ingest_result(request: HttpRequest, *, result: Any) -> JsonRes
     )
 
 
-def _respond_jira_trigger_result(request: HttpRequest, *, result: Any) -> JsonResponse:
-    """Jira 생성 트리거 응답을 구성합니다."""
+def _respond_pipeline_trigger_result(
+    request: HttpRequest,
+    *,
+    result: Any,
+    channels: Sequence[str] | None = None,
+) -> JsonResponse:
+    """통합 Drone SOP 파이프라인 트리거 응답을 구성합니다."""
+
+    response_payload: dict[str, Any] = {
+        "candidates": result.candidates,
+        "jiraCreated": result.jira_created,
+        "jiraUpdated": result.jira_updated_rows,
+        "messengerSent": result.messenger_sent,
+        "mailSent": result.mail_sent,
+        "skipped": result.skipped,
+        "skipReason": result.skip_reason,
+    }
+    activity_state: dict[str, Any] = {
+        "candidates": result.candidates,
+        "jira_created": result.jira_created,
+        "jira_updated_rows": result.jira_updated_rows,
+        "messenger_sent": result.messenger_sent,
+        "mail_sent": result.mail_sent,
+        "skipped": result.skipped,
+        "skip_reason": result.skip_reason,
+    }
+    if channels:
+        response_payload["channels"] = [*channels]
+        activity_state["channels"] = [*channels]
 
     return _record_activity_state_and_respond(
         request,
-        activity_state={
-            "candidates": result.candidates,
-            "created": result.created,
-            "updated_rows": result.updated_rows,
-            "skipped": result.skipped,
-            "skip_reason": result.skip_reason,
-        },
-        response_payload={
-            "candidates": result.candidates,
-            "created": result.created,
-            "updated": result.updated_rows,
-            "skipped": result.skipped,
-            "skipReason": result.skip_reason,
-        },
-    )
-
-
-def _respond_inform_trigger_result(request: HttpRequest, *, result: Any) -> JsonResponse:
-    """멀티 채널 전송 트리거 응답을 구성합니다."""
-
-    return _record_activity_state_and_respond(
-        request,
-        activity_state={
-            "candidates": result.candidates,
-            "jira_created": result.jira_created,
-            "jira_updated_rows": result.jira_updated_rows,
-            "messenger_sent": result.messenger_sent,
-            "mail_sent": result.mail_sent,
-            "skipped": result.skipped,
-            "skip_reason": result.skip_reason,
-        },
-        response_payload={
-            "candidates": result.candidates,
-            "jiraCreated": result.jira_created,
-            "jiraUpdated": result.jira_updated_rows,
-            "messengerSent": result.messenger_sent,
-            "mailSent": result.mail_sent,
-            "skipped": result.skipped,
-            "skipReason": result.skip_reason,
-        },
+        activity_state=activity_state,
+        response_payload=response_payload,
     )
 
 
@@ -1383,28 +1436,30 @@ class DroneSopPop3IngestTriggerView(DroneAirflowTriggerView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class DroneSopJiraPrecheckView(DroneAirflowTriggerView):
-    """외부 Airflow에서 호출하는 Drone SOP Jira 후보 사전 확인 트리거."""
+class DroneSopPipelinePrecheckView(DroneAirflowTriggerView):
+    """외부 Airflow에서 호출하는 통합 Drone SOP 파이프라인 precheck 트리거."""
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """Jira 생성 대상 존재 여부를 반환합니다.
+        """선택 채널 기준 전송 대상 존재 여부를 반환합니다.
 
         요청 예시:
-            예시 요청: POST /api/v1/line-dashboard/sop/jira/precheck
+            예시 요청: POST /api/v1/line-dashboard/sop/precheck
             헤더 예시: Authorization: Bearer <token>
+            예시 바디: {"channels":["jira","messenger","mail"]}
 
         반환:
-            예시 응답: 200 {"hasCandidates": true}
+            예시 응답: 200 {"hasCandidates": true, "channels":["jira","messenger","mail"]}
 
         부작용:
             없음. 읽기 전용 조회입니다.
 
         오류:
             401: 토큰 인증 실패
+            400: channels 검증 오류
             500: 서버 오류
 
         snake_case/camelCase 호환:
-            입력 파라미터는 없습니다.
+            요청 본문은 channels만 사용하며 camelCase만 지원합니다.
         """
         # -----------------------------------------------------------------------------
         # 1) Airflow 토큰 검증
@@ -1414,62 +1469,9 @@ class DroneSopJiraPrecheckView(DroneAirflowTriggerView):
             return auth_response
 
         # -----------------------------------------------------------------------------
-        # 2) 액티비티 로그 기록
+        # 2) channels 파라미터 파싱
         # -----------------------------------------------------------------------------
-        _record_drone_sop_pipeline_activity(
-            request,
-            summary="Precheck drone_sop Jira candidates",
-            pipeline="jira_precheck",
-        )
-
-        # -----------------------------------------------------------------------------
-        # 3) 후보 존재 여부 조회 및 응답 구성
-        # -----------------------------------------------------------------------------
-        try:
-            has_candidates = selectors.has_drone_sop_jira_candidates()
-            return _respond_precheck_has_candidates(request, has_candidates=has_candidates)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to precheck drone SOP Jira candidates")
-            return JsonResponse({"error": "Drone SOP Jira precheck failed"}, status=500)
-
-
-@method_decorator(csrf_exempt, name="dispatch")
-class DroneSopJiraTriggerView(DroneAirflowTriggerView):
-    """외부 Airflow에서 호출하는 Drone SOP Jira 생성 트리거."""
-
-    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """Jira 생성 트리거를 실행합니다.
-
-        요청 예시:
-            예시 요청: POST /api/v1/line-dashboard/sop/jira/trigger
-            헤더 예시: Authorization: Bearer <token>
-            예시 바디: {"limit": 100}
-
-        반환:
-            예시 응답: 200 {"candidates": 10, "created": 9, "updated": 9, "skipped": false}
-
-        부작용:
-            Jira 생성 및 drone_sop 업데이트가 발생합니다.
-
-        오류:
-            401: 토큰 인증 실패
-            400: limit 검증 오류
-            500: 서버 오류
-
-        snake_case/camelCase 호환:
-            요청 본문은 limit만 사용하며 camelCase만 지원합니다.
-        """
-        # -----------------------------------------------------------------------------
-        # 1) Airflow 토큰 검증
-        # -----------------------------------------------------------------------------
-        auth_response = self._authorize_airflow(request)
-        if auth_response is not None:
-            return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) limit 파라미터 파싱
-        # -----------------------------------------------------------------------------
-        limit, error_response = _parse_limit_param(request)
+        channels, error_response = _parse_channels_param(request)
         if error_response is not None:
             return error_response
 
@@ -1478,100 +1480,54 @@ class DroneSopJiraTriggerView(DroneAirflowTriggerView):
         # -----------------------------------------------------------------------------
         _record_drone_sop_pipeline_activity(
             request,
-            summary="Trigger drone_sop Jira create",
-            pipeline="jira_create",
-            limit=limit,
+            summary="Precheck drone_sop pipeline candidates",
+            pipeline="pipeline_precheck",
         )
+        if channels:
+            merge_activity_metadata(request, channels=channels)
 
         # -----------------------------------------------------------------------------
-        # 4) 서비스 호출 및 응답 구성
+        # 4) 후보 존재 여부 조회 및 응답 구성
         # -----------------------------------------------------------------------------
         try:
-            result = services.run_drone_sop_jira_create_from_env(limit=limit)
-            return _respond_jira_trigger_result(request, result=result)
+            has_candidates = services.has_drone_sop_pipeline_candidates(channels=channels)
+            return _respond_precheck_has_candidates(
+                request,
+                has_candidates=has_candidates,
+                channels=channels,
+            )
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to trigger drone SOP Jira create")
-            return JsonResponse({"error": "Drone SOP Jira create failed"}, status=500)
+            logger.exception("Failed to precheck drone SOP pipeline candidates")
+            return JsonResponse({"error": "Drone SOP pipeline precheck failed"}, status=500)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class DroneSopInformPrecheckView(DroneAirflowTriggerView):
-    """외부 Airflow에서 호출하는 Drone SOP 멀티 채널 후보 사전 확인 트리거."""
+class DroneSopPipelineTriggerView(DroneAirflowTriggerView):
+    """외부 Airflow에서 호출하는 통합 Drone SOP 파이프라인 실행 트리거."""
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """멀티 채널 전송 대상 존재 여부를 반환합니다.
+        """선택 채널 기준 Drone SOP 파이프라인 실행을 처리합니다.
 
         요청 예시:
-            예시 요청: POST /api/v1/line-dashboard/sop/inform/precheck
+            예시 요청: POST /api/v1/line-dashboard/sop/trigger
             헤더 예시: Authorization: Bearer <token>
-
-        반환:
-            예시 응답: 200 {"hasCandidates": true}
-
-        부작용:
-            없음. 읽기 전용 조회입니다.
-
-        오류:
-            401: 토큰 인증 실패
-            500: 서버 오류
-
-        snake_case/camelCase 호환:
-            입력 파라미터는 없습니다.
-        """
-        # -----------------------------------------------------------------------------
-        # 1) Airflow 토큰 검증
-        # -----------------------------------------------------------------------------
-        auth_response = self._authorize_airflow(request)
-        if auth_response is not None:
-            return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) 액티비티 로그 기록
-        # -----------------------------------------------------------------------------
-        _record_drone_sop_pipeline_activity(
-            request,
-            summary="Precheck drone_sop inform candidates",
-            pipeline="inform_precheck",
-        )
-
-        # -----------------------------------------------------------------------------
-        # 3) 후보 존재 여부 조회 및 응답 구성
-        # -----------------------------------------------------------------------------
-        try:
-            has_candidates = selectors.has_drone_sop_inform_candidates()
-            return _respond_precheck_has_candidates(request, has_candidates=has_candidates)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to precheck drone SOP inform candidates")
-            return JsonResponse({"error": "Drone SOP inform precheck failed"}, status=500)
-
-
-@method_decorator(csrf_exempt, name="dispatch")
-class DroneSopInformTriggerView(DroneAirflowTriggerView):
-    """외부 Airflow에서 호출하는 Drone SOP 멀티 채널 전송 트리거."""
-
-    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """멀티 채널 전송 트리거를 실행합니다.
-
-        요청 예시:
-            예시 요청: POST /api/v1/line-dashboard/sop/inform/trigger
-            헤더 예시: Authorization: Bearer <token>
-            예시 바디: {"limit": 100}
+            예시 바디: {"channels":["jira","messenger","mail"],"limit":100}
 
         반환:
             예시 응답: 200 {"candidates": 10, "jiraCreated": 9, "messengerSent": 9, "mailSent": 9}
 
         부작용:
-            Jira/메신저/메일 전송 및 drone_sop 업데이트가 발생합니다.
+            선택 채널(Jira/메신저/메일) 전송 및 drone_sop 업데이트가 발생합니다.
 
         오류:
             401: 토큰 인증 실패
-            400: limit 검증 오류
+            400: channels/limit 검증 오류
             500: 서버 오류
 
         snake_case/camelCase 호환:
-            요청 본문은 limit만 사용하며 camelCase만 지원합니다.
+            요청 본문은 channels/limit만 사용하며 camelCase만 지원합니다.
         """
         # -----------------------------------------------------------------------------
         # 1) Airflow 토큰 검증
@@ -1581,42 +1537,52 @@ class DroneSopInformTriggerView(DroneAirflowTriggerView):
             return auth_response
 
         # -----------------------------------------------------------------------------
-        # 2) limit 파라미터 파싱
+        # 2) limit/channels 파라미터 파싱
         # -----------------------------------------------------------------------------
-        limit, error_response = _parse_limit_param(request)
-        if error_response is not None:
-            return error_response
+        limit, limit_error = _parse_limit_param(request)
+        if limit_error is not None:
+            return limit_error
+        channels, channels_error = _parse_channels_param(request)
+        if channels_error is not None:
+            return channels_error
 
         # -----------------------------------------------------------------------------
         # 3) 액티비티 로그 기록
         # -----------------------------------------------------------------------------
         _record_drone_sop_pipeline_activity(
             request,
-            summary="Trigger drone_sop inform create",
-            pipeline="inform_create",
+            summary="Trigger drone_sop pipeline create",
+            pipeline="pipeline_create",
             limit=limit,
         )
+        if channels:
+            merge_activity_metadata(request, channels=channels)
 
         # -----------------------------------------------------------------------------
         # 4) 서비스 호출 및 응답 구성
         # -----------------------------------------------------------------------------
         try:
-            result = services.run_drone_sop_inform_from_env(limit=limit)
-            return _respond_inform_trigger_result(request, result=result)
+            result = services.run_drone_sop_pipeline_from_env(
+                limit=limit,
+                channels=channels,
+            )
+            return _respond_pipeline_trigger_result(
+                request,
+                result=result,
+                channels=channels,
+            )
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to trigger drone SOP inform create")
-            return JsonResponse({"error": "Drone SOP inform create failed"}, status=500)
+            logger.exception("Failed to trigger drone SOP pipeline create")
+            return JsonResponse({"error": "Drone SOP pipeline create failed"}, status=500)
 
 
 __all__ = [
     "DroneEarlyInformView",
     "DroneSopInstantInformView",
-    "DroneSopJiraPrecheckView",
-    "DroneSopJiraTriggerView",
-    "DroneSopInformPrecheckView",
-    "DroneSopInformTriggerView",
+    "DroneSopPipelinePrecheckView",
+    "DroneSopPipelineTriggerView",
     "DroneSopPop3IngestTriggerView",
     "LineHistoryView",
     "LineIdListView",

@@ -42,6 +42,18 @@ logger = logging.getLogger(__name__)
 
 ChannelConfig = dict[str, str | bool | int | None]
 PendingChannelRow = tuple[dict[str, Any], int, ChannelConfig]
+ChannelFlags = tuple[bool, bool, bool]
+
+CHANNEL_JIRA = "jira"
+CHANNEL_MESSENGER = "messenger"
+CHANNEL_MAIL = "mail"
+
+_DEFAULT_CHANNEL_KEYS: tuple[str, ...] = (CHANNEL_JIRA, CHANNEL_MESSENGER, CHANNEL_MAIL)
+_SEND_FIELD_BY_CHANNEL = {
+    CHANNEL_JIRA: "send_jira",
+    CHANNEL_MESSENGER: "send_messenger",
+    CHANNEL_MAIL: "send_mail",
+}
 
 _CHANNEL_REASON_FIELD_BY_SEND_FIELD = {
     "send_messenger": "messenger_reason",
@@ -197,6 +209,60 @@ class DroneSopInformResult:
     mail_sent: int = 0
     skipped: bool = False
     skip_reason: str | None = None
+
+
+def _normalize_channel_keys(channels: Sequence[str] | None) -> list[str]:
+    """채널 키 목록을 정규화합니다.
+
+    인자:
+        channels: 채널 키 목록(옵션). 비어 있으면 기본 채널 전체를 사용합니다.
+
+    반환:
+        중복 제거된 정규화 채널 키 목록.
+
+    오류:
+        지원하지 않는 채널 키가 포함되면 ValueError를 발생시킵니다.
+    """
+
+    if channels is None:
+        return list(_DEFAULT_CHANNEL_KEYS)
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in channels:
+        key = raw.strip().lower() if isinstance(raw, str) else ""
+        if not key:
+            continue
+        if key not in _SEND_FIELD_BY_CHANNEL:
+            raise ValueError("channels must contain only: jira, messenger, mail")
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(key)
+
+    if not normalized:
+        return list(_DEFAULT_CHANNEL_KEYS)
+    return normalized
+
+
+def _resolve_channel_flags(channel_keys: Sequence[str]) -> ChannelFlags:
+    """채널 키 목록을 bool 플래그 튜플로 변환합니다."""
+
+    include_jira = CHANNEL_JIRA in channel_keys
+    include_messenger = CHANNEL_MESSENGER in channel_keys
+    include_mail = CHANNEL_MAIL in channel_keys
+    return include_jira, include_messenger, include_mail
+
+
+def _resolve_channel_fields(channel_keys: Sequence[str]) -> list[str]:
+    """채널 키 목록을 send_* 필드 목록으로 변환합니다."""
+
+    fields: list[str] = []
+    for key in channel_keys:
+        field = _SEND_FIELD_BY_CHANNEL.get(key)
+        if field and field not in fields:
+            fields.append(field)
+    return fields
 
 
 def _normalize_int_flag(value: Any) -> int:
@@ -355,6 +421,7 @@ def _filter_rows_by_excluded_ids(*, rows: list[dict[str, Any]], excluded_ids: Se
 def _run_jira_inform(
     *,
     rows: list[dict[str, Any]],
+    pre_resolved_targets: tuple[set[str], list[int]] | None = None,
 ) -> tuple[int, int]:
     """Jira 채널 전송을 처리합니다.
 
@@ -367,7 +434,10 @@ def _run_jira_inform(
         return 0, 0
 
     try:
-        result = run_drone_sop_jira_create_from_rows(rows=jira_rows)
+        result = run_drone_sop_jira_create_from_rows(
+            rows=jira_rows,
+            pre_resolved_targets=pre_resolved_targets,
+        )
     except Exception:
         # Jira 상태 갱신 책임은 sop_jira 서비스에 두고, inform은 채널 격리만 담당합니다.
         logger.exception("Drone SOP Jira pipeline failed during inform run")
@@ -517,38 +587,58 @@ def _run_mail_inform(
     return len(_normalize_positive_ids(success_ids))
 
 
-def run_drone_sop_inform_from_env(*, limit: int | None = None) -> DroneSopInformResult:
-    """Drone SOP 멀티 채널 알림 전송을 실행합니다."""
+def has_drone_sop_pipeline_candidates(*, channels: Sequence[str] | None = None) -> bool:
+    """선택 채널 기준 Drone SOP 후보 존재 여부를 반환합니다."""
+
+    channel_keys = _normalize_channel_keys(channels)
+    include_jira, include_messenger, include_mail = _resolve_channel_flags(channel_keys)
+    return selectors.has_drone_sop_pipeline_candidates(
+        include_jira=include_jira,
+        include_messenger=include_messenger,
+        include_mail=include_mail,
+    )
+
+
+def run_drone_sop_pipeline_from_env(
+    *,
+    limit: int | None = None,
+    channels: Sequence[str] | None = None,
+) -> DroneSopInformResult:
+    """설정된 채널 조합으로 Drone SOP 파이프라인을 실행합니다."""
+
+    channel_keys = _normalize_channel_keys(channels)
+    include_jira, include_messenger, include_mail = _resolve_channel_flags(channel_keys)
+    channel_fields = _resolve_channel_fields(channel_keys)
 
     # -------------------------------------------------------------------------
     # 1) 락 확보
     # -------------------------------------------------------------------------
-    with _advisory_lock("drone_sop_inform_create") as acquired:
+    with _advisory_lock("drone_sop_pipeline_create") as acquired:
         if not acquired:
             return DroneSopInformResult(skipped=True, skip_reason="already_running")
 
         # ---------------------------------------------------------------------
-        # 2) 대상 행 조회
+        # 2) 선택 채널 기준 후보 조회
         # ---------------------------------------------------------------------
-        rows = selectors.list_drone_sop_inform_candidates(limit=limit)
+        rows = selectors.list_drone_sop_pipeline_candidates(
+            limit=limit,
+            include_jira=include_jira,
+            include_messenger=include_messenger,
+            include_mail=include_mail,
+        )
         if not rows:
             return DroneSopInformResult(candidates=0, skipped=True, skip_reason="no_candidates")
 
         candidate_count = len(rows)
 
         # ---------------------------------------------------------------------
-        # 3) Jira 채널 처리(예외 격리)
+        # 3) target_user_sdwt_prod 해석/저장 및 누락 처리
         # ---------------------------------------------------------------------
-        jira_created, jira_updated_rows = _run_jira_inform(rows=rows)
-
-        # ---------------------------------------------------------------------
-        # 4) target_user_sdwt_prod 해석 및 필터링
-        # ---------------------------------------------------------------------
-        targets, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows)
+        targets, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows, persist=True)
         if missing_ids:
             mark_missing_target_as_failed(
                 sop_ids=missing_ids,
-                channel_fields=["send_messenger", "send_mail"],
+                channel_fields=channel_fields,
             )
             rows = _filter_rows_by_excluded_ids(rows=rows, excluded_ids=missing_ids)
         if not rows:
@@ -558,34 +648,49 @@ def run_drone_sop_inform_from_env(*, limit: int | None = None) -> DroneSopInform
                 skip_reason="no_valid_targets",
             )
 
-        channel_by_target = selectors.list_drone_sop_user_sdwt_channels_by_targets(
-            target_user_sdwt_prod_values=targets,
-        )
+        # ---------------------------------------------------------------------
+        # 4) Jira 채널 처리
+        # ---------------------------------------------------------------------
+        jira_created = 0
+        jira_updated_rows = 0
+        if include_jira:
+            jira_created, jira_updated_rows = _run_jira_inform(
+                rows=rows,
+                pre_resolved_targets=(targets, []),
+            )
 
         # ---------------------------------------------------------------------
-        # 5) CTTTM URL 보강
+        # 5) 메신저/메일 공통 컨텍스트 처리
         # ---------------------------------------------------------------------
-        _enrich_rows_with_ctttm_urls(rows=rows, config=DroneCtttmConfig.from_settings())
+        channel_by_target: dict[str, ChannelConfig] = {}
+        if include_messenger or include_mail:
+            channel_by_target = selectors.list_drone_sop_user_sdwt_channels_by_targets(
+                target_user_sdwt_prod_values=targets,
+            )
+            _enrich_rows_with_ctttm_urls(rows=rows, config=DroneCtttmConfig.from_settings())
 
         # ---------------------------------------------------------------------
-        # 6) 채널별 처리(예외 격리)
+        # 6) 메신저/메일 채널 처리(예외 격리)
         # ---------------------------------------------------------------------
         messenger_sent = 0
+        if include_messenger:
+            try:
+                messenger_sent = _run_messenger_inform(
+                    rows=rows,
+                    channel_by_target=channel_by_target,
+                )
+            except Exception:
+                logger.exception("Drone SOP messenger pipeline failed during pipeline run")
+
         mail_sent = 0
-        try:
-            messenger_sent = _run_messenger_inform(
-                rows=rows,
-                channel_by_target=channel_by_target,
-            )
-        except Exception:
-            logger.exception("Drone SOP messenger pipeline failed during inform run")
-        try:
-            mail_sent = _run_mail_inform(
-                rows=rows,
-                channel_by_target=channel_by_target,
-            )
-        except Exception:
-            logger.exception("Drone SOP mail pipeline failed during inform run")
+        if include_mail:
+            try:
+                mail_sent = _run_mail_inform(
+                    rows=rows,
+                    channel_by_target=channel_by_target,
+                )
+            except Exception:
+                logger.exception("Drone SOP mail pipeline failed during pipeline run")
 
         # ---------------------------------------------------------------------
         # 7) 결과 반환
@@ -599,4 +704,21 @@ def run_drone_sop_inform_from_env(*, limit: int | None = None) -> DroneSopInform
         )
 
 
-__all__ = ["DroneSopInformResult", "run_drone_sop_inform_from_env"]
+def run_drone_sop_inform_from_env(*, limit: int | None = None) -> DroneSopInformResult:
+    """레거시 호환용 전체 채널 파이프라인 실행 함수입니다."""
+
+    return run_drone_sop_pipeline_from_env(
+        limit=limit,
+        channels=_DEFAULT_CHANNEL_KEYS,
+    )
+
+
+__all__ = [
+    "CHANNEL_JIRA",
+    "CHANNEL_MAIL",
+    "CHANNEL_MESSENGER",
+    "DroneSopInformResult",
+    "has_drone_sop_pipeline_candidates",
+    "run_drone_sop_inform_from_env",
+    "run_drone_sop_pipeline_from_env",
+]

@@ -409,13 +409,50 @@ def _drone_sop_inform_candidates_queryset() -> QuerySet[DroneSOP]:
         없음. 읽기 전용 조회 조건만 생성합니다.
     """
 
-    send_pending = (
-        Q(send_jira=0)
-        | Q(send_jira__isnull=True)
-        | Q(send_messenger=0)
-        | Q(send_messenger__isnull=True)
-        | Q(send_mail=0)
-        | Q(send_mail__isnull=True)
+    return _drone_sop_pipeline_candidates_queryset(
+        include_jira=True,
+        include_messenger=True,
+        include_mail=True,
+    )
+
+
+def _build_drone_sop_pending_filter(
+    *,
+    include_jira: bool,
+    include_messenger: bool,
+    include_mail: bool,
+) -> Q:
+    """선택 채널 기준 미전송(send=0/NULL) 필터를 구성합니다."""
+
+    pending_filters: list[Q] = []
+    if include_jira:
+        pending_filters.append(Q(send_jira=0) | Q(send_jira__isnull=True))
+    if include_messenger:
+        pending_filters.append(Q(send_messenger=0) | Q(send_messenger__isnull=True))
+    if include_mail:
+        pending_filters.append(Q(send_mail=0) | Q(send_mail__isnull=True))
+
+    if not pending_filters:
+        return Q(pk__in=[])
+
+    combined = pending_filters[0]
+    for clause in pending_filters[1:]:
+        combined |= clause
+    return combined
+
+
+def _drone_sop_pipeline_candidates_queryset(
+    *,
+    include_jira: bool,
+    include_messenger: bool,
+    include_mail: bool,
+) -> QuerySet[DroneSOP]:
+    """선택 채널 기준 DroneSOP 후보 QuerySet을 구성합니다."""
+
+    send_pending = _build_drone_sop_pending_filter(
+        include_jira=include_jira,
+        include_messenger=include_messenger,
+        include_mail=include_mail,
     )
     return DroneSOP.objects.filter(send_pending).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
 
@@ -482,6 +519,40 @@ def list_drone_sop_inform_candidates(*, limit: int | None = None) -> list[dict[s
     )
 
 
+def list_drone_sop_pipeline_candidates(
+    *,
+    limit: int | None = None,
+    include_jira: bool = True,
+    include_messenger: bool = True,
+    include_mail: bool = True,
+) -> list[dict[str, Any]]:
+    """선택 채널 기준 DroneSOP 후보 row 목록을 조회합니다.
+
+    인자:
+        limit: 최대 조회 건수(옵션).
+        include_jira: Jira 채널 포함 여부.
+        include_messenger: 메신저 채널 포함 여부.
+        include_mail: 메일 채널 포함 여부.
+
+    반환:
+        DroneSOP row dict 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    queryset = _drone_sop_pipeline_candidates_queryset(
+        include_jira=include_jira,
+        include_messenger=include_messenger,
+        include_mail=include_mail,
+    )
+    return _list_candidate_rows(
+        queryset=queryset,
+        fields=_DRONE_SOP_INFORM_CANDIDATE_FIELDS,
+        limit=limit,
+    )
+
+
 def has_drone_sop_jira_candidates() -> bool:
     """Jira 전송 대상 DroneSOP가 존재하는지 확인합니다.
 
@@ -529,6 +600,22 @@ def has_drone_sop_inform_candidates() -> bool:
     # -----------------------------------------------------------------------------
     # 2) 존재 여부 반환
     # -----------------------------------------------------------------------------
+    return qs.exists()
+
+
+def has_drone_sop_pipeline_candidates(
+    *,
+    include_jira: bool = True,
+    include_messenger: bool = True,
+    include_mail: bool = True,
+) -> bool:
+    """선택 채널 기준 DroneSOP 후보 존재 여부를 확인합니다."""
+
+    qs = _drone_sop_pipeline_candidates_queryset(
+        include_jira=include_jira,
+        include_messenger=include_messenger,
+        include_mail=include_mail,
+    )
     return qs.exists()
 
 
