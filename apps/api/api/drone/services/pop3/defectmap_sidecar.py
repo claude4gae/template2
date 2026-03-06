@@ -16,28 +16,10 @@ import requests
 from django.utils import timezone
 
 from .config import DroneSopPop3Config
+from .utils import sanitize_url
 
 logger = logging.getLogger(__name__)
 _KST_TZ = timezone.get_fixed_timezone(540)
-
-
-def _sanitize_url(value: Any) -> str | None:
-    """URL 문자열을 정리하고 비어 있으면 None을 반환합니다.
-
-    인자:
-        value: 원본 URL 값.
-
-    반환:
-        정리된 URL 문자열 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    if value is None:
-        return None
-    cleaned = str(value).replace('"', "").strip()
-    return cleaned or None
 
 
 def _format_scandate_at_kst(*, scanned_at: datetime) -> str:
@@ -91,7 +73,7 @@ def post_defect_png_sidecar_if_needed(
     if not endpoint:
         return
 
-    defect_png_url = _sanitize_url(row.get("defect_png_url"))
+    defect_png_url = sanitize_url(row.get("defect_png_url"))
     if not defect_png_url:
         return
 

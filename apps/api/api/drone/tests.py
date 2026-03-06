@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 
@@ -28,6 +28,8 @@ from api.drone.models import (
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
 )
+from api.drone.services.jira.sop_jira import update_drone_sop_jira_status
+from api.drone.services.pop3.sop_pop3 import build_drone_sop_row, upsert_drone_sop_rows
 
 _PREVIOUS_LOGGING_DISABLE: int | None = None
 
@@ -120,7 +122,7 @@ class DroneSopPop3ParsingTests(TestCase):
 
         early_inform_map = {("dummy-prod", "MS"): "ST002"}
         _ensure_target_mapping(sdwt_prod=None, user_sdwt_prod="dummy-prod", target_user_sdwt_prod="dummy-target")
-        row = services._build_drone_sop_row(html=html, early_inform_map=early_inform_map)
+        row = build_drone_sop_row(html=html, early_inform_map=early_inform_map)
         assert row is not None
 
         self.assertEqual(row["line_id"], "L1")
@@ -148,7 +150,7 @@ class DroneSopPop3ParsingTests(TestCase):
             comment_last_at="$abc",
             ignore_sample_type=False,
         )
-        row = services._build_drone_sop_row(html=html, early_inform_map={})
+        row = build_drone_sop_row(html=html, early_inform_map={})
         assert row is not None
         self.assertEqual(row["needtosend"], 1)
 
@@ -161,7 +163,7 @@ class DroneSopPop3ParsingTests(TestCase):
           <comment>hello@$SETUP_EQP</comment>
         </data>
         """
-        row = services._build_drone_sop_row(html=html, early_inform_map={})
+        row = build_drone_sop_row(html=html, early_inform_map={})
         assert row is not None
         self.assertEqual(row["needtosend"], 0)
         self.assertIsNone(row["target_user_sdwt_prod"])
@@ -176,7 +178,7 @@ class DroneSopPop3ParsingTests(TestCase):
         </data>
         """
         _ensure_target_mapping(sdwt_prod=None, user_sdwt_prod="prod-2", target_user_sdwt_prod="target-2")
-        row = services._build_drone_sop_row(html=html, early_inform_map={})
+        row = build_drone_sop_row(html=html, early_inform_map={})
         assert row is not None
         self.assertEqual(row["needtosend"], 0)
 
@@ -195,7 +197,7 @@ class DroneSopUpsertTests(TestCase):
             target_user_sdwt_prod="old-target",
         )
 
-        services._upsert_drone_sop_rows(
+        upsert_drone_sop_rows(
             rows=[
                 {
                     "line_id": "L1",
@@ -232,7 +234,7 @@ class DroneSopUpsertTests(TestCase):
             target_user_sdwt_prod="old-target",
         )
 
-        services._upsert_drone_sop_rows(
+        upsert_drone_sop_rows(
             rows=[
                 {
                     "line_id": "L1",
@@ -309,7 +311,7 @@ class DroneSopJiraUpdateTests(TestCase):
             metro_current_step="ST003",
         )
 
-        updated = services._update_drone_sop_jira_status(
+        updated = update_drone_sop_jira_status(
             done_ids=[int(row.id)],
             rows=[{"id": int(row.id), "metro_current_step": "ST003"}],
             key_by_id={int(row.id): "DUMMY-1"},
@@ -696,22 +698,16 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertIsNone(response.json()["jiraKey"])
         self.assertIsNone(response.json()["templateKey"])
 
-    def test_jira_key_get_accepts_snake_case_query_key(self) -> None:
-        """GET 조회는 user_sdwt_prod(snake_case) 쿼리 키도 허용하는지 확인합니다."""
-        DroneSopUserSdwtChannel.objects.create(
-            target_user_sdwt_prod="SDWT",
-            jira_template_key="line_a",
-            jira_key="PROJ",
-        )
+    def test_jira_key_get_rejects_snake_case_query_key(self) -> None:
+        """GET 조회는 user_sdwt_prod(snake_case) 쿼리 키를 허용하지 않는지 확인합니다."""
 
         self.client.force_login(self.user)
         response = self.client.get(
             reverse("line-dashboard-jira-keys"),
             {"user_sdwt_prod": "SDWT"},
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["jiraKey"], "PROJ")
-        self.assertEqual(response.json()["templateKey"], "line_a")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "userSdwtProd is required")
 
     def test_jira_key_update_requires_superuser(self) -> None:
         """Jira 키 갱신은 슈퍼유저만 가능해야 합니다."""
@@ -738,8 +734,8 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(refreshed.jira_template_key, "line_a")
         self.assertEqual(refreshed.messenger_template_key, "line_a")
 
-    def test_jira_key_post_accepts_snake_case_user_sdwt_prod(self) -> None:
-        """POST 갱신은 user_sdwt_prod(snake_case) 키도 허용하는지 확인합니다."""
+    def test_jira_key_post_rejects_snake_case_user_sdwt_prod(self) -> None:
+        """POST 갱신은 user_sdwt_prod(snake_case) 키를 허용하지 않는지 확인합니다."""
         self.client.force_login(self.superuser)
         response = self.client.post(
             reverse("line-dashboard-jira-keys"),
@@ -751,12 +747,11 @@ class DroneJiraKeyEndpointTests(TestCase):
             ),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 200)
-        refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
-        self.assertEqual(refreshed.jira_key, "PROJ2")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "userSdwtProd is required")
 
-    def test_jira_key_post_accepts_snake_case_jira_template_keys(self) -> None:
-        """POST 갱신은 jira_key/template_key(snake_case) 키도 허용하는지 확인합니다."""
+    def test_jira_key_post_rejects_snake_case_jira_template_keys(self) -> None:
+        """POST 갱신은 jira_key/template_key(snake_case) 키를 허용하지 않는지 확인합니다."""
         self.client.force_login(self.superuser)
         response = self.client.post(
             reverse("line-dashboard-jira-keys"),
@@ -769,11 +764,8 @@ class DroneJiraKeyEndpointTests(TestCase):
             ),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 200)
-        refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
-        self.assertEqual(refreshed.jira_key, "PROJ2")
-        self.assertEqual(refreshed.jira_template_key, "line_b")
-        self.assertEqual(refreshed.messenger_template_key, "line_b")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "jiraKey or templateKey is required")
 
     def test_jira_key_post_keeps_existing_messenger_template_key(self) -> None:
         """Jira 템플릿 갱신 시 기존 메신저 템플릿 키는 덮어쓰지 않는지 확인합니다."""
@@ -1428,7 +1420,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         self.assertTrue(result.skipped)
         self.assertEqual(result.skip_reason, "no_valid_targets")
@@ -1458,7 +1450,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1477,7 +1469,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1509,7 +1501,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1533,7 +1525,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1570,7 +1562,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1607,7 +1599,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1651,7 +1643,7 @@ class DroneSopInformPolicyTests(TestCase):
             chatroom_id=12345,
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1694,7 +1686,7 @@ class DroneSopInformPolicyTests(TestCase):
             chatroom_id=12345,
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1738,7 +1730,7 @@ class DroneSopInformPolicyTests(TestCase):
             messenger_enabled=False,
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
 
         refreshed = DroneSOP.objects.get(id=sop.id)
@@ -1778,7 +1770,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         mock_session.assert_not_called()
 
@@ -1820,7 +1812,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         self.assertEqual(result.jira_created, 1)
         self.assertEqual(result.jira_updated_rows, 1)
@@ -1871,7 +1863,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         self.assertEqual(result.jira_created, 0)
         self.assertEqual(result.messenger_sent, 1)
@@ -1921,7 +1913,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         mock_messenger.assert_not_called()
 
@@ -1958,7 +1950,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         mock_mail.assert_not_called()
 
@@ -2033,7 +2025,7 @@ class DroneSopInformPolicyTests(TestCase):
         # -----------------------------------------------------------------------------
         # 3) 멀티 채널 전송 실행
         # -----------------------------------------------------------------------------
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         self.assertEqual(result.messenger_sent, 1)
 
@@ -2145,7 +2137,7 @@ class DroneSopInformPolicyTests(TestCase):
             metro_current_step="ST001",
         )
 
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 2)
         self.assertEqual(result.messenger_sent, 2)
 
@@ -2211,7 +2203,7 @@ class DroneSopInformPolicyTests(TestCase):
         # -----------------------------------------------------------------------------
         # 2) 멀티 채널 전송 실행
         # -----------------------------------------------------------------------------
-        result = services.run_drone_sop_inform_from_env()
+        result = services.run_drone_sop_pipeline_from_env()
         self.assertEqual(result.candidates, 1)
         self.assertEqual(result.messenger_sent, 1)
 
@@ -2291,26 +2283,17 @@ class DroneTriggerAuthTests(TestCase):
         resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["jiraCreated"], 1)
-        mock_run.assert_called_once_with(limit=None, channels=None)
+        mock_run.assert_called_once_with(limit=None)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
     @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
-    def test_legacy_inform_trigger_alias_works(self, mock_run: Mock) -> None:
-        """레거시 inform 트리거 경로가 통합 파이프라인으로 연결되는지 확인합니다."""
-        mock_run.return_value = SimpleNamespace(
-            candidates=1,
-            jira_created=1,
-            jira_updated_rows=0,
-            messenger_sent=0,
-            mail_sent=0,
-            skipped=False,
-            skip_reason=None,
-        )
-        url = reverse("drone-sop-inform-trigger")
+    def test_legacy_inform_trigger_alias_is_removed(self, mock_run: Mock) -> None:
+        """레거시 inform 트리거 경로가 제거되었는지 확인합니다."""
+
+        url = "/api/v1/line-dashboard/sop/inform/trigger"
         resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["jiraCreated"], 1)
-        mock_run.assert_called_once_with(limit=None, channels=None)
+        self.assertEqual(resp.status_code, 404)
+        mock_run.assert_not_called()
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
     @patch("api.drone.views.services.has_drone_sop_pipeline_candidates")
@@ -2326,7 +2309,7 @@ class DroneTriggerAuthTests(TestCase):
         resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json().get("hasCandidates"))
-        mock_service.assert_called_once_with(channels=None)
+        mock_service.assert_called_once_with()
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
     @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
@@ -2352,12 +2335,12 @@ class DroneTriggerAuthTests(TestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        mock_run.assert_called_once_with(limit=2, channels=None)
+        mock_run.assert_called_once_with(limit=2)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
     @patch("api.drone.views.services.run_drone_sop_pipeline_from_env")
-    def test_pipeline_trigger_supports_channels(self, mock_run: Mock) -> None:
-        """통합 파이프라인 트리거가 channels를 서비스로 전달하는지 확인합니다."""
+    def test_pipeline_trigger_ignores_channels_payload(self, mock_run: Mock) -> None:
+        """통합 파이프라인 트리거는 channels 입력을 무시하는지 확인합니다."""
         mock_run.return_value = SimpleNamespace(
             candidates=1,
             jira_created=1,
@@ -2377,13 +2360,13 @@ class DroneTriggerAuthTests(TestCase):
             HTTP_AUTHORIZATION="Bearer expected-token",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json().get("channels"), ["jira", "mail"])
-        mock_run.assert_called_once_with(limit=None, channels=["jira", "mail"])
+        self.assertNotIn("channels", resp.json())
+        mock_run.assert_called_once_with(limit=None)
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
     @patch("api.drone.views.services.has_drone_sop_pipeline_candidates")
-    def test_pipeline_precheck_supports_channels(self, mock_service: Mock) -> None:
-        """통합 파이프라인 precheck가 channels를 서비스로 전달하는지 확인합니다."""
+    def test_pipeline_precheck_ignores_channels_payload(self, mock_service: Mock) -> None:
+        """통합 파이프라인 precheck는 channels 입력을 무시하는지 확인합니다."""
         mock_service.return_value = True
         url = reverse("drone-sop-pipeline-precheck")
         payload = json.dumps({"channels": ["messenger"]})
@@ -2394,8 +2377,8 @@ class DroneTriggerAuthTests(TestCase):
             HTTP_AUTHORIZATION="Bearer expected-token",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json().get("channels"), ["messenger"])
-        mock_service.assert_called_once_with(channels=["messenger"])
+        self.assertNotIn("channels", resp.json())
+        mock_service.assert_called_once_with()
 
 
 class DroneEarlyInformAuthTests(TestCase):
@@ -2967,3 +2950,199 @@ class DroneSopMessengerApiRoutingTests(TestCase):
                 messenger_template_key="unknown-template",
                 config=config,
             )
+
+
+class DroneTableSchemaHelpersTests(SimpleTestCase):
+    """Drone 테이블 스키마 유틸 정규화/필터 규칙을 검증합니다."""
+
+    def test_sanitize_identifier_returns_value_when_valid(self) -> None:
+        """유효한 식별자는 그대로 반환되는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        self.assertEqual(table_schema.sanitize_identifier(" table_1 "), "table_1")
+
+    def test_sanitize_identifier_uses_fallback_when_invalid(self) -> None:
+        """유효하지 않은 값은 fallback으로 대체되는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        self.assertEqual(table_schema.sanitize_identifier("table-name", "fallback_table"), "fallback_table")
+
+    def test_sanitize_identifier_rejects_invalid_fallback(self) -> None:
+        """fallback도 유효하지 않으면 None을 반환하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        self.assertIsNone(table_schema.sanitize_identifier(None, "bad-name"))
+
+    def test_sanitize_identifier_trims_fallback(self) -> None:
+        """fallback 공백이 제거되어 반환되는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        self.assertEqual(table_schema.sanitize_identifier(123, "  ok_table "), "ok_table")
+
+    def test_build_line_filters_returns_empty_when_line_missing(self) -> None:
+        """lineId가 없으면 필터가 비어있는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(["sdwt_prod", "line_id"], None)
+
+        self.assertEqual(result["filters"], [])
+        self.assertEqual(result["params"], [])
+
+    def test_build_line_filters_prefers_sdwt_prod(self) -> None:
+        """sdwt_prod가 있으면 sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(["user_sdwt_prod", "sdwt_prod", "line_id"], "L1")
+
+        expected = (
+            "sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_uses_user_sdwt_prod_when_sdwt_missing(self) -> None:
+        """sdwt_prod가 없으면 user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(["user_sdwt_prod", "line_id"], "L1")
+
+        expected = (
+            "user_sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_falls_back_to_line_id(self) -> None:
+        """sdwt_prod가 없으면 line_id 직접 비교로 fallback 되는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(["line_id", "created_at"], "L1")
+
+        self.assertEqual(result["filters"], ["line_id = %s"])
+        self.assertEqual(result["params"], ["L1"])
+
+
+class DroneTablesEndpointTests(TestCase):
+    """라인 대시보드 테이블 엔드포인트를 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 사용자/클라이언트를 준비합니다."""
+
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            sabun="S41000",
+            password="test-password",
+            knox_id="knox-41000",
+        )
+        self.client.force_login(self.user)
+
+    @patch("api.drone.services.table_ops._fetch_rows")
+    @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
+    def test_tables_list_returns_payload(self, mock_schema: Mock, mock_fetch_rows: Mock) -> None:
+        """테이블 목록 조회가 정상 응답하는지 확인합니다."""
+
+        mock_schema.return_value = SimpleNamespace(
+            name="demo_table",
+            columns=["id", "created_at"],
+            timestamp_column="created_at",
+        )
+        mock_fetch_rows.return_value = [{"id": 1, "created_at": "2024-01-01 00:00:00"}]
+
+        response = self.client.get(reverse("drone-tables"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["table"], "demo_table")
+        self.assertEqual(payload["rowCount"], 1)
+
+    @patch("api.drone.services.table_ops._fetch_rows")
+    @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
+    def test_tables_list_returns_raw_reason_columns_without_aliases(
+        self,
+        mock_schema: Mock,
+        mock_fetch_rows: Mock,
+    ) -> None:
+        """테이블 조회 응답은 reason 원본 컬럼만 반환하고 별칭을 추가하지 않는지 확인합니다."""
+
+        mock_schema.return_value = SimpleNamespace(
+            name="drone_sop",
+            columns=["id", "created_at", "jira_reason", "messenger_reason", "mail_reason"],
+            timestamp_column="created_at",
+        )
+        mock_fetch_rows.return_value = [
+            {
+                "id": 1,
+                "created_at": "2024-01-01 00:00:00",
+                "jira_reason": "disabled_by_policy",
+                "messenger_reason": None,
+                "mail_reason": "send_failed",
+            }
+        ]
+
+        response = self.client.get(reverse("drone-tables"), {"table": "drone_sop"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["columns"],
+            ["id", "created_at", "jira_reason", "messenger_reason", "mail_reason"],
+        )
+        row = payload["rows"][0]
+        self.assertEqual(row["jira_reason"], "disabled_by_policy")
+        self.assertIsNone(row["messenger_reason"])
+        self.assertEqual(row["mail_reason"], "send_failed")
+        self.assertNotIn("jiraReason", row)
+        self.assertNotIn("messengerReason", row)
+        self.assertNotIn("mailReason", row)
+
+    @patch("api.drone.services.table_ops.execute")
+    @patch("api.drone.services.table_ops._fetch_row")
+    @patch("api.drone.services.table_ops.table_schema.list_table_columns")
+    def test_tables_update_returns_success(
+        self,
+        mock_columns: Mock,
+        mock_fetch_row: Mock,
+        mock_execute: Mock,
+    ) -> None:
+        """테이블 업데이트가 성공 응답을 반환하는지 확인합니다."""
+
+        mock_columns.return_value = ["id", "comment"]
+        mock_execute.return_value = (1, None)
+        mock_fetch_row.side_effect = [{"id": 10, "comment": "before"}, {"id": 10, "comment": "updated"}]
+
+        response = self.client.patch(
+            reverse("drone-tables-update"),
+            data='{"table":"demo_table","id":10,"updates":{"comment":"updated"}}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+
+    @patch("api.drone.services.table_ops.execute")
+    def test_tables_update_rejects_values_alias(self, mock_execute: Mock) -> None:
+        """values 별칭만 전달하면 400 오류를 반환하는지 확인합니다."""
+
+        response = self.client.patch(
+            reverse("drone-tables-update"),
+            data='{"table":"demo_table","id":11,"values":{"comment":"updated"}}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "Updates must be an object")
+        mock_execute.assert_not_called()

@@ -13,12 +13,13 @@ from typing import Any
 from django.db import transaction
 
 from ... import selectors
+from ..shared.channels import REASON_FIELD_BY_SEND_FIELD, SEND_FIELD_BY_CHANNEL
 
 _CHANNEL_FIELD_MAP = {
-    "jira": ("send_jira", "jira_reason"),
-    "messenger": ("send_messenger", "messenger_reason"),
-    "mail": ("send_mail", "mail_reason"),
+    channel: (send_field, REASON_FIELD_BY_SEND_FIELD[send_field])
+    for channel, send_field in SEND_FIELD_BY_CHANNEL.items()
 }
+_CHANNEL_KEYS_TEXT = ", ".join(_CHANNEL_FIELD_MAP.keys())
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ def retry_drone_sop_channel(
     normalized_channel = channel.strip().lower() if isinstance(channel, str) else ""
     channel_fields = _CHANNEL_FIELD_MAP.get(normalized_channel)
     if channel_fields is None:
-        raise ValueError("channel must be one of: jira, messenger, mail")
+        raise ValueError(f"channel must be one of: {_CHANNEL_KEYS_TEXT}")
 
     send_field, reason_field = channel_fields
 

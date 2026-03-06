@@ -116,7 +116,6 @@ INSTALLED_APPS = [
     "api.management",
     "api.messenger",
     "api.rag",
-    "api.tables",
     "api.timeline",
     "api.voc",
 ]

@@ -13,7 +13,6 @@ urlpatterns = [
     path("api/v1/health/", include("api.health.urls")),
     path("api/v1/auth/", include("api.auth.urls")),
     path("api/v1/activity/", include("api.activity.urls")),
-    path("api/v1/tables/", include("api.tables.urls")),
     path("api/v1/line-dashboard/", include("api.drone.urls")),
     path("api/v1/assistant/", include("api.assistant.urls")),
     path("api/v1/timeline/", include("api.timeline.urls")),

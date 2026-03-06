@@ -1,77 +1,43 @@
-# Tables 백엔드 문서
+# Line Dashboard Tables 백엔드 문서
 
 ## 개요
-- 지정한 테이블을 조회하거나 부분 업데이트하는 범용 API를 제공합니다.
-- 안전한 식별자 검증과 제한된 컬럼 업데이트를 적용합니다.
-
-## 책임 범위
-- 테이블 조회(필터/기간/lineId)
-- 허용 컬럼 범위 내 부분 업데이트
+- `tables` 도메인은 `drone` 도메인으로 통합되었습니다.
+- 라인 대시보드에서 지정 테이블을 조회/부분 업데이트하는 API를 제공합니다.
 
 ## 엔드포인트
-- `GET /api/v1/tables/`
-- `PATCH /api/v1/tables/update`
+- `GET /api/v1/line-dashboard/tables`
+- `PATCH /api/v1/line-dashboard/tables/update`
 
 ## 핵심 구성 요소
-- `resolve_table_schema` / `build_date_range_filters`
-- raw SQL 조회/업데이트 유틸
+- `apps/api/api/drone/views.py`의 `DroneTablesView`, `DroneTableUpdateView`
+- `apps/api/api/drone/services/table_ops.py`
+- `apps/api/api/drone/services/table_schema.py` (테이블 정규화/스키마/필터 보조)
+- `apps/api/api/drone/selectors.py` (라인 히스토리 집계/조회 보조)
 
 ## 주요 규칙/정책
 - 기본 테이블: `DEFAULT_TABLE = drone_sop`
-- 식별자 안전성: `SAFE_IDENTIFIER` 정규식 통과 필수
+- 식별자 검증: `sanitize_identifier`
 - 업데이트 허용 컬럼: `comment`, `needtosend`, `instant_inform`, `status`
+- 조회 응답은 DB 원본 컬럼명만 반환하며, 레거시 camelCase 별칭은 제공하지 않음
 
 ## 주요 흐름
 
 ### 1) 테이블 조회
-`GET /api/v1/tables/`
-1. `resolve_table_schema`로 테이블/컬럼/타임스탬프 컬럼 확인.
-2. lineId, from/to, recentHours 범위를 SQL 조건으로 변환.
-3. raw SQL 조회 결과 반환.
+`GET /api/v1/line-dashboard/tables`
+1. `resolve_table_schema`로 테이블/컬럼/타임스탬프 컬럼 확인
+2. `lineId`, `from/to`, `recentHours` 조건 조합
+3. raw SQL 조회 결과 반환
 
 ### 2) 테이블 부분 업데이트
-`PATCH /api/v1/tables/update`
-1. JSON 파싱 → `table`, `id`, `updates` 필수 검증.
-2. 테이블 컬럼 목록 조회.
-3. 허용 컬럼만 UPDATE 대상으로 선택.
-4. UPDATE 실행 후 업데이트 전/후 row 재조회.
-5. ActivityLog에 변경 내용 기록.
-
-## 설정/환경변수
-- 없음
-
-## 시퀀스 다이어그램
-
-### 테이블 조회
-```mermaid
-sequenceDiagram
-    actor User
-    participant API as Tables API
-    participant DB as Raw SQL
-
-    User->>API: GET /tables?table=...
-    API->>DB: SELECT with filters
-    DB-->>API: rows
-    API-->>User: rows + columns
-```
-
-### 테이블 업데이트
-```mermaid
-sequenceDiagram
-    actor User
-    participant API as Tables API
-    participant DB as Raw SQL
-
-    User->>API: PATCH /tables/update
-    API->>DB: SELECT previous row
-    API->>DB: UPDATE allowed columns
-    API->>DB: SELECT updated row
-    API-->>User: success
-```
+`PATCH /api/v1/line-dashboard/tables/update`
+1. JSON 파싱 → `table`, `id`, `updates` 검증
+2. 테이블 컬럼 조회 후 허용 컬럼만 UPDATE 대상 선택
+3. UPDATE 후 변경 전/후 row 조회
+4. ActivityLog에 변경 내용 기록
 
 ## 관련 코드 경로
-- `apps/api/api/tables/views.py`
-- `apps/api/api/tables/services/listing.py`
-- `apps/api/api/tables/services/update.py`
-- `apps/api/api/tables/selectors.py`
-- `apps/api/api/common/utils.py`
+- `apps/api/api/drone/urls.py`
+- `apps/api/api/drone/views.py`
+- `apps/api/api/drone/services/table_ops.py`
+- `apps/api/api/drone/selectors.py`
+- `apps/api/api/drone/tests.py`

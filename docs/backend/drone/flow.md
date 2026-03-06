@@ -13,6 +13,7 @@
 - `services/jira/sop_jira.py`: Jira 이슈 생성, 즉시 인폼 처리
 - `services/inform/sop_inform.py`: Jira/메신저/메일 멀티 채널 전송
 - `services/channels/user_sdwt_channel.py`: `target_user_sdwt_prod` 기준 채널 설정 upsert
+- `services/history/payload.py`: 히스토리 집계 SQL/응답 payload 조립 보조
 - `services/shared/*`: 공통 정책/컨텍스트/대상 해석/유틸
 
 ## 엔드포인트
@@ -68,9 +69,9 @@
 
 ### 4) 통합 채널 파이프라인
 1. 락 획득(`drone_sop_pipeline_create`)
-2. 선택 채널(`jira/messenger/mail`) 기준 후보 조회
+2. 고정 채널(`jira/messenger/mail`) 기준 후보 조회
 3. `target_user_sdwt_prod`를 해석 후 `drone_sop`에 저장
-4. 대상 소속 해석 실패 건은 선택 채널에 한해 실패 처리
+4. 대상 소속 해석 실패 건은 고정 3채널에 실패 처리
 5. Jira/메신저/메일 채널을 독립 파이프라인으로 실행
 6. 채널별 성공/실패/비활성 사유를 `send_*`/`*_reason`에 반영
 

@@ -37,6 +37,7 @@ from .config import (
     _as_int_bool,
 )
 from .defectmap_sidecar import post_defect_png_sidecar_if_needed
+from .utils import sanitize_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,28 +63,6 @@ def _normalize_blank(value: Any) -> Any:
     if isinstance(value, str) and not value.strip():
         return None
     return value
-
-
-def _sanitize_defect_url(value: Any) -> str | None:
-    """결함 URL 값을 정규화합니다.
-
-    인자:
-        value: 원본 URL 값.
-
-    반환:
-        정규화된 URL 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 문자열 정리 및 따옴표 제거
-    # -------------------------------------------------------------------------
-    if value is None:
-        return None
-    cleaned = str(value).replace('"', "").strip()
-    return cleaned or None
 
 
 def _extract_first_data_tag(html: str) -> dict[str, str]:
@@ -377,8 +356,8 @@ def _build_drone_sop_row(
         "knox_id": knox_value,
         "user_sdwt_prod": normalized.get("user_sdwt_prod"),
         "comment": normalized.get("comment"),
-        "defect_url": _sanitize_defect_url(normalized.get("defect_url")),
-        "defect_png_url": _sanitize_defect_url(normalized.get("defect_png_url")),
+        "defect_url": sanitize_url(normalized.get("defect_url")),
+        "defect_png_url": sanitize_url(normalized.get("defect_png_url")),
         "instant_inform": 0,
     }
     # -------------------------------------------------------------------------
@@ -421,6 +400,23 @@ def _build_drone_sop_row(
         rule_cache=needtosend_rule_cache,
     )
     return row
+
+
+def build_drone_sop_row(
+    *,
+    html: str,
+    early_inform_map: dict[tuple[str, str], Optional[str]],
+    user_sdwt_map_index: UserSdwtProdMapIndex | None = None,
+    needtosend_rule_cache: dict[str, NeedToSendRule | None] | None = None,
+) -> Optional[dict[str, Any]]:
+    """메일 HTML에서 Drone SOP row를 생성하는 공개 함수입니다."""
+
+    return _build_drone_sop_row(
+        html=html,
+        early_inform_map=early_inform_map,
+        user_sdwt_map_index=user_sdwt_map_index,
+        needtosend_rule_cache=needtosend_rule_cache,
+    )
 
 
 def _list_dummy_mail_messages(*, url: str, timeout: int) -> list[dict[str, Any]]:
@@ -586,6 +582,12 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
             cursor.executemany(sql, args)
 
     return len(rows)
+
+
+def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
+    """Drone SOP row를 upsert 하는 공개 함수입니다."""
+
+    return _upsert_drone_sop_rows(rows=rows)
 
 
 def _prune_old_drone_sop_rows(*, days: int) -> int:
@@ -860,3 +862,10 @@ def run_drone_sop_pop3_ingest_from_env() -> DroneSopPop3IngestResult:
             user_sdwt_map_index=user_sdwt_map_index,
             needtosend_rule_cache=needtosend_rule_cache,
         )
+
+
+__all__ = [
+    "build_drone_sop_row",
+    "run_drone_sop_pop3_ingest_from_env",
+    "upsert_drone_sop_rows",
+]

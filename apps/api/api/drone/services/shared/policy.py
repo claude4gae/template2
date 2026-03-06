@@ -13,20 +13,15 @@ from django.db import transaction
 from django.db.models import Q
 
 from ...models import DroneSOP
+from .channels import REASON_FIELD_BY_SEND_FIELD
 
 # 허용 채널 필드(외부 입력 방어용)
-_ALLOWED_CHANNEL_FIELDS = frozenset({"send_jira", "send_messenger", "send_mail"})
-_REASON_FIELD_BY_CHANNEL = {
-    "send_jira": "jira_reason",
-    "send_messenger": "messenger_reason",
-    "send_mail": "mail_reason",
-}
+_ALLOWED_CHANNEL_FIELDS = frozenset(REASON_FIELD_BY_SEND_FIELD.keys())
+_REASON_FIELD_BY_CHANNEL = REASON_FIELD_BY_SEND_FIELD
 
 # 채널 상태 사유 코드
 REASON_DISABLED_BY_POLICY = "disabled_by_policy"
 REASON_TARGET_MISSING = "target_missing"
-# 레거시 이름(외부 참조 호환)
-REASON_NO_VALID_TARGET = REASON_TARGET_MISSING
 REASON_CONFIG_MISSING = "config_missing"
 REASON_CHANNEL_CONFIG_MISSING = "channel_config_missing"
 REASON_CHANNEL_CONFIG_INVALID = "channel_config_invalid"
@@ -43,6 +38,20 @@ def _normalize_channel_fields(channel_fields: Sequence[str]) -> list[str]:
         if field in _ALLOWED_CHANNEL_FIELDS and field not in normalized_fields:
             normalized_fields.append(field)
     return normalized_fields
+
+
+def _build_pending_filter(channel_field: str) -> Q:
+    """채널 필드의 미전송(0/NULL) 상태 필터를 생성합니다."""
+
+    return Q(**{channel_field: 0}) | Q(**{f"{channel_field}__isnull": True})
+
+
+def _normalize_pending_mark_fields(channel_fields: Sequence[str]) -> list[str]:
+    """미전송 상태 마킹에 사용할 채널 필드 목록을 정규화합니다."""
+
+    if not channel_fields:
+        return []
+    return _normalize_channel_fields(channel_fields)
 
 
 def mark_pending_channels_as_failed(
@@ -68,10 +77,10 @@ def mark_pending_channels_as_failed(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    if not sop_ids or not channel_fields:
+    if not sop_ids:
         return
 
-    normalized_fields = _normalize_channel_fields(channel_fields)
+    normalized_fields = _normalize_pending_mark_fields(channel_fields)
     if not normalized_fields:
         return
 
@@ -80,7 +89,7 @@ def mark_pending_channels_as_failed(
     # -----------------------------------------------------------------------------
     with transaction.atomic():
         for field in normalized_fields:
-            pending_filter = Q(**{field: 0}) | Q(**{f"{field}__isnull": True})
+            pending_filter = _build_pending_filter(field)
             updates = {field: -1}
             reason_field = _REASON_FIELD_BY_CHANNEL.get(field)
             if reason_field and isinstance(failure_reason, str) and failure_reason:
@@ -111,10 +120,10 @@ def mark_pending_channels_as_disabled(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    if not sop_ids or not channel_fields:
+    if not sop_ids:
         return
 
-    normalized_fields = _normalize_channel_fields(channel_fields)
+    normalized_fields = _normalize_pending_mark_fields(channel_fields)
     if not normalized_fields:
         return
 
@@ -126,7 +135,7 @@ def mark_pending_channels_as_disabled(
             reason_field = _REASON_FIELD_BY_CHANNEL.get(field)
             if not reason_field:
                 continue
-            pending_filter = Q(**{field: 0}) | Q(**{f"{field}__isnull": True})
+            pending_filter = _build_pending_filter(field)
             DroneSOP.objects.filter(id__in=sop_ids).filter(pending_filter).update(**{reason_field: disable_reason})
 
 
@@ -174,7 +183,6 @@ __all__ = [
     "REASON_CONFIG_MISSING",
     "REASON_DISABLED_BY_POLICY",
     "REASON_TARGET_MISSING",
-    "REASON_NO_VALID_TARGET",
     "REASON_RECEIVER_NOT_FOUND",
     "REASON_SEND_FAILED",
     "REASON_TEMPLATE_MISSING",

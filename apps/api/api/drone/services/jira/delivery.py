@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 _TEMPLATE_ENGINE = Engine(autoescape=True)
 _TEMPLATE_CACHE: dict[str, str] = {}
+ValidJiraIssuePayload = tuple[int, dict[str, Any], dict[str, Any]]
 
 
 def _build_jira_summary(
@@ -245,6 +246,46 @@ def _build_jira_issue_fields(
     }
 
 
+def _collect_valid_jira_issue_payloads(
+    *,
+    rows: Sequence[dict[str, Any]],
+    config: DroneJiraConfig,
+    project_key_by_id: dict[int, str],
+    template_key_by_id: dict[int, str],
+) -> list[ValidJiraIssuePayload]:
+    """Jira 전송 가능한 row와 payload를 함께 수집합니다."""
+
+    payloads: list[ValidJiraIssuePayload] = []
+    for row in rows:
+        rid = row.get("id")
+        if not isinstance(rid, int):
+            continue
+
+        project_key = project_key_by_id.get(rid)
+        if not project_key:
+            continue
+
+        template_key = template_key_by_id.get(rid)
+        if not template_key:
+            continue
+
+        payloads.append(
+            (
+                rid,
+                row,
+                {
+                    "fields": _build_jira_issue_fields(
+                        row=row,
+                        project_key=project_key,
+                        template_key=template_key,
+                        config=config,
+                    )
+                },
+            )
+        )
+    return payloads
+
+
 def _bulk_create_jira_issues(
     *,
     rows: Sequence[dict[str, Any]],
@@ -268,43 +309,26 @@ def _bulk_create_jira_issues(
 
     for st in range(0, len(rows), config.bulk_size):
         chunk = list(rows[st : st + config.bulk_size])
-        issue_updates: list[dict[str, Any]] = []
-        valid_chunk: list[dict[str, Any]] = []
-        for row in chunk:
-            rid = row.get("id")
-            if not isinstance(rid, int):
-                continue
-            project_key = project_key_by_id.get(rid)
-            if not project_key:
-                continue
-            template_key = template_key_by_id.get(rid)
-            if not template_key:
-                continue
-            issue_updates.append(
-                {
-                    "fields": _build_jira_issue_fields(
-                        row=row,
-                        project_key=project_key,
-                        template_key=template_key,
-                        config=config,
-                    )
-                }
-            )
-            valid_chunk.append(row)
-        if not issue_updates:
+        valid_payloads = _collect_valid_jira_issue_payloads(
+            rows=chunk,
+            config=config,
+            project_key_by_id=project_key_by_id,
+            template_key_by_id=template_key_by_id,
+        )
+        if not valid_payloads:
             continue
 
         try:
             resp = session.post(
                 config.bulk_url,
-                json={"issueUpdates": issue_updates},
+                json={"issueUpdates": [payload for _, _, payload in valid_payloads]},
                 timeout=(config.connect_timeout, config.read_timeout),
             )
         except requests.RequestException:
             logger.exception(
                 "Jira bulk create request failed(start=%s, size=%s)",
                 st,
-                len(valid_chunk),
+                len(valid_payloads),
             )
             continue
         if resp.status_code != 201:
@@ -316,10 +340,7 @@ def _bulk_create_jira_issues(
         if not isinstance(issues, list):
             continue
 
-        for index, row in enumerate(valid_chunk):
-            rid = row.get("id")
-            if not isinstance(rid, int):
-                continue
+        for index, (rid, _, _) in enumerate(valid_payloads):
             if index >= len(issues):
                 continue
             issue = issues[index]
@@ -354,27 +375,17 @@ def _single_create_jira_issues(
     done_ids: list[int] = []
     key_by_id: dict[int, str] = {}
 
-    for row in rows:
-        rid = row.get("id")
-        if not isinstance(rid, int):
-            continue
-        project_key = project_key_by_id.get(rid)
-        if not project_key:
-            continue
-        template_key = template_key_by_id.get(rid)
-        if not template_key:
-            continue
+    valid_payloads = _collect_valid_jira_issue_payloads(
+        rows=rows,
+        config=config,
+        project_key_by_id=project_key_by_id,
+        template_key_by_id=template_key_by_id,
+    )
+    for rid, _, payload in valid_payloads:
         try:
             resp = session.post(
                 config.create_url,
-                json={
-                    "fields": _build_jira_issue_fields(
-                        row=row,
-                        project_key=project_key,
-                        template_key=template_key,
-                        config=config,
-                    )
-                },
+                json=payload,
                 timeout=(config.connect_timeout, config.read_timeout),
             )
         except requests.RequestException:

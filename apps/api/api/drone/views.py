@@ -16,8 +16,8 @@
 - 예시 요청: GET    /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
 - 예시 요청: GET    /api/v1/line-dashboard/jira-user-sdwt-prods
 - 예시 요청: POST   /api/v1/line-dashboard/jira-keys { userSdwtProd, jiraKey?, templateKey? }
-- 예시 요청: POST   /api/v1/line-dashboard/sop/precheck { channels? }
-- 예시 요청: POST   /api/v1/line-dashboard/sop/trigger  { channels?, limit? }
+- 예시 요청: POST   /api/v1/line-dashboard/sop/precheck
+- 예시 요청: POST   /api/v1/line-dashboard/sop/trigger  { limit? }
 
 # 응답(예시)
 GET 예시:
@@ -44,29 +44,28 @@ DELETE 예시:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional
 
 from django.http import HttpRequest, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 
-from api.common.services import MAX_FIELD_LENGTH
-from api.common.services import ensure_airflow_token, parse_json_body
-
-from api.common.services import (
+from api.common.services.activity_logging import (
     merge_activity_metadata,
     set_activity_new_state,
     set_activity_previous_state,
     set_activity_summary,
 )
+from api.common.services.request_helpers import ensure_airflow_token, parse_json_body
 
 from . import selectors, services
 from .serializers import serialize_early_inform_entry
+from .services.table_schema import DEFAULT_TABLE as TABLE_DEFAULT_TABLE, sanitize_identifier
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_PIPELINE_CHANNELS = frozenset({"jira", "messenger", "mail"})
+MAX_FIELD_LENGTH = 50
 
 
 def _ensure_authenticated(request: HttpRequest) -> JsonResponse | None:
@@ -146,7 +145,11 @@ def _parse_json_body_or_empty(request: HttpRequest) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _parse_limit_param(request: HttpRequest) -> tuple[int | None, JsonResponse | None]:
+def _parse_limit_param(
+    request: HttpRequest,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> tuple[int | None, JsonResponse | None]:
     """limit 파라미터를 파싱합니다.
 
     우선순위:
@@ -163,8 +166,8 @@ def _parse_limit_param(request: HttpRequest) -> tuple[int | None, JsonResponse |
         없음. 순수 파싱입니다.
     """
 
-    payload = _parse_json_body_or_empty(request)
-    raw_limit = payload.get("limit")
+    resolved_payload = payload if payload is not None else _parse_json_body_or_empty(request)
+    raw_limit = resolved_payload.get("limit")
     if raw_limit is None:
         raw_limit = request.GET.get("limit")
 
@@ -180,56 +183,6 @@ def _parse_limit_param(request: HttpRequest) -> tuple[int | None, JsonResponse |
         return None, None
 
     return limit, None
-
-
-def _parse_channels_param(request: HttpRequest) -> tuple[list[str] | None, JsonResponse | None]:
-    """channels 파라미터를 파싱합니다.
-
-    우선순위:
-        1) JSON 바디의 channels
-        2) query parameter의 channels(쉼표 구분)
-
-    인자:
-        request: Django HttpRequest 객체.
-
-    반환:
-        (channels, error_response) 튜플.
-        - channels가 None이면 서비스 기본 채널 정책을 사용합니다.
-    """
-
-    payload = _parse_json_body_or_empty(request)
-    raw_channels = payload.get("channels")
-    if raw_channels is None:
-        query_value = request.GET.get("channels")
-        if isinstance(query_value, str):
-            raw_channels = [item.strip() for item in query_value.split(",")]
-
-    if raw_channels is None:
-        return None, None
-
-    if isinstance(raw_channels, str):
-        raw_channel_values: list[Any] = [raw_channels]
-    elif isinstance(raw_channels, list):
-        raw_channel_values = [*raw_channels]
-    else:
-        return None, _json_error("channels must be an array of strings", status=400)
-
-    normalized_channels: list[str] = []
-    seen: set[str] = set()
-    for raw in raw_channel_values:
-        if not isinstance(raw, str):
-            return None, _json_error("channels must be an array of strings", status=400)
-        key = raw.strip().lower()
-        if not key:
-            continue
-        if key not in _ALLOWED_PIPELINE_CHANNELS:
-            return None, _json_error("channels must contain only: jira, messenger, mail", status=400)
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized_channels.append(key)
-
-    return normalized_channels, None
 
 
 def _parse_positive_int_or_error(
@@ -313,6 +266,17 @@ def _record_drone_sop_pipeline_activity(
     merge_activity_metadata(request, **metadata)
 
 
+def _internal_server_error_response(
+    *,
+    log_message: str,
+    error_message: str,
+) -> JsonResponse:
+    """공통 500 응답을 생성하고 예외 로그를 기록합니다."""
+
+    logger.exception(log_message)
+    return JsonResponse({"error": error_message}, status=500)
+
+
 def _record_activity_state_and_respond(
     request: HttpRequest,
     *,
@@ -330,15 +294,11 @@ def _respond_precheck_has_candidates(
     request: HttpRequest,
     *,
     has_candidates: bool,
-    channels: Sequence[str] | None = None,
 ) -> JsonResponse:
     """사전 확인(precheck) 응답을 구성합니다."""
 
     response_payload: dict[str, Any] = {"hasCandidates": has_candidates}
     activity_state: dict[str, Any] = {"has_candidates": has_candidates}
-    if channels:
-        response_payload["channels"] = [*channels]
-        activity_state["channels"] = [*channels]
 
     return _record_activity_state_and_respond(
         request,
@@ -375,7 +335,6 @@ def _respond_pipeline_trigger_result(
     request: HttpRequest,
     *,
     result: Any,
-    channels: Sequence[str] | None = None,
 ) -> JsonResponse:
     """통합 Drone SOP 파이프라인 트리거 응답을 구성합니다."""
 
@@ -397,15 +356,32 @@ def _respond_pipeline_trigger_result(
         "skipped": result.skipped,
         "skip_reason": result.skip_reason,
     }
-    if channels:
-        response_payload["channels"] = [*channels]
-        activity_state["channels"] = [*channels]
-
     return _record_activity_state_and_respond(
         request,
         activity_state=activity_state,
         response_payload=response_payload,
     )
+
+
+def _parse_optional_comment(payload: dict[str, Any]) -> tuple[str | None, JsonResponse | None]:
+    """즉시 인폼 요청의 comment 필드를 파싱합니다."""
+
+    raw_comment = payload.get("comment")
+    if raw_comment is not None and not isinstance(raw_comment, str):
+        return None, JsonResponse({"error": "comment must be a string"}, status=400)
+    return (raw_comment.strip() if isinstance(raw_comment, str) else None), None
+
+
+def _parse_required_channel(payload: dict[str, Any]) -> tuple[str | None, JsonResponse | None]:
+    """채널 재시도 요청의 channel 필드를 파싱합니다."""
+
+    raw_channel = payload.get("channel")
+    if not isinstance(raw_channel, str):
+        return None, JsonResponse({"error": "channel must be a string"}, status=400)
+    channel = raw_channel.strip().lower()
+    if not channel:
+        return None, JsonResponse({"error": "channel is required"}, status=400)
+    return channel, None
 
 
 class DroneAirflowTriggerView(APIView):
@@ -419,6 +395,42 @@ class DroneAirflowTriggerView(APIView):
 
         return _ensure_airflow_authenticated(request)
 
+    def _execute_airflow_pipeline(
+        self,
+        request: HttpRequest,
+        *,
+        summary: str,
+        pipeline: str,
+        on_success: Callable[[], JsonResponse],
+        log_message: str,
+        error_message: str,
+        limit: int | None = None,
+        authorize: bool = True,
+    ) -> JsonResponse:
+        """Airflow 트리거 공통 실행 흐름(인증/로그/예외)을 처리합니다."""
+
+        if authorize:
+            auth_response = self._authorize_airflow(request)
+            if auth_response is not None:
+                return auth_response
+
+        _record_drone_sop_pipeline_activity(
+            request,
+            summary=summary,
+            pipeline=pipeline,
+            limit=limit,
+        )
+
+        try:
+            return on_success()
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            return _internal_server_error_response(
+                log_message=log_message,
+                error_message=error_message,
+            )
+
 
 class DroneAuthenticatedView(APIView):
     """로그인 사용자 인증이 필요한 뷰 베이스 클래스."""
@@ -428,6 +440,25 @@ class DroneAuthenticatedView(APIView):
         """사용자 인증을 확인합니다."""
 
         return _ensure_authenticated(request)
+
+    @staticmethod
+    def _execute_user_action(
+        *,
+        on_success: Callable[[], JsonResponse],
+        log_message: str,
+        error_message: str,
+    ) -> JsonResponse:
+        """사용자 액션 공통 실행 흐름(ValueError/예외)을 처리합니다."""
+
+        try:
+            return on_success()
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            return _internal_server_error_response(
+                log_message=log_message,
+                error_message=error_message,
+            )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -498,8 +529,10 @@ class DroneEarlyInformView(DroneAuthenticatedView):
                 }
             )
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to load drone_early_inform rows")
-            return JsonResponse({"error": "Failed to load settings"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to load drone_early_inform rows",
+                error_message="Failed to load settings",
+            )
 
     # --------------------------------------------------------------------- #
     # 생성
@@ -558,8 +591,7 @@ class DroneEarlyInformView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 4) updated_by 계산
         # -----------------------------------------------------------------------------
-        knox_id = _resolve_knox_id(request)
-        updated_by = self._sanitize_updated_by(knox_id or "system")
+        updated_by = self._resolve_updated_by(request)
 
         # -----------------------------------------------------------------------------
         # 5) 서비스 호출 및 액티비티 로그 기록
@@ -585,8 +617,10 @@ class DroneEarlyInformView(DroneAuthenticatedView):
         except services.DroneEarlyInformDuplicateError as exc:
             return JsonResponse({"error": str(exc)}, status=409)
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to create drone_early_inform row")
-            return JsonResponse({"error": "Failed to create entry"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to create drone_early_inform row",
+                error_message="Failed to create entry",
+            )
 
     # --------------------------------------------------------------------- #
     # 수정(부분)
@@ -642,8 +676,7 @@ class DroneEarlyInformView(DroneAuthenticatedView):
         merge_activity_metadata(request, resource=self.TABLE_NAME, entryId=entry_id)
 
         updates: dict[str, Any] = {}
-        knox_id = _resolve_knox_id(request)
-        updated_by = self._sanitize_updated_by(knox_id or "system")
+        updated_by = self._resolve_updated_by(request)
 
         if "lineId" in payload:
             line_id = self._sanitize_line_id(payload.get("lineId"))
@@ -686,8 +719,10 @@ class DroneEarlyInformView(DroneAuthenticatedView):
         except services.DroneEarlyInformDuplicateError as exc:
             return JsonResponse({"error": str(exc)}, status=409)
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to update drone_early_inform row")
-            return JsonResponse({"error": "Failed to update entry"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to update drone_early_inform row",
+                error_message="Failed to update entry",
+            )
 
     # --------------------------------------------------------------------- #
     # 삭제
@@ -743,12 +778,21 @@ class DroneEarlyInformView(DroneAuthenticatedView):
         except services.DroneEarlyInformNotFoundError as exc:
             return JsonResponse({"error": str(exc)}, status=404)
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to delete drone_early_inform row")
-            return JsonResponse({"error": "Failed to delete entry"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to delete drone_early_inform row",
+                error_message="Failed to delete entry",
+            )
 
     # --------------------------------------------------------------------- #
     # 검증/정규화 유틸
     # --------------------------------------------------------------------- #
+    @classmethod
+    def _resolve_updated_by(cls, request: HttpRequest) -> Optional[str]:
+        """요청 사용자 기반 updated_by 값을 정규화합니다."""
+
+        knox_id = _resolve_knox_id(request)
+        return cls._sanitize_updated_by(knox_id or "system")
+
     @staticmethod
     def _sanitize_short_text(
         value: Any,
@@ -877,50 +921,54 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         return None
 
     @staticmethod
-    def _extract_payload_alias(
-        payload: dict[str, Any],
-        *,
-        camel_key: str,
-        snake_key: str,
-    ) -> tuple[bool, Any]:
-        """camel/snake 키 우선순위로 값을 추출합니다.
+    def _normalize_user_sdwt_prod(raw_value: Any) -> str:
+        """userSdwtProd 값을 공백 제거 기준으로 정규화합니다."""
 
-        반환:
-            (provided, raw_value) 튜플.
-            camel_key가 있으면 camel 우선, 없으면 snake를 사용합니다.
-        """
-
-        if camel_key in payload:
-            return True, payload.get(camel_key)
-        if snake_key in payload:
-            return True, payload.get(snake_key)
-        return False, None
-
-    @staticmethod
-    def _resolve_target_user_sdwt_prod_for_get(request: HttpRequest) -> str:
-        """GET 쿼리에서 userSdwtProd/user_sdwt_prod를 읽어 정규화합니다."""
-
-        raw_camel = request.GET.get("userSdwtProd")
-        if isinstance(raw_camel, str) and raw_camel.strip():
-            return raw_camel.strip()
-
-        raw_snake = request.GET.get("user_sdwt_prod")
-        if isinstance(raw_snake, str):
-            return raw_snake.strip()
+        if isinstance(raw_value, str):
+            return raw_value.strip()
         return ""
 
-    @staticmethod
-    def _resolve_target_user_sdwt_prod_for_post(payload: dict[str, Any]) -> str:
-        """POST 본문에서 userSdwtProd/user_sdwt_prod를 읽어 정규화합니다."""
+    @classmethod
+    def _resolve_and_validate_target_user_sdwt_prod(
+        cls,
+        raw_value: Any,
+    ) -> tuple[str, JsonResponse | None]:
+        """userSdwtProd 값을 정규화하고 존재 여부를 검증합니다."""
 
-        provided, raw_value = DroneJiraKeyView._extract_payload_alias(
-            payload,
-            camel_key="userSdwtProd",
-            snake_key="user_sdwt_prod",
+        target_user_sdwt_prod = cls._normalize_user_sdwt_prod(raw_value)
+        return (
+            target_user_sdwt_prod,
+            cls._ensure_valid_target_user_sdwt_prod(target_user_sdwt_prod),
         )
+
+    @classmethod
+    def _parse_optional_jira_field(
+        cls,
+        payload: dict[str, Any],
+        *,
+        field_name: str,
+        max_length: int,
+    ) -> tuple[bool, str | None, JsonResponse | None]:
+        """jira-keys 요청의 옵션 필드를 파싱/검증합니다."""
+
+        provided = field_name in payload
+        raw_value = payload.get(field_name)
         if not provided:
-            return ""
-        return raw_value.strip() if isinstance(raw_value, str) else ""
+            return False, None, None
+
+        if raw_value is not None and not isinstance(raw_value, str):
+            return False, None, JsonResponse(
+                {"error": f"{field_name} must be a string or null"},
+                status=400,
+            )
+
+        normalized = raw_value.strip() if isinstance(raw_value, str) else ""
+        if normalized and len(normalized) > max_length:
+            return False, None, JsonResponse(
+                {"error": f"{field_name} must be {max_length} characters or fewer"},
+                status=400,
+            )
+        return True, normalized or None, None
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """userSdwtProd에 해당하는 Jira 키/템플릿 키를 조회합니다.
@@ -944,8 +992,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         - 예시 요청: GET /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
 
         snake/camel 호환:
-        - 요청 쿼리는 userSdwtProd/user_sdwt_prod를 모두 지원합니다.
-        - 두 키가 동시에 존재하면 userSdwtProd(camelCase)를 우선합니다.
+        - 요청 쿼리는 userSdwtProd(camelCase)만 지원합니다.
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -957,8 +1004,9 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 2) userSdwtProd 검증
         # -----------------------------------------------------------------------------
-        target_user_sdwt_prod = self._resolve_target_user_sdwt_prod_for_get(request)
-        target_user_sdwt_error = self._ensure_valid_target_user_sdwt_prod(target_user_sdwt_prod)
+        target_user_sdwt_prod, target_user_sdwt_error = self._resolve_and_validate_target_user_sdwt_prod(
+            request.GET.get("userSdwtProd")
+        )
         if target_user_sdwt_error is not None:
             return target_user_sdwt_error
 
@@ -1002,9 +1050,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
           요청 바디 예시: {"userSdwtProd":"SDWT_A","jiraKey":"ABC","templateKey":"line_a"}
 
         snake/camel 호환:
-        - 요청 본문은 userSdwtProd/user_sdwt_prod를 모두 지원합니다.
-        - jiraKey/jira_key, templateKey/template_key를 모두 지원합니다.
-        - 동일 의미의 camel/snake 키가 동시에 있으면 camelCase를 우선합니다.
+        - 요청 본문은 userSdwtProd/jiraKey/templateKey(camelCase)만 지원합니다.
         """
         # -----------------------------------------------------------------------------
         # 1) 인증/권한 확인
@@ -1025,55 +1071,42 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 3) userSdwtProd 추출 및 검증
         # -----------------------------------------------------------------------------
-        target_user_sdwt_prod = self._resolve_target_user_sdwt_prod_for_post(payload)
-        target_user_sdwt_error = self._ensure_valid_target_user_sdwt_prod(target_user_sdwt_prod)
+        target_user_sdwt_prod, target_user_sdwt_error = self._resolve_and_validate_target_user_sdwt_prod(
+            payload.get("userSdwtProd")
+        )
         if target_user_sdwt_error is not None:
             return target_user_sdwt_error
 
         # -----------------------------------------------------------------------------
         # 5) jiraKey/templateKey 추출 및 길이 검증
         # -----------------------------------------------------------------------------
-        jira_key_provided, jira_key_raw = self._extract_payload_alias(
+        jira_key_provided, jira_key, jira_key_error = self._parse_optional_jira_field(
             payload,
-            camel_key="jiraKey",
-            snake_key="jira_key",
+            field_name="jiraKey",
+            max_length=self.MAX_PROJECT_KEY_LENGTH,
         )
-        template_key_provided, template_key_raw = self._extract_payload_alias(
+        if jira_key_error is not None:
+            return jira_key_error
+
+        template_key_provided, template_key, template_key_error = self._parse_optional_jira_field(
             payload,
-            camel_key="templateKey",
-            snake_key="template_key",
+            field_name="templateKey",
+            max_length=self.MAX_TEMPLATE_KEY_LENGTH,
         )
+        if template_key_error is not None:
+            return template_key_error
+
         if not (jira_key_provided or template_key_provided):
             return JsonResponse({"error": "jiraKey or templateKey is required"}, status=400)
-        if jira_key_provided and jira_key_raw is not None and not isinstance(jira_key_raw, str):
-            return JsonResponse({"error": "jiraKey must be a string or null"}, status=400)
-        if template_key_provided and template_key_raw is not None and not isinstance(
-            template_key_raw, str
-        ):
-            return JsonResponse({"error": "templateKey must be a string or null"}, status=400)
-
-        jira_key = jira_key_raw.strip() if isinstance(jira_key_raw, str) else ""
-        if jira_key and len(jira_key) > self.MAX_PROJECT_KEY_LENGTH:
-            return JsonResponse(
-                {"error": f"jiraKey must be {self.MAX_PROJECT_KEY_LENGTH} characters or fewer"},
-                status=400,
-            )
-
-        template_key = template_key_raw.strip() if isinstance(template_key_raw, str) else ""
-        if template_key and len(template_key) > self.MAX_TEMPLATE_KEY_LENGTH:
-            return JsonResponse(
-                {"error": f"templateKey must be {self.MAX_TEMPLATE_KEY_LENGTH} characters or fewer"},
-                status=400,
-            )
 
         # -----------------------------------------------------------------------------
         # 6) 서비스 호출 및 응답 반환
         # -----------------------------------------------------------------------------
         payload_kwargs: dict[str, object] = {"target_user_sdwt_prod": target_user_sdwt_prod}
         if jira_key_provided:
-            payload_kwargs["jira_key"] = jira_key or None
+            payload_kwargs["jira_key"] = jira_key
         if template_key_provided:
-            payload_kwargs["jira_template_key"] = template_key or None
+            payload_kwargs["jira_template_key"] = template_key
 
         template, updated = services.upsert_drone_sop_user_sdwt_channel(**payload_kwargs)
         return JsonResponse(
@@ -1126,8 +1159,10 @@ class JiraUserSdwtProdListView(DroneAuthenticatedView):
             target_user_sdwt_prods = selectors.list_drone_sop_jira_target_user_sdwt_prods()
             return JsonResponse({"userSdwtProds": target_user_sdwt_prods})
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to load Jira user SDWT prods")
-            return JsonResponse({"error": "Failed to load Jira user SDWT prods"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to load Jira user SDWT prods",
+                error_message="Failed to load Jira user SDWT prods",
+            )
 
 
 class LineHistoryView(APIView):
@@ -1170,8 +1205,10 @@ class LineHistoryView(APIView):
         except (ValueError, LookupError) as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to load history data")
-            return JsonResponse({"error": "Failed to load history data"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to load history data",
+                error_message="Failed to load history data",
+            )
 
 
 class LineIdListView(APIView):
@@ -1201,8 +1238,105 @@ class LineIdListView(APIView):
         try:
             return JsonResponse({"lineIds": selectors.list_distinct_line_ids()})
         except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to load distinct line ids")
-            return JsonResponse({"error": "Failed to load line options"}, status=500)
+            return _internal_server_error_response(
+                log_message="Failed to load distinct line ids",
+                error_message="Failed to load line options",
+            )
+
+
+class DroneTablesView(APIView):
+    """라인 대시보드 테이블 조회 엔드포인트입니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """테이블 목록 조회 결과를 반환합니다.
+
+        요청 예시:
+            예시 요청: GET /api/v1/line-dashboard/tables?table=drone_sop&lineId=L1
+
+        반환:
+            예시 응답: 200 {"table":"drone_sop","rowCount":1,"rows":[...]}
+
+        부작용:
+            없음. 읽기 전용 조회입니다.
+
+        오류:
+            404: 테이블 없음
+            400: 입력 오류(컬럼/날짜 등)
+            500: 내부 오류
+        """
+
+        try:
+            payload = services.get_table_list_payload(params=request.GET)
+            return JsonResponse(payload)
+        except services.TableNotFoundError as exc:
+            return JsonResponse({"error": str(exc)}, status=404)
+        except (ValueError, LookupError) as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            return _internal_server_error_response(
+                log_message="Failed to load drone tables data",
+                error_message="Failed to load table data",
+            )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DroneTableUpdateView(APIView):
+    """라인 대시보드 테이블 단건 수정 엔드포인트입니다."""
+
+    def patch(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """테이블 레코드를 부분 업데이트합니다.
+
+        요청 예시:
+            예시 요청: PATCH /api/v1/line-dashboard/tables/update
+            예시 바디: {"table":"drone_sop","id":123,"updates":{"status":"DONE"}}
+
+        반환:
+            예시 응답: 200 {"success": true}
+
+        부작용:
+            대상 테이블 레코드가 업데이트됩니다.
+
+        오류:
+            400: 입력 오류/JSON 파싱 실패
+            404: 테이블/레코드 없음
+            500: 내부 오류
+        """
+
+        payload = parse_json_body(request)
+        if not isinstance(payload, dict):
+            return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+        table_name = sanitize_identifier(payload.get("table"), TABLE_DEFAULT_TABLE)
+        if not table_name:
+            return JsonResponse({"error": "Invalid table name"}, status=400)
+
+        record_id = payload.get("id")
+        if record_id in (None, ""):
+            return JsonResponse({"error": "Record id is required"}, status=400)
+
+        set_activity_summary(request, f"Update {table_name} record #{record_id}")
+        merge_activity_metadata(request, resource=table_name, entryId=record_id)
+
+        try:
+            result = services.update_table_record(payload=payload)
+        except services.TableNotFoundError as exc:
+            return JsonResponse({"error": str(exc)}, status=404)
+        except services.TableRecordNotFoundError as exc:
+            return JsonResponse({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            return _internal_server_error_response(
+                log_message="Failed to update drone table record",
+                error_message="Failed to update record",
+            )
+
+        if result.previous_row is not None:
+            set_activity_previous_state(request, result.previous_row)
+        if result.updated_row is not None:
+            set_activity_new_state(request, result.updated_row)
+
+        return JsonResponse({"success": True})
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1210,6 +1344,12 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
     """라인 대시보드에서 호출하는 Drone SOP 단건 즉시인폼 체크 요청."""
 
     permission_classes: tuple = ()
+
+    @staticmethod
+    def _resolve_status(result: services.DroneSopInstantInformResult) -> str:
+        """즉시 인폼 결과를 상태 문자열로 변환합니다."""
+
+        return "already_informed" if result.already_informed else "queued"
 
     def post(self, request: HttpRequest, sop_id: int, *args: object, **kwargs: object) -> JsonResponse:
         """Drone SOP 단건 즉시인폼 체크 요청을 처리합니다.
@@ -1243,10 +1383,9 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
         # 2) JSON 파싱 및 comment 검증
         # -----------------------------------------------------------------------------
         payload = _parse_json_body_or_empty(request)
-        raw_comment = payload.get("comment")
-        if raw_comment is not None and not isinstance(raw_comment, str):
-            return JsonResponse({"error": "comment must be a string"}, status=400)
-        comment = raw_comment.strip() if isinstance(raw_comment, str) else None
+        comment, comment_error = _parse_optional_comment(payload)
+        if comment_error is not None:
+            return comment_error
 
         # -----------------------------------------------------------------------------
         # 3) 액티비티 로그 기록
@@ -1259,12 +1398,9 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 4) 서비스 호출 및 응답 구성
         # -----------------------------------------------------------------------------
-        try:
+        def _run() -> JsonResponse:
             result = services.enqueue_drone_sop_jira_instant_inform(sop_id=sop_id, comment=comment)
-            if result.already_informed:
-                status = "already_informed"
-            else:
-                status = "queued"
+            status = self._resolve_status(result)
 
             set_activity_new_state(
                 request,
@@ -1284,11 +1420,12 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
                 "updated": result.updated_fields,
             }
             return JsonResponse(payload, status=200)
-        except ValueError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Drone SOP instant inform failed")
-            return JsonResponse({"error": "Drone SOP instant inform failed"}, status=500)
+
+        return self._execute_user_action(
+            on_success=_run,
+            log_message="Drone SOP instant inform failed",
+            error_message="Drone SOP instant inform failed",
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1296,6 +1433,16 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
     """라인 대시보드에서 호출하는 Drone SOP 단건 채널 재시도 요청."""
 
     permission_classes: tuple = ()
+
+    @staticmethod
+    def _resolve_status(result: services.DroneSopRetryChannelResult) -> str:
+        """채널 재시도 결과를 상태 문자열로 변환합니다."""
+
+        if result.queued:
+            return "queued"
+        if result.already_sent:
+            return "already_sent"
+        return "already_pending"
 
     def post(self, request: HttpRequest, sop_id: int, *args: object, **kwargs: object) -> JsonResponse:
         """Drone SOP 단건 채널 재시도 요청을 처리합니다.
@@ -1329,12 +1476,10 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
         # 2) JSON 파싱 및 channel 검증
         # -----------------------------------------------------------------------------
         payload = _parse_json_body_or_empty(request)
-        raw_channel = payload.get("channel")
-        if not isinstance(raw_channel, str):
-            return JsonResponse({"error": "channel must be a string"}, status=400)
-        channel = raw_channel.strip().lower()
-        if not channel:
-            return JsonResponse({"error": "channel is required"}, status=400)
+        channel, channel_error = _parse_required_channel(payload)
+        if channel_error is not None:
+            return channel_error
+        assert channel is not None
 
         # -----------------------------------------------------------------------------
         # 3) 액티비티 로그 기록
@@ -1345,14 +1490,9 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 4) 서비스 호출 및 응답 구성
         # -----------------------------------------------------------------------------
-        try:
+        def _run() -> JsonResponse:
             result = services.retry_drone_sop_channel(sop_id=sop_id, channel=channel)
-            if result.queued:
-                status = "queued"
-            elif result.already_sent:
-                status = "already_sent"
-            else:
-                status = "already_pending"
+            status = self._resolve_status(result)
 
             set_activity_new_state(
                 request,
@@ -1374,11 +1514,12 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
                 "updated": result.updated_fields,
             }
             return JsonResponse(response_payload, status=200)
-        except ValueError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Drone SOP retry-channel failed")
-            return JsonResponse({"error": "Drone SOP retry-channel failed"}, status=500)
+
+        return self._execute_user_action(
+            on_success=_run,
+            log_message="Drone SOP retry-channel failed",
+            error_message="Drone SOP retry-channel failed",
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1406,33 +1547,17 @@ class DroneSopPop3IngestTriggerView(DroneAirflowTriggerView):
         snake_case/camelCase 호환:
             입력 파라미터는 없습니다.
         """
-        # -----------------------------------------------------------------------------
-        # 1) Airflow 토큰 검증
-        # -----------------------------------------------------------------------------
-        auth_response = self._authorize_airflow(request)
-        if auth_response is not None:
-            return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) 액티비티 로그 기록
-        # -----------------------------------------------------------------------------
-        _record_drone_sop_pipeline_activity(
+        return self._execute_airflow_pipeline(
             request,
             summary="Trigger drone_sop POP3 ingest",
             pipeline="pop3_ingest",
+            on_success=lambda: _respond_pop3_ingest_result(
+                request,
+                result=services.run_drone_sop_pop3_ingest_from_env(),
+            ),
+            log_message="Failed to trigger drone SOP POP3 ingest",
+            error_message="Drone SOP POP3 ingest failed",
         )
-
-        # -----------------------------------------------------------------------------
-        # 3) 서비스 호출 및 응답 구성
-        # -----------------------------------------------------------------------------
-        try:
-            result = services.run_drone_sop_pop3_ingest_from_env()
-            return _respond_pop3_ingest_result(request, result=result)
-        except ValueError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to trigger drone SOP POP3 ingest")
-            return JsonResponse({"error": "Drone SOP POP3 ingest failed"}, status=500)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1440,67 +1565,36 @@ class DroneSopPipelinePrecheckView(DroneAirflowTriggerView):
     """외부 Airflow에서 호출하는 통합 Drone SOP 파이프라인 precheck 트리거."""
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """선택 채널 기준 전송 대상 존재 여부를 반환합니다.
+        """통합 파이프라인 전송 대상 존재 여부를 반환합니다.
 
         요청 예시:
             예시 요청: POST /api/v1/line-dashboard/sop/precheck
             헤더 예시: Authorization: Bearer <token>
-            예시 바디: {"channels":["jira","messenger","mail"]}
 
         반환:
-            예시 응답: 200 {"hasCandidates": true, "channels":["jira","messenger","mail"]}
+            예시 응답: 200 {"hasCandidates": true}
 
         부작용:
             없음. 읽기 전용 조회입니다.
 
         오류:
             401: 토큰 인증 실패
-            400: channels 검증 오류
             500: 서버 오류
 
         snake_case/camelCase 호환:
-            요청 본문은 channels만 사용하며 camelCase만 지원합니다.
+            입력 파라미터는 없습니다.
         """
-        # -----------------------------------------------------------------------------
-        # 1) Airflow 토큰 검증
-        # -----------------------------------------------------------------------------
-        auth_response = self._authorize_airflow(request)
-        if auth_response is not None:
-            return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) channels 파라미터 파싱
-        # -----------------------------------------------------------------------------
-        channels, error_response = _parse_channels_param(request)
-        if error_response is not None:
-            return error_response
-
-        # -----------------------------------------------------------------------------
-        # 3) 액티비티 로그 기록
-        # -----------------------------------------------------------------------------
-        _record_drone_sop_pipeline_activity(
+        return self._execute_airflow_pipeline(
             request,
             summary="Precheck drone_sop pipeline candidates",
             pipeline="pipeline_precheck",
-        )
-        if channels:
-            merge_activity_metadata(request, channels=channels)
-
-        # -----------------------------------------------------------------------------
-        # 4) 후보 존재 여부 조회 및 응답 구성
-        # -----------------------------------------------------------------------------
-        try:
-            has_candidates = services.has_drone_sop_pipeline_candidates(channels=channels)
-            return _respond_precheck_has_candidates(
+            on_success=lambda: _respond_precheck_has_candidates(
                 request,
-                has_candidates=has_candidates,
-                channels=channels,
-            )
-        except ValueError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to precheck drone SOP pipeline candidates")
-            return JsonResponse({"error": "Drone SOP pipeline precheck failed"}, status=500)
+                has_candidates=services.has_drone_sop_pipeline_candidates(),
+            ),
+            log_message="Failed to precheck drone SOP pipeline candidates",
+            error_message="Drone SOP pipeline precheck failed",
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1508,26 +1602,26 @@ class DroneSopPipelineTriggerView(DroneAirflowTriggerView):
     """외부 Airflow에서 호출하는 통합 Drone SOP 파이프라인 실행 트리거."""
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """선택 채널 기준 Drone SOP 파이프라인 실행을 처리합니다.
+        """통합 Drone SOP 파이프라인 실행을 처리합니다.
 
         요청 예시:
             예시 요청: POST /api/v1/line-dashboard/sop/trigger
             헤더 예시: Authorization: Bearer <token>
-            예시 바디: {"channels":["jira","messenger","mail"],"limit":100}
+            예시 바디: {"limit":100}
 
         반환:
             예시 응답: 200 {"candidates": 10, "jiraCreated": 9, "messengerSent": 9, "mailSent": 9}
 
         부작용:
-            선택 채널(Jira/메신저/메일) 전송 및 drone_sop 업데이트가 발생합니다.
+            Jira/메신저/메일 전송 및 drone_sop 업데이트가 발생합니다.
 
         오류:
             401: 토큰 인증 실패
-            400: channels/limit 검증 오류
+            400: limit 검증 오류
             500: 서버 오류
 
         snake_case/camelCase 호환:
-            요청 본문은 channels/limit만 사용하며 camelCase만 지원합니다.
+            요청 본문은 limit만 사용하며 camelCase만 지원합니다.
         """
         # -----------------------------------------------------------------------------
         # 1) Airflow 토큰 검증
@@ -1537,45 +1631,26 @@ class DroneSopPipelineTriggerView(DroneAirflowTriggerView):
             return auth_response
 
         # -----------------------------------------------------------------------------
-        # 2) limit/channels 파라미터 파싱
+        # 2) limit 파라미터 파싱
         # -----------------------------------------------------------------------------
-        limit, limit_error = _parse_limit_param(request)
+        payload = _parse_json_body_or_empty(request)
+        limit, limit_error = _parse_limit_param(request, payload=payload)
         if limit_error is not None:
             return limit_error
-        channels, channels_error = _parse_channels_param(request)
-        if channels_error is not None:
-            return channels_error
 
-        # -----------------------------------------------------------------------------
-        # 3) 액티비티 로그 기록
-        # -----------------------------------------------------------------------------
-        _record_drone_sop_pipeline_activity(
+        return self._execute_airflow_pipeline(
             request,
             summary="Trigger drone_sop pipeline create",
             pipeline="pipeline_create",
             limit=limit,
-        )
-        if channels:
-            merge_activity_metadata(request, channels=channels)
-
-        # -----------------------------------------------------------------------------
-        # 4) 서비스 호출 및 응답 구성
-        # -----------------------------------------------------------------------------
-        try:
-            result = services.run_drone_sop_pipeline_from_env(
-                limit=limit,
-                channels=channels,
-            )
-            return _respond_pipeline_trigger_result(
+            authorize=False,
+            on_success=lambda: _respond_pipeline_trigger_result(
                 request,
-                result=result,
-                channels=channels,
-            )
-        except ValueError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
-        except Exception:  # 방어적 로깅 (pragma: no cover)
-            logger.exception("Failed to trigger drone SOP pipeline create")
-            return JsonResponse({"error": "Drone SOP pipeline create failed"}, status=500)
+                result=services.run_drone_sop_pipeline_from_env(limit=limit),
+            ),
+            log_message="Failed to trigger drone SOP pipeline create",
+            error_message="Drone SOP pipeline create failed",
+        )
 
 
 __all__ = [
@@ -1584,6 +1659,8 @@ __all__ = [
     "DroneSopPipelinePrecheckView",
     "DroneSopPipelineTriggerView",
     "DroneSopPop3IngestTriggerView",
+    "DroneTableUpdateView",
+    "DroneTablesView",
     "LineHistoryView",
     "LineIdListView",
 ]

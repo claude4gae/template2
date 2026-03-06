@@ -412,11 +412,14 @@ export function DataTable({ lineId }) {
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   const canSort = header.column.getCanSort()
-                  const sortDirection = header.column.getIsSorted() // "asc" | "desc" | false
+                  const sortDirection = header.column.getIsSorted() // "asc" | "desc" | false 값
                   const meta = header.column.columnDef.meta
                   const align = resolveHeaderAlignment(meta)
                   const justifyClass = getJustifyClass(align)
-                  const headerContent = flexRender(header.column.columnDef.header, header.getContext())
+                  const headerLabelOverride =
+                    header.column.id === "target_user_sdwt_prod" ? "목적지" : null
+                  const headerContent =
+                    headerLabelOverride ?? flexRender(header.column.columnDef.header, header.getContext())
 
                   const ariaSort =
                     sortDirection === "asc"
@@ -437,7 +440,7 @@ export function DataTable({ lineId }) {
                         <button
                           className={cn("flex w-full items-center gap-1", justifyClass)}
                           onClick={header.column.getToggleSortingHandler()}
-                          aria-label={`Sort by ${String(header.column.id)}`}
+                          aria-label={`Sort by ${headerLabelOverride ?? String(header.column.id)}`}
                         >
                           {headerContent}
                           {sortDirection === "asc" && <IconChevronUp className="size-4" />}

@@ -132,6 +132,21 @@ def _update_drone_sop_jira_status(
     return int(updated or 0)
 
 
+def update_drone_sop_jira_status(
+    *,
+    done_ids: Sequence[int],
+    rows: Sequence[dict[str, Any]],
+    key_by_id: dict[int, str],
+) -> int:
+    """Jira 생성 완료된 DroneSOP 상태를 업데이트하는 공개 함수입니다."""
+
+    return _update_drone_sop_jira_status(
+        done_ids=done_ids,
+        rows=rows,
+        key_by_id=key_by_id,
+    )
+
+
 def _collect_rows_to_send(
     *,
     rows: Sequence[dict[str, Any]],
@@ -443,7 +458,11 @@ def _run_drone_sop_jira_create_with_rows(
     # ---------------------------------------------------------------------
     # 6) 상태 업데이트 및 결과 반환
     # ---------------------------------------------------------------------
-    updated_rows = _update_drone_sop_jira_status(done_ids=done_ids, rows=rows_to_send, key_by_id=key_by_id)
+    updated_rows = update_drone_sop_jira_status(
+        done_ids=done_ids,
+        rows=rows_to_send,
+        key_by_id=key_by_id,
+    )
     return DroneSopJiraCreateResult(
         candidates=candidate_count,
         created=len(done_ids),
@@ -545,9 +564,8 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
 __all__ = [
     "DroneSopInstantInformResult",
     "DroneSopJiraCreateResult",
-    "_jira_session",
-    "_update_drone_sop_jira_status",
     "enqueue_drone_sop_jira_instant_inform",
     "run_drone_sop_jira_create_from_env",
     "run_drone_sop_jira_create_from_rows",
+    "update_drone_sop_jira_status",
 ]

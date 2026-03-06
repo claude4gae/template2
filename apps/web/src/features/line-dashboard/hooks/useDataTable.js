@@ -133,7 +133,7 @@ export function useDataTableState({ lineId }) {
 
       try {
         // 4) 서버 PATCH 호출
-        const endpoint = buildBackendUrl("/api/v1/tables/update")
+        const endpoint = buildBackendUrl("/api/v1/line-dashboard/tables/update")
         const response = await fetch(endpoint, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },

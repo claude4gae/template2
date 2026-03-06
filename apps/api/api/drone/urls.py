@@ -11,10 +11,12 @@ from .views import (
     DroneEarlyInformView,
     DroneJiraKeyView,
     DroneSopInstantInformView,
+    DroneSopPop3IngestTriggerView,
     DroneSopPipelinePrecheckView,
     DroneSopPipelineTriggerView,
     DroneSopRetryChannelView,
-    DroneSopPop3IngestTriggerView,
+    DroneTablesView,
+    DroneTableUpdateView,
     JiraUserSdwtProdListView,
     LineHistoryView,
     LineIdListView,
@@ -22,6 +24,8 @@ from .views import (
 
 urlpatterns = [
     path("early-inform", DroneEarlyInformView.as_view(), name="drone-early-inform"),
+    path("tables", DroneTablesView.as_view(), name="drone-tables"),
+    path("tables/update", DroneTableUpdateView.as_view(), name="drone-tables-update"),
     path("jira-keys", DroneJiraKeyView.as_view(), name="line-dashboard-jira-keys"),
     path(
         "jira-user-sdwt-prods",
@@ -45,24 +49,6 @@ urlpatterns = [
         DroneSopPop3IngestTriggerView.as_view(),
         name="drone-sop-pop3-ingest-trigger",
     ),
-    path(
-        "sop/precheck",
-        DroneSopPipelinePrecheckView.as_view(),
-        name="drone-sop-pipeline-precheck",
-    ),
-    path(
-        "sop/inform/precheck",
-        DroneSopPipelinePrecheckView.as_view(),
-        name="drone-sop-inform-precheck",
-    ),
-    path(
-        "sop/trigger",
-        DroneSopPipelineTriggerView.as_view(),
-        name="drone-sop-pipeline-trigger",
-    ),
-    path(
-        "sop/inform/trigger",
-        DroneSopPipelineTriggerView.as_view(),
-        name="drone-sop-inform-trigger",
-    ),
+    path("sop/precheck", DroneSopPipelinePrecheckView.as_view(), name="drone-sop-pipeline-precheck"),
+    path("sop/trigger", DroneSopPipelineTriggerView.as_view(), name="drone-sop-pipeline-trigger"),
 ]

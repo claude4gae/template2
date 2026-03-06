@@ -5,26 +5,14 @@
 # =============================================================================
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 from django.db import connection
 from django.db.models import Q, QuerySet
 
 import api.account.selectors as account_selectors
-from api.common.services import DEFAULT_TABLE, DIMENSION_CANDIDATES, LINE_SDWT_TABLE_NAME, SAFE_IDENTIFIER
-from api.common.services import run_query
-from api.common.services import (
-    build_date_range_filters,
-    build_line_filters,
-    ensure_date_bounds,
-    find_column,
-    normalize_date_only,
-    normalize_line_id,
-    resolve_table_schema,
-    to_int,
-)
-from api.common.selectors import _get_user_sdwt_prod_values
+from api.common.services.db import run_query
 
 from .models import (
     DroneEarlyInform,
@@ -32,6 +20,24 @@ from .models import (
     DroneSopNeedToSendRule,
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
+)
+from .services.table_schema import (
+    DEFAULT_TABLE,
+    LINE_SDWT_TABLE_NAME,
+    build_line_filters,
+    ensure_date_bounds,
+    find_column,
+    normalize_date_only,
+    normalize_line_id,
+    resolve_table_schema,
+    sanitize_identifier,
+)
+from .services.history.payload import (
+    build_breakdown_query,
+    build_totals_query,
+    build_where_clause,
+    normalize_breakdown_row,
+    normalize_daily_row,
 )
 
 _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
@@ -61,12 +67,23 @@ _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "custom_end_step",
 )
 _DRONE_SOP_JIRA_CANDIDATE_FIELDS = (*_DRONE_SOP_COMMON_CANDIDATE_FIELDS, "send_jira")
-_DRONE_SOP_INFORM_CANDIDATE_FIELDS = (
+_DRONE_SOP_PIPELINE_CANDIDATE_FIELDS = (
     *_DRONE_SOP_COMMON_CANDIDATE_FIELDS,
     "send_jira",
     "send_messenger",
     "send_mail",
 )
+
+_DIMENSION_CANDIDATES = [
+    "sdwt_prod",
+    "proc_id",
+    "ppid",
+    "user_sdwt_prod",
+    "eqp_id",
+    "main_step",
+    "sample_type",
+    "line_id",
+]
 
 # =============================================================================
 # 공통 정규화 유틸
@@ -139,6 +156,12 @@ def _normalize_chatroom_id(value: Any) -> int | None:
     if parsed <= 0:
         return None
     return parsed
+
+
+def _drone_sop_eligible_filter() -> Q:
+    """Drone SOP 후보 공통 적합 조건 필터를 반환합니다."""
+
+    return Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1)
 
 
 def list_early_inform_entries(*, line_id: str) -> QuerySet[DroneEarlyInform]:
@@ -332,7 +355,7 @@ def list_drone_sop_jira_templates_by_target_user_sdwt_prods(
         target_user_sdwt_prod_values=target_user_sdwt_prod_values,
     )
     return {
-        target: config.get("jira_template_key")
+        target: _normalize_str(config.get("jira_template_key"))
         for target, config in channels.items()
     }
 
@@ -396,65 +419,27 @@ def _drone_sop_jira_candidates_queryset() -> QuerySet[DroneSOP]:
         없음. 읽기 전용 조회 조건만 생성합니다.
     """
 
-    return DroneSOP.objects.filter(send_jira=0).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+    return DroneSOP.objects.filter(send_jira=0).filter(_drone_sop_eligible_filter())
 
 
-def _drone_sop_inform_candidates_queryset() -> QuerySet[DroneSOP]:
-    """멀티 채널 전송 대상 DroneSOP 기본 QuerySet을 구성합니다.
+def _build_drone_sop_pending_filter() -> Q:
+    """고정 3채널 기준 미전송(send=0/NULL) 필터를 구성합니다."""
 
-    반환:
-        DroneSOP QuerySet.
-
-    부작용:
-        없음. 읽기 전용 조회 조건만 생성합니다.
-    """
-
-    return _drone_sop_pipeline_candidates_queryset(
-        include_jira=True,
-        include_messenger=True,
-        include_mail=True,
+    return (
+        Q(send_jira=0)
+        | Q(send_jira__isnull=True)
+        | Q(send_messenger=0)
+        | Q(send_messenger__isnull=True)
+        | Q(send_mail=0)
+        | Q(send_mail__isnull=True)
     )
 
 
-def _build_drone_sop_pending_filter(
-    *,
-    include_jira: bool,
-    include_messenger: bool,
-    include_mail: bool,
-) -> Q:
-    """선택 채널 기준 미전송(send=0/NULL) 필터를 구성합니다."""
+def _drone_sop_pipeline_candidates_queryset() -> QuerySet[DroneSOP]:
+    """고정 3채널 기준 DroneSOP 후보 QuerySet을 구성합니다."""
 
-    pending_filters: list[Q] = []
-    if include_jira:
-        pending_filters.append(Q(send_jira=0) | Q(send_jira__isnull=True))
-    if include_messenger:
-        pending_filters.append(Q(send_messenger=0) | Q(send_messenger__isnull=True))
-    if include_mail:
-        pending_filters.append(Q(send_mail=0) | Q(send_mail__isnull=True))
-
-    if not pending_filters:
-        return Q(pk__in=[])
-
-    combined = pending_filters[0]
-    for clause in pending_filters[1:]:
-        combined |= clause
-    return combined
-
-
-def _drone_sop_pipeline_candidates_queryset(
-    *,
-    include_jira: bool,
-    include_messenger: bool,
-    include_mail: bool,
-) -> QuerySet[DroneSOP]:
-    """선택 채널 기준 DroneSOP 후보 QuerySet을 구성합니다."""
-
-    send_pending = _build_drone_sop_pending_filter(
-        include_jira=include_jira,
-        include_messenger=include_messenger,
-        include_mail=include_mail,
-    )
-    return DroneSOP.objects.filter(send_pending).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+    send_pending = _build_drone_sop_pending_filter()
+    return DroneSOP.objects.filter(send_pending).filter(_drone_sop_eligible_filter())
 
 
 def _list_candidate_rows(
@@ -495,44 +480,14 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
     )
 
 
-def list_drone_sop_inform_candidates(*, limit: int | None = None) -> list[dict[str, Any]]:
-    """멀티 채널 전송 대상 DroneSOP 로우를 조회합니다.
-
-    조건:
-        - (send_jira=0 또는 NULL) 또는 (send_messenger=0 또는 NULL) 또는 (send_mail=0 또는 NULL)
-        - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
-
-    인자:
-        limit: 최대 조회 건수(옵션).
-
-    반환:
-        DroneSOP row dict 리스트.
-
-    부작용:
-        없음. 읽기 전용 조회입니다.
-    """
-
-    return _list_candidate_rows(
-        queryset=_drone_sop_inform_candidates_queryset(),
-        fields=_DRONE_SOP_INFORM_CANDIDATE_FIELDS,
-        limit=limit,
-    )
-
-
 def list_drone_sop_pipeline_candidates(
     *,
     limit: int | None = None,
-    include_jira: bool = True,
-    include_messenger: bool = True,
-    include_mail: bool = True,
 ) -> list[dict[str, Any]]:
-    """선택 채널 기준 DroneSOP 후보 row 목록을 조회합니다.
+    """고정 3채널 기준 DroneSOP 후보 row 목록을 조회합니다.
 
     인자:
         limit: 최대 조회 건수(옵션).
-        include_jira: Jira 채널 포함 여부.
-        include_messenger: 메신저 채널 포함 여부.
-        include_mail: 메일 채널 포함 여부.
 
     반환:
         DroneSOP row dict 리스트.
@@ -541,14 +496,10 @@ def list_drone_sop_pipeline_candidates(
         없음. 읽기 전용 조회입니다.
     """
 
-    queryset = _drone_sop_pipeline_candidates_queryset(
-        include_jira=include_jira,
-        include_messenger=include_messenger,
-        include_mail=include_mail,
-    )
+    queryset = _drone_sop_pipeline_candidates_queryset()
     return _list_candidate_rows(
         queryset=queryset,
-        fields=_DRONE_SOP_INFORM_CANDIDATE_FIELDS,
+        fields=_DRONE_SOP_PIPELINE_CANDIDATE_FIELDS,
         limit=limit,
     )
 
@@ -578,44 +529,10 @@ def has_drone_sop_jira_candidates() -> bool:
     return qs.exists()
 
 
-def has_drone_sop_inform_candidates() -> bool:
-    """멀티 채널 전송 대상 DroneSOP가 존재하는지 확인합니다.
+def has_drone_sop_pipeline_candidates() -> bool:
+    """고정 3채널 기준 DroneSOP 후보 존재 여부를 확인합니다."""
 
-    조건:
-        - (send_jira=0 또는 NULL) 또는 (send_messenger=0 또는 NULL) 또는 (send_mail=0 또는 NULL)
-        - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
-
-    반환:
-        존재 여부(boolean).
-
-    부작용:
-        없음. 읽기 전용 조회입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 대상 쿼리 구성
-    # -----------------------------------------------------------------------------
-    qs = _drone_sop_inform_candidates_queryset()
-
-    # -----------------------------------------------------------------------------
-    # 2) 존재 여부 반환
-    # -----------------------------------------------------------------------------
-    return qs.exists()
-
-
-def has_drone_sop_pipeline_candidates(
-    *,
-    include_jira: bool = True,
-    include_messenger: bool = True,
-    include_mail: bool = True,
-) -> bool:
-    """선택 채널 기준 DroneSOP 후보 존재 여부를 확인합니다."""
-
-    qs = _drone_sop_pipeline_candidates_queryset(
-        include_jira=include_jira,
-        include_messenger=include_messenger,
-        include_mail=include_mail,
-    )
+    qs = _drone_sop_pipeline_candidates_queryset()
     return qs.exists()
 
 
@@ -651,10 +568,11 @@ def load_drone_sop_ctttm_workorders_map(
     # -----------------------------------------------------------------------------
     # 2) 테이블명/ID 정규화
     # -----------------------------------------------------------------------------
-    table_name = str(ctttm_table or "").strip()
-    if not table_name:
+    raw_table_name = str(ctttm_table or "").strip()
+    if not raw_table_name:
         return {}
-    if not SAFE_IDENTIFIER.match(table_name):
+    table_name = sanitize_identifier(raw_table_name)
+    if not table_name:
         raise ValueError("CTTTM table name must match ^[A-Za-z0-9_]+$")
 
     normalized_ids: list[int] = []
@@ -757,7 +675,24 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
         없음. 읽기 전용 조회입니다.
     """
 
-    return _get_user_sdwt_prod_values(line_id)
+    rows = run_query(
+        """
+        SELECT DISTINCT user_sdwt_prod
+        FROM {table}
+        WHERE line = %s
+          AND user_sdwt_prod IS NOT NULL
+          AND user_sdwt_prod <> ''
+        """.format(table=LINE_SDWT_TABLE_NAME),
+        [line_id],
+    )
+    values: list[str] = []
+    for row in rows:
+        raw = row.get("user_sdwt_prod")
+        if isinstance(raw, str):
+            trimmed = raw.strip()
+            if trimmed:
+                values.append(trimmed)
+    return values
 
 
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
@@ -892,21 +827,12 @@ def get_drone_sop_jira_project_key_for_target_user_sdwt_prod(*, target_user_sdwt
         return None
 
     # -----------------------------------------------------------------------------
-    # 2) 비어있지 않은 키 조회
+    # 2) 채널 설정 기반 Jira 키 조회
     # -----------------------------------------------------------------------------
-    key = (
-        DroneSopUserSdwtChannel.objects.filter(target_user_sdwt_prod=normalized, is_active=True)
-        .values_list("jira_key", flat=True)
-        .order_by("jira_key")
-        .first()
-    )
-    normalized_key = _normalize_str(key)
-    if normalized_key:
-        return normalized_key
-    # -----------------------------------------------------------------------------
-    # 3) 기본값 반환
-    # -----------------------------------------------------------------------------
-    return None
+    channel = get_drone_sop_channel_by_target_user_sdwt_prod(target_user_sdwt_prod=normalized)
+    if channel is None:
+        return None
+    return _normalize_str(channel.jira_key)
 
 
 def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
@@ -925,32 +851,13 @@ def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
         없음. 읽기 전용 조회입니다.
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
-    if not normalized_targets:
-        return {}
-
-    # -----------------------------------------------------------------------------
-    # 2) 조회 및 매핑 생성
-    # -----------------------------------------------------------------------------
-    rows = DroneSopUserSdwtChannel.objects.filter(
-        target_user_sdwt_prod__in=normalized_targets,
-        is_active=True,
-    ).values(
-        "target_user_sdwt_prod",
-        "jira_key",
+    channels = list_drone_sop_user_sdwt_channels_by_targets(
+        target_user_sdwt_prod_values=target_user_sdwt_prod_values,
     )
-    mapping: dict[str, str | None] = {}
-    for row in rows:
-        sdwt = _normalize_str(row.get("target_user_sdwt_prod"))
-        if not sdwt:
-            continue
-        normalized_key = _normalize_str(row.get("jira_key"))
-        mapping[sdwt] = normalized_key
-
-    return mapping
+    return {
+        target: _normalize_str(config.get("jira_key"))
+        for target, config in channels.items()
+    }
 
 
 def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
@@ -1009,55 +916,6 @@ def list_distinct_line_ids() -> list[str]:
         """.format(table=LINE_SDWT_TABLE_NAME)
     )
     return _normalize_str_list([row.get("line_id") for row in rows])
-
-
-def _normalize_bucket_value(value: Any) -> Optional[str]:
-    """날짜/시간 버킷 값을 ISO-like 문자열로 정규화합니다.
-
-    인자:
-        value: datetime/date/str/기타 입력.
-
-    반환:
-        ISO-like 문자열 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) None 처리
-    # -----------------------------------------------------------------------------
-    if value is None:
-        return None
-
-    # -----------------------------------------------------------------------------
-    # 2) datetime/date 타입 처리
-    # -----------------------------------------------------------------------------
-    if isinstance(value, datetime):
-        return value.replace(minute=0, second=0, microsecond=0).isoformat()
-
-    if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time()).isoformat()
-
-    # -----------------------------------------------------------------------------
-    # 3) 문자열 처리 및 ISO 변환 시도
-    # -----------------------------------------------------------------------------
-    if isinstance(value, str):
-        cleaned = value.strip()
-        if not cleaned:
-            return None
-
-        candidate = cleaned
-        if " " in candidate and "T" not in candidate:
-            candidate = candidate.replace(" ", "T")
-
-        try:
-            parsed = datetime.fromisoformat(candidate)
-            return parsed.replace(minute=0, second=0, microsecond=0).isoformat()
-        except ValueError:
-            return cleaned
-
-    return None
 
 
 def get_line_history_payload(
@@ -1128,7 +986,7 @@ def get_line_history_payload(
     send_jira_column = find_column(column_names, "send_jira")
     dimension_columns = {
         candidate: resolved
-        for candidate in DIMENSION_CANDIDATES
+        for candidate in _DIMENSION_CANDIDATES
         if (resolved := find_column(column_names, candidate))
     }
 
@@ -1136,22 +994,27 @@ def get_line_history_payload(
     # 3) WHERE 절 구성
     # -----------------------------------------------------------------------------
     line_filter_result = build_line_filters(column_names, normalized_line_id)
-    where_clause, query_params = _build_where_clause(
-        timestamp_column,
-        line_filter_result["filters"],
-        line_filter_result["params"],
-        from_value,
-        to_value,
+    where_clause, query_params = build_where_clause(
+        timestamp_column=timestamp_column,
+        line_filters=line_filter_result["filters"],
+        line_params=line_filter_result["params"],
+        from_value=from_value,
+        to_value=to_value,
     )
 
     # -----------------------------------------------------------------------------
     # 4) 합계(총합) 조회
     # -----------------------------------------------------------------------------
     totals_rows = run_query(
-        _build_totals_query(table_name, timestamp_column, send_jira_column, where_clause),
+        build_totals_query(
+            table_name=table_name,
+            timestamp_column=timestamp_column,
+            send_jira_column=send_jira_column,
+            where_clause=where_clause,
+        ),
         query_params,
     )
-    totals = [_normalize_daily_row(row) for row in totals_rows]
+    totals = [normalize_daily_row(row) for row in totals_rows]
 
     # -----------------------------------------------------------------------------
     # 5) 분해(차원별) 조회
@@ -1159,16 +1022,16 @@ def get_line_history_payload(
     breakdowns: Dict[str, List[Dict[str, Any]]] = {}
     for dimension_key, column_name in dimension_columns.items():
         rows = run_query(
-            _build_breakdown_query(
-                table_name,
-                timestamp_column,
-                column_name,
-                send_jira_column,
-                where_clause,
+            build_breakdown_query(
+                table_name=table_name,
+                timestamp_column=timestamp_column,
+                dimension_column=column_name,
+                send_jira_column=send_jira_column,
+                where_clause=where_clause,
             ),
             query_params,
         )
-        breakdowns[dimension_key] = [_normalize_breakdown_row(row) for row in rows]
+        breakdowns[dimension_key] = [normalize_breakdown_row(row) for row in rows]
 
     # -----------------------------------------------------------------------------
     # 6) 응답 payload 구성
@@ -1182,209 +1045,4 @@ def get_line_history_payload(
         "generatedAt": datetime.utcnow().isoformat() + "Z",
         "totals": totals,
         "breakdowns": breakdowns,
-    }
-
-
-def _build_where_clause(
-    timestamp_column: str,
-    line_filters: Sequence[str],
-    line_params: Sequence[Any],
-    from_value: Optional[str],
-    to_value: Optional[str],
-) -> tuple[str, List[Any]]:
-    """라인/날짜 조건을 합쳐 WHERE 절을 구성합니다.
-
-    인자:
-        timestamp_column: 타임스탬프 컬럼명.
-        line_filters: 라인 필터 조건 문자열 목록.
-        line_params: 라인 필터 바인드 파라미터 목록.
-        from_value: 시작 날짜(ISO).
-        to_value: 종료 날짜(ISO).
-
-    반환:
-        (where_clause, params) 튜플.
-
-    부작용:
-        없음. 순수 문자열/파라미터 구성입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 기본 조건/파라미터 구성
-    # -----------------------------------------------------------------------------
-    conditions = list(line_filters)
-    params = list(line_params)
-
-    # -----------------------------------------------------------------------------
-    # 2) 날짜 조건 추가
-    # -----------------------------------------------------------------------------
-    date_conditions, date_params = build_date_range_filters(timestamp_column, from_value, to_value)
-    conditions.extend(date_conditions)
-    params.extend(date_params)
-
-    # -----------------------------------------------------------------------------
-    # 3) WHERE 절 문자열 생성
-    # -----------------------------------------------------------------------------
-    clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    return clause, params
-
-
-def _build_totals_query(
-    table_name: str,
-    timestamp_column: str,
-    send_jira_column: Optional[str],
-    where_clause: str,
-) -> str:
-    """시간 단위 합계 쿼리를 생성합니다.
-
-    인자:
-        table_name: 대상 테이블명.
-        timestamp_column: 타임스탬프 컬럼명.
-        send_jira_column: send_jira 컬럼명(없으면 None).
-        where_clause: WHERE 절 문자열.
-
-    반환:
-        SQL 문자열.
-
-    부작용:
-        없음. 순수 문자열 생성입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) SELECT 컬럼 구성
-    # -----------------------------------------------------------------------------
-    bucket_expr = f"DATE_TRUNC('hour', {timestamp_column})"
-    totals_select = [f"{bucket_expr} AS bucket", "COUNT(*) AS row_count"]
-    if send_jira_column:
-        totals_select.append(
-            "SUM(CASE WHEN {col} > 0 THEN 1 ELSE 0 END) AS send_jira_count".format(col=send_jira_column)
-        )
-    else:
-        totals_select.append("0 AS send_jira_count")
-
-    # -----------------------------------------------------------------------------
-    # 2) SQL 문자열 반환
-    # -----------------------------------------------------------------------------
-    return """
-        SELECT {select_clause}
-        FROM {table}
-        {where_clause}
-        GROUP BY bucket
-        ORDER BY bucket ASC
-    """.format(
-        select_clause=", ".join(totals_select),
-        table=table_name,
-        where_clause=where_clause,
-    )
-
-
-def _build_breakdown_query(
-    table_name: str,
-    timestamp_column: str,
-    dimension_column: str,
-    send_jira_column: Optional[str],
-    where_clause: str,
-) -> str:
-    """시간 단위 분해(차원별) 쿼리를 생성합니다.
-
-    인자:
-        table_name: 대상 테이블명.
-        timestamp_column: 타임스탬프 컬럼명.
-        dimension_column: 분해 기준 컬럼명.
-        send_jira_column: send_jira 컬럼명(없으면 None).
-        where_clause: WHERE 절 문자열.
-
-    반환:
-        SQL 문자열.
-
-    부작용:
-        없음. 순수 문자열 생성입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) SELECT 컬럼 구성
-    # -----------------------------------------------------------------------------
-    bucket_expr = f"DATE_TRUNC('hour', {timestamp_column})"
-    select_parts = [
-        f"{bucket_expr} AS bucket",
-        f"COALESCE(CAST({dimension_column} AS TEXT), 'Unspecified') AS category",
-        "COUNT(*) AS row_count",
-    ]
-
-    if send_jira_column:
-        select_parts.append(
-            "SUM(CASE WHEN {col} > 0 THEN 1 ELSE 0 END) AS send_jira_count".format(col=send_jira_column)
-        )
-    else:
-        select_parts.append("0 AS send_jira_count")
-
-    # -----------------------------------------------------------------------------
-    # 2) SQL 문자열 반환
-    # -----------------------------------------------------------------------------
-    return """
-        SELECT {select_clause}
-        FROM {table}
-        {where_clause}
-        GROUP BY bucket, category
-        ORDER BY bucket ASC, category ASC
-    """.format(
-        select_clause=", ".join(select_parts),
-        table=table_name,
-        where_clause=where_clause,
-    )
-
-
-def _normalize_daily_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """합계 row를 응답 형식으로 정규화합니다.
-
-    인자:
-        row: 원본 row dict.
-
-    반환:
-        정규화된 합계 dict.
-
-    부작용:
-        없음. 순수 변환입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 버킷/카운트 정규화
-    # -----------------------------------------------------------------------------
-    date_str = _normalize_bucket_value(row.get("bucket") or row.get("day") or row.get("date"))
-    return {
-        "date": date_str,
-        "rowCount": to_int(row.get("row_count", 0)),
-        "sendJiraCount": to_int(row.get("send_jira_count", 0)),
-    }
-
-
-def _normalize_breakdown_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """분해 row를 응답 형식으로 정규화합니다.
-
-    인자:
-        row: 원본 row dict.
-
-    반환:
-        정규화된 분해 dict.
-
-    부작용:
-        없음. 순수 변환입니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 날짜 버킷 정규화
-    # -----------------------------------------------------------------------------
-    date_str = _normalize_bucket_value(row.get("bucket") or row.get("day") or row.get("date"))
-
-    # -----------------------------------------------------------------------------
-    # 2) 카테고리 정규화
-    # -----------------------------------------------------------------------------
-    category = row.get("category") or row.get("dimension") or "Unspecified"
-    if not isinstance(category, str) or not category.strip():
-        category = "Unspecified"
-
-    return {
-        "date": date_str,
-        "category": category.strip() if isinstance(category, str) else str(category),
-        "rowCount": to_int(row.get("row_count", 0)),
-        "sendJiraCount": to_int(row.get("send_jira_count", 0)),
     }

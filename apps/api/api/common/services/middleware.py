@@ -186,7 +186,7 @@ class ActivityLoggingMiddleware(MiddlewareMixin):
                 if getattr(request, "resolver_match", None)
                 else ""
             ),
-            path=path,  # 요청 경로 (예: /api/v1/tables)
+            path=path,  # 요청 경로 (예: /api/v1/line-dashboard/tables)
             method=getattr(request, "method", "GET"),  # 요청 HTTP 메서드
             status_code=getattr(response, "status_code", 200),  # 응답 상태 코드
             metadata=metadata,  # 부가 정보 (쿼리, IP 등)
