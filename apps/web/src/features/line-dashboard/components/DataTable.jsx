@@ -308,6 +308,7 @@ export function DataTable({ lineId }) {
     onPaginationChange: setPagination,
     onColumnSizingChange: setColumnSizing,
     globalFilterFn,
+    autoResetPageIndex: false,
 
     // Row models
     getCoreRowModel: getCoreRowModel(),

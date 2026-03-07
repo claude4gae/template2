@@ -95,7 +95,7 @@ export function DataTableToolbar({
                     />
                     <span>{labels[option.labelKey]}</span>
                   </label>
-                  <div className="pointer-events-none absolute left-1/2 top-full z-40 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] text-background opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
+                  <div className="pointer-events-none absolute left-1/2 top-full z-40 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] text-background opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100">
                     {description}
                   </div>
                 </div>
