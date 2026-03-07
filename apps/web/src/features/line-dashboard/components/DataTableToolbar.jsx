@@ -3,12 +3,6 @@ import { IconChevronDown, IconDatabase, IconRefresh } from "@tabler/icons-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { QuickFilterFavorites } from "./QuickFilterFavorites"
 
 const LINE_FILTER_MODE_TARGET_USER_SDWT = "target_user_sdwt_prod"
@@ -79,44 +73,27 @@ export function DataTableToolbar({
           <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Line Filter
           </span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex h-8 w-44 items-center justify-between rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <span className="truncate text-left">{selectedLabel}</span>
-                <IconChevronDown className="size-4 shrink-0" aria-hidden />
-              </button>
-            </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="start" className="w-44 p-1">
-              {LINE_FILTER_MODE_OPTIONS.map((option) => {
-                const isSelected = lineFilterMode === option.value
-                return (
-                  <DropdownMenuItem
-                    key={option.value}
-                    className={cn(
-                      "flex items-center justify-between gap-2 text-xs",
-                      isSelected && "bg-primary/10 text-primary"
-                    )}
-                    onSelect={() => onChangeLineFilterMode?.(option.value)}
-                  >
-                    <span className="truncate">{labels[option.labelKey]}</span>
-                    <span
-                      className={cn(
-                        "flex h-3.5 w-3.5 items-center justify-center rounded-full border",
-                        isSelected ? "border-primary" : "border-muted-foreground/40"
-                      )}
-                      aria-hidden
-                    >
-                      {isSelected ? <span className="h-1.5 w-1.5 rounded-full bg-current" /> : null}
-                    </span>
-                  </DropdownMenuItem>
-                )
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="relative">
+            <select
+              value={lineFilterMode}
+              onChange={(event) => onChangeLineFilterMode?.(event.target.value)}
+              className={cn(
+                "quick-filter-select h-8 w-44 appearance-none rounded-md border border-input bg-background px-3 pr-8 text-xs font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
+              )}
+              aria-label="Line Filter"
+              title={selectedLabel}
+            >
+              {LINE_FILTER_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {labels[option.labelKey]}
+                </option>
+              ))}
+            </select>
+            <IconChevronDown
+              className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+          </div>
         </div>
         <QuickFilterFavorites
           filters={filters}
