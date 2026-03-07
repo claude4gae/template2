@@ -148,6 +148,20 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "system-comment")
         self.assertEqual(row["user_sdwt_prod"], "System")
 
+    def test_build_drone_sop_row_truncates_knox_id_fallback_to_db_length(self) -> None:
+        """comment fallback knox_id가 DB 길이 제한(50자)으로 잘리는지 확인합니다."""
+        html = """
+        <data>
+          <comment>abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX")
+        self.assertEqual(len(row["knox_id"]), 50)
+        self.assertEqual(row["user_sdwt_prod"], "System")
+
     def test_build_drone_sop_row_applies_needtosend_db_rule(self) -> None:
         """DB 규칙이 needtosend 계산에 적용되는지 확인합니다."""
         html = """

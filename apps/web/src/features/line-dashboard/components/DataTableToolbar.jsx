@@ -1,8 +1,14 @@
 // src/features/line-dashboard/components/DataTableToolbar.jsx
-import { IconDatabase, IconRefresh } from "@tabler/icons-react"
+import { IconChevronDown, IconDatabase, IconRefresh } from "@tabler/icons-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { QuickFilterFavorites } from "./QuickFilterFavorites"
 
 const LINE_FILTER_MODE_TARGET_USER_SDWT = "target_user_sdwt_prod"
@@ -47,6 +53,11 @@ export function DataTableToolbar({
     onDeleteFavorite,
     resetSignal,
   } = favorites ?? {}
+  const selectedOption = LINE_FILTER_MODE_OPTIONS.find((option) => option.value === lineFilterMode)
+  const selectedLabel =
+    selectedOption && labels?.[selectedOption.labelKey]
+      ? labels[selectedOption.labelKey]
+      : labels?.lineFilterModeTargetUserSdwt ?? "기본"
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -64,24 +75,49 @@ export function DataTableToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-end gap-2">
-        <fieldset className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1">
-          <legend className="px-1 text-[10px] text-muted-foreground">Line Filter</legend>
-          {LINE_FILTER_MODE_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className="inline-flex h-7 items-center gap-2 rounded-md px-2 text-xs font-medium text-foreground"
-            >
-              <input
-                type="radio"
-                name="line-filter-mode"
-                className="h-4 w-4 accent-primary"
-                checked={lineFilterMode === option.value}
-                onChange={() => onChangeLineFilterMode?.(option.value)}
-              />
-              <span>{labels[option.labelKey]}</span>
-            </label>
-          ))}
-        </fieldset>
+        <div className="flex flex-col items-start gap-1">
+          <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Line Filter
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-44 items-center justify-between rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <span className="truncate text-left">{selectedLabel}</span>
+                <IconChevronDown className="size-4 shrink-0" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent align="start" className="w-44 p-1">
+              {LINE_FILTER_MODE_OPTIONS.map((option) => {
+                const isSelected = lineFilterMode === option.value
+                return (
+                  <DropdownMenuItem
+                    key={option.value}
+                    className={cn(
+                      "flex items-center justify-between gap-2 text-xs",
+                      isSelected && "bg-primary/10 text-primary"
+                    )}
+                    onSelect={() => onChangeLineFilterMode?.(option.value)}
+                  >
+                    <span className="truncate">{labels[option.labelKey]}</span>
+                    <span
+                      className={cn(
+                        "flex h-3.5 w-3.5 items-center justify-center rounded-full border",
+                        isSelected ? "border-primary" : "border-muted-foreground/40"
+                      )}
+                      aria-hidden
+                    >
+                      {isSelected ? <span className="h-1.5 w-1.5 rounded-full bg-current" /> : null}
+                    </span>
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <QuickFilterFavorites
           filters={filters}
           favorites={favoriteList}
