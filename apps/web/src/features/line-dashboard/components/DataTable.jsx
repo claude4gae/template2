@@ -74,13 +74,13 @@ const LABELS = {
   refresh: "Refresh",
   lineFilterModeTargetUserSdwt: "기본",
   lineFilterModeTargetUserSdwtDescription:
-    "현재 Line소속 분임조로 인폼예정인 모든 SOP",
+    "현재 Line소속 분임조로 인폼 예정인 모든 SOP 목록",
   lineFilterModeUserSdwt: "User분임조 기준",
   lineFilterModeUserSdwtDescription:
-    "현재 Line소속 엔지니어가 보낸 모든 SOP",
+    "현재 Line에 소속된 엔지니어들이 보낸 모든 SOP 목록 (타 Line으로 보낸 SOP 포함)",
   lineFilterModeSdwt: "설비분임조 기준",
   lineFilterModeSdwtDescription:
-    "현재 Line소속 설비에 입력된 모든 SOP",
+    "현재 Line에 소속된 설비에 입력된 모든 SOP 목록 (타 Line엔지니어가 보낸 SOP 포함)",
   showing: "Showing",
   rows: "rows",
   filteredFrom: " (filtered from ",

@@ -79,23 +79,26 @@ export function DataTableToolbar({
               const isSelected = lineFilterMode === option.value
               const description = labels[option.descriptionKey] ?? ""
               return (
-                <label
-                  key={option.value}
-                  title={description}
-                  className={cn(
-                    "inline-flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-medium text-foreground whitespace-nowrap",
-                    isSelected && "text-primary"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="line-filter-mode"
-                    className="h-3.5 w-3.5 accent-primary"
-                    checked={isSelected}
-                    onChange={() => onChangeLineFilterMode?.(option.value)}
-                  />
-                  <span>{labels[option.labelKey]}</span>
-                </label>
+                <div key={option.value} className="group relative">
+                  <label
+                    className={cn(
+                      "inline-flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-medium text-foreground whitespace-nowrap",
+                      isSelected && "text-primary"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="line-filter-mode"
+                      className="h-3.5 w-3.5 accent-primary"
+                      checked={isSelected}
+                      onChange={() => onChangeLineFilterMode?.(option.value)}
+                    />
+                    <span>{labels[option.labelKey]}</span>
+                  </label>
+                  <div className="pointer-events-none absolute left-1/2 top-full z-40 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] text-background opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
+                    {description}
+                  </div>
+                </div>
               )
             })}
           </div>
