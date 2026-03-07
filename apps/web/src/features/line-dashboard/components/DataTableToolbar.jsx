@@ -63,24 +63,38 @@ export function DataTableToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-end gap-2">
-        <fieldset className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1">
-          <legend className="px-1 text-[10px] text-muted-foreground">Line Filter</legend>
-          {LINE_FILTER_MODE_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className="inline-flex h-7 items-center gap-2 rounded-md px-2 text-xs font-medium text-foreground"
-            >
-              <input
-                type="radio"
-                name="line-filter-mode"
-                className="h-4 w-4 accent-primary"
-                checked={lineFilterMode === option.value}
-                onChange={() => onChangeLineFilterMode?.(option.value)}
-              />
-              <span>{labels[option.labelKey]}</span>
-            </label>
-          ))}
-        </fieldset>
+        <div className="flex flex-col items-start gap-1">
+          <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Line Filter
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Line Filter"
+            className="flex h-8 items-center gap-1 rounded-md border border-input bg-background px-1"
+          >
+            {LINE_FILTER_MODE_OPTIONS.map((option) => {
+              const isSelected = lineFilterMode === option.value
+              return (
+                <label
+                  key={option.value}
+                  className={cn(
+                    "inline-flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-medium text-foreground whitespace-nowrap",
+                    isSelected && "bg-primary/10 text-primary"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="line-filter-mode"
+                    className="h-3.5 w-3.5 accent-primary"
+                    checked={isSelected}
+                    onChange={() => onChangeLineFilterMode?.(option.value)}
+                  />
+                  <span>{labels[option.labelKey]}</span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
         <QuickFilterFavorites
           filters={filters}
           favorites={favoriteList}

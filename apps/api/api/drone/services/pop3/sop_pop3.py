@@ -40,7 +40,6 @@ from .defectmap_sidecar import post_defect_png_sidecar_if_needed
 from .utils import sanitize_url
 
 logger = logging.getLogger(__name__)
-KNOX_ID_MAX_LENGTH = 50
 
 
 def _normalize_blank(value: Any) -> Any:
@@ -64,29 +63,6 @@ def _normalize_blank(value: Any) -> Any:
     if isinstance(value, str) and not value.strip():
         return None
     return value
-
-
-def _normalize_knox_id(value: Any) -> Optional[str]:
-    """knox_id 값을 DB 길이 제한에 맞게 정규화합니다.
-
-    인자:
-        value: 원본 knox_id 후보 값.
-
-    반환:
-        공백 제거/길이 제한이 적용된 문자열 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    if not isinstance(value, str):
-        return None
-
-    normalized = value.strip()
-    if not normalized:
-        return None
-
-    return normalized[:KNOX_ID_MAX_LENGTH]
 
 
 def _extract_first_data_tag(html: str) -> dict[str, str]:
@@ -360,14 +336,19 @@ def _build_drone_sop_row(
     # 2) 필드 정규화 및 row 구성
     # -------------------------------------------------------------------------
     normalized = {key: _normalize_blank(value) for key, value in data.items()}
-    knox_value = _normalize_knox_id(normalized.get("knox_id") or normalized.get("knoxid"))
+    raw_knox_value = normalized.get("knox_id") or normalized.get("knoxid")
+    if isinstance(raw_knox_value, str):
+        trimmed_knox = raw_knox_value.strip()
+        knox_value = trimmed_knox if trimmed_knox else None
+    else:
+        knox_value = None
     user_sdwt_prod = normalized.get("user_sdwt_prod")
 
     # -------------------------------------------------------------------------
     # 2-1) knox_id/user_sdwt_prod가 모두 없으면 기본값을 채웁니다.
     # -------------------------------------------------------------------------
     if not knox_value and not user_sdwt_prod:
-        knox_value = _normalize_knox_id(normalized.get("comment"))
+        knox_value = "System"
         user_sdwt_prod = "System"
 
     row: dict[str, Any] = {
