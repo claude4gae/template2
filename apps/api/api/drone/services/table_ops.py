@@ -111,6 +111,10 @@ def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
     from_param = table_schema.normalize_date_only(params.get("from"))
     to_param = table_schema.normalize_date_only(params.get("to"))
     normalized_line_id = table_schema.normalize_line_id(params.get("lineId"))
+    line_filter_mode = table_schema.normalize_line_filter_mode(
+        params.get("lineFilterMode"),
+        default=table_schema.LINE_FILTER_MODE_TARGET_USER_SDWT,
+    )
     recent_hours_start, recent_hours_end = _resolve_recent_hours_range(params)
 
     if from_param and to_param:
@@ -126,7 +130,11 @@ def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
     base_ts_col = schema.timestamp_column
     assert base_ts_col is not None
 
-    line_filter_result = table_schema.build_line_filters(column_names, normalized_line_id)
+    line_filter_result = table_schema.build_line_filters(
+        column_names,
+        normalized_line_id,
+        filter_mode=line_filter_mode,
+    )
     where_parts = list(line_filter_result["filters"])
     query_params = list(line_filter_result["params"])
 

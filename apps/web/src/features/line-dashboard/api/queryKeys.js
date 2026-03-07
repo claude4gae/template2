@@ -25,6 +25,7 @@ export const lineDashboardQueryKeys = {
     {
       table: params.table ?? null,
       lineId: params.lineId ?? null,
+      lineFilterMode: params.lineFilterMode ?? null,
       from: params.from ?? null,
       to: params.to ?? null,
       recentHoursStart: params.recentHoursStart ?? null,

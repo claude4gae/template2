@@ -44,6 +44,8 @@ export function useDataTableState({ lineId }) {
     columns,
     rows,
     setRows,
+    lineFilterMode,
+    setLineFilterMode,
     fromDate,
     setFromDate,
     toDate,
@@ -434,6 +436,8 @@ export function useDataTableState({ lineId }) {
    * ──────────────────────────────────────────────────────────────────────── */
   return {
     selectedTable,
+    lineFilterMode,
+    setLineFilterMode,
     columns,
     rows,
     fromDate,

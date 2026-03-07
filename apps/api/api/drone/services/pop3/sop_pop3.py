@@ -337,6 +337,14 @@ def _build_drone_sop_row(
     # -------------------------------------------------------------------------
     normalized = {key: _normalize_blank(value) for key, value in data.items()}
     knox_value = normalized.get("knox_id") or normalized.get("knoxid")
+    user_sdwt_prod = normalized.get("user_sdwt_prod")
+
+    # -------------------------------------------------------------------------
+    # 2-1) knox_id/user_sdwt_prod가 모두 없으면 기본값을 채웁니다.
+    # -------------------------------------------------------------------------
+    if not knox_value and not user_sdwt_prod:
+        knox_value = normalized.get("comment")
+        user_sdwt_prod = "System"
 
     row: dict[str, Any] = {
         "line_id": normalized.get("line_id"),
@@ -354,7 +362,7 @@ def _build_drone_sop_row(
         "metro_end_step": normalized.get("metro_end_step"),
         "status": normalized.get("status"),
         "knox_id": knox_value,
-        "user_sdwt_prod": normalized.get("user_sdwt_prod"),
+        "user_sdwt_prod": user_sdwt_prod,
         "comment": normalized.get("comment"),
         "defect_url": sanitize_url(normalized.get("defect_url")),
         "defect_png_url": sanitize_url(normalized.get("defect_png_url")),

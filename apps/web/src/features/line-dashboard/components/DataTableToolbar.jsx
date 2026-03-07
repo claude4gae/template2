@@ -5,6 +5,25 @@ import { cn } from "@/lib/utils"
 import { Button } from "components/ui/button"
 import { QuickFilterFavorites } from "./QuickFilterFavorites"
 
+const LINE_FILTER_MODE_TARGET_USER_SDWT = "target_user_sdwt_prod"
+const LINE_FILTER_MODE_USER_SDWT = "user_sdwt_prod"
+const LINE_FILTER_MODE_SDWT = "sdwt_prod"
+
+const LINE_FILTER_MODE_OPTIONS = [
+  {
+    value: LINE_FILTER_MODE_TARGET_USER_SDWT,
+    labelKey: "lineFilterModeTargetUserSdwt",
+  },
+  {
+    value: LINE_FILTER_MODE_USER_SDWT,
+    labelKey: "lineFilterModeUserSdwt",
+  },
+  {
+    value: LINE_FILTER_MODE_SDWT,
+    labelKey: "lineFilterModeSdwt",
+  },
+]
+
 /**
  * 테이블 상단의 타이틀, 즐겨찾기, 새로고침 버튼을 묶어둔 헤더입니다.
  * - DataTable은 상태 계산에 집중하고, 이 컴포넌트는 UI 조립만 담당합니다.
@@ -13,6 +32,8 @@ export function DataTableToolbar({
   lineId,
   labels,
   lastUpdatedLabel,
+  lineFilterMode,
+  onChangeLineFilterMode,
   isRefreshing,
   onRefresh,
   favorites,
@@ -43,6 +64,24 @@ export function DataTableToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-end gap-2">
+        <fieldset className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1">
+          <legend className="px-1 text-[10px] text-muted-foreground">Line Filter</legend>
+          {LINE_FILTER_MODE_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className="inline-flex h-7 items-center gap-2 rounded-md px-2 text-xs font-medium text-foreground"
+            >
+              <input
+                type="radio"
+                name="line-filter-mode"
+                className="h-4 w-4 accent-primary"
+                checked={lineFilterMode === option.value}
+                onChange={() => onChangeLineFilterMode?.(option.value)}
+              />
+              <span>{labels[option.labelKey]}</span>
+            </label>
+          ))}
+        </fieldset>
         <QuickFilterFavorites
           filters={filters}
           favorites={favoriteList}

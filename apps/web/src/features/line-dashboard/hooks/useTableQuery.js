@@ -16,6 +16,21 @@ import {
   normalizeRecentHoursRange,
 } from "../utils/dataTableQuickFilters"
 
+const LINE_FILTER_MODE_TARGET_USER_SDWT = "target_user_sdwt_prod"
+const LINE_FILTER_MODE_USER_SDWT = "user_sdwt_prod"
+const LINE_FILTER_MODE_SDWT = "sdwt_prod"
+const LINE_FILTER_MODES = new Set([
+  LINE_FILTER_MODE_TARGET_USER_SDWT,
+  LINE_FILTER_MODE_USER_SDWT,
+  LINE_FILTER_MODE_SDWT,
+])
+
+function normalizeLineFilterMode(value) {
+  if (typeof value !== "string") return LINE_FILTER_MODE_TARGET_USER_SDWT
+  const normalized = value.trim()
+  return LINE_FILTER_MODES.has(normalized) ? normalized : LINE_FILTER_MODE_TARGET_USER_SDWT
+}
+
 /**
  * 테이블 데이터(컬럼/행/날짜 범위) 로딩을 담당하는 훅입니다.
  * - 날짜/최근 시간 범위를 정규화해 쿼리스트링을 만들고,
@@ -27,6 +42,7 @@ export function useTableQuery({ lineId }) {
   const [selectedTable, setSelectedTable] = useState(DEFAULT_TABLE)
   const [fromDate, setFromDate] = useState(() => getDefaultFromValue())
   const [toDate, setToDate] = useState(() => getDefaultToValue())
+  const [lineFilterMode, setLineFilterModeState] = useState(LINE_FILTER_MODE_TARGET_USER_SDWT)
 
   const [recentHoursRange, setRecentHoursRangeState] = useState(() => createRecentHoursRange())
   const [hydrationKey, setHydrationKey] = useState(0)
@@ -62,10 +78,21 @@ export function useTableQuery({ lineId }) {
     return { effectiveFrom: normalizedFrom, effectiveTo: normalizedTo }
   }, [fromDate, toDate])
 
+  const setLineFilterMode = useCallback((nextValue) => {
+    setLineFilterModeState((previous) => {
+      const resolved =
+        typeof nextValue === "function"
+          ? normalizeLineFilterMode(nextValue(previous))
+          : normalizeLineFilterMode(nextValue)
+      return previous === resolved ? previous : resolved
+    })
+  }, [])
+
   const tableParams = useMemo(
     () => ({
       table: selectedTable,
       lineId: lineId ?? null,
+      lineFilterMode,
       from: effectiveFrom,
       to: effectiveTo,
       recentHoursStart: normalizedRecent.start,
@@ -74,6 +101,7 @@ export function useTableQuery({ lineId }) {
     [
       effectiveFrom,
       effectiveTo,
+      lineFilterMode,
       lineId,
       normalizedRecent.end,
       normalizedRecent.start,
@@ -94,6 +122,7 @@ export function useTableQuery({ lineId }) {
       if (effectiveFrom) params.set("from", effectiveFrom)
       if (effectiveTo) params.set("to", effectiveTo)
       if (lineId) params.set("lineId", lineId)
+      params.set("lineFilterMode", lineFilterMode)
 
       params.set("recentHoursStart", String(normalizedRecent.start))
       params.set("recentHoursEnd", String(normalizedRecent.end))
@@ -199,6 +228,8 @@ export function useTableQuery({ lineId }) {
   return {
     selectedTable,
     setSelectedTable,
+    lineFilterMode,
+    setLineFilterMode,
     columns: tableQuery.data?.columns ?? [],
     rows: tableQuery.data?.rows ?? [],
     setRows,

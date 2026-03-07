@@ -37,11 +37,15 @@ const DROPDOWN_SECTION_KEYS = new Set([
   "user_sdwt_prod",
   "main_step",
 ])
+const WIDE_DROPDOWN_SECTION_KEYS = new Set(["sample_type", "sample_group"])
 const CHECKBOX_SECTION_KEYS = new Set(["my_sop"])
 const FIELDSET_CLASS = "flex flex-col rounded-xl px-2"
 const EMPTY_OPTIONS = []
 
 const isNil = (value) => value === null || value === undefined
+
+const getDropdownWidthClass = (sectionKey) =>
+  WIDE_DROPDOWN_SECTION_KEYS.has(sectionKey) ? "w-56" : "w-40"
 
 export function QuickFilterFieldset({
   legendId,
@@ -233,6 +237,7 @@ function DropdownQuickFilterSection({
   selectedValues,
 }) {
   const resolvedSelectedValues = selectedValues ?? getSelectedValues(isMulti, current)
+  const dropdownWidthClass = getDropdownWidthClass(section.key)
 
   if (isMulti) {
     const hasDropdownValue = resolvedSelectedValues.length > 0
@@ -248,7 +253,8 @@ function DropdownQuickFilterSection({
             <button
               type="button"
               className={cn(
-                "flex h-8 w-40 items-center justify-between rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+                "flex h-8 items-center justify-between rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+                dropdownWidthClass,
                 hasDropdownValue && "border-primary bg-primary/10 text-primary"
               )}
             >
@@ -257,7 +263,10 @@ function DropdownQuickFilterSection({
             </button>
           </DropdownMenuTrigger>
 
-          <DropdownMenuContent align="start" className="w-40 p-1">
+          <DropdownMenuContent
+            align="start"
+            className={cn("p-1", dropdownWidthClass)}
+          >
             <DropdownMenuItem
               className="text-xs"
               onSelect={(event) => {
@@ -303,7 +312,8 @@ function DropdownQuickFilterSection({
         value={current ?? ""}
         onChange={handleChange}
         className={cn(
-          "quick-filter-select h-8 w-40 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+          "quick-filter-select h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+          dropdownWidthClass,
           hasDropdownValue && "border-primary bg-primary/10 text-primary"
         )}
       >

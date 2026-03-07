@@ -72,6 +72,9 @@ const LABELS = {
   titleSuffix: "Line E-SOP Status",
   updated: "Updated",
   refresh: "Refresh",
+  lineFilterModeTargetUserSdwt: "기본",
+  lineFilterModeUserSdwt: "Line 사용자전체",
+  lineFilterModeSdwt: "Line 설비전체",
   showing: "Showing",
   rows: "rows",
   filteredFrom: " (filtered from ",
@@ -213,6 +216,8 @@ export function DataTable({ lineId }) {
     setFilter,
     sorting,
     setSorting,
+    lineFilterMode,
+    setLineFilterMode,
     isLoadingRows,
     rowsError,
     fetchRows,
@@ -360,6 +365,8 @@ export function DataTable({ lineId }) {
         lineId={lineId}
         labels={LABELS}
         lastUpdatedLabel={lastUpdatedLabel}
+        lineFilterMode={lineFilterMode}
+        onChangeLineFilterMode={setLineFilterMode}
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
         favorites={{
@@ -416,10 +423,7 @@ export function DataTable({ lineId }) {
                   const meta = header.column.columnDef.meta
                   const align = resolveHeaderAlignment(meta)
                   const justifyClass = getJustifyClass(align)
-                  const headerLabelOverride =
-                    header.column.id === "target_user_sdwt_prod" ? "목적지" : null
-                  const headerContent =
-                    headerLabelOverride ?? flexRender(header.column.columnDef.header, header.getContext())
+                  const headerContent = flexRender(header.column.columnDef.header, header.getContext())
 
                   const ariaSort =
                     sortDirection === "asc"
@@ -440,7 +444,7 @@ export function DataTable({ lineId }) {
                         <button
                           className={cn("flex w-full items-center gap-1", justifyClass)}
                           onClick={header.column.getToggleSortingHandler()}
-                          aria-label={`Sort by ${headerLabelOverride ?? String(header.column.id)}`}
+                          aria-label={`Sort by ${String(header.column.id)}`}
                         >
                           {headerContent}
                           {sortDirection === "asc" && <IconChevronUp className="size-4" />}

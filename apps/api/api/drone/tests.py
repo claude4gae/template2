@@ -135,6 +135,19 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["custom_end_step"], "ST002")
         self.assertEqual(row["target_user_sdwt_prod"], "dummy-target")
 
+    def test_build_drone_sop_row_fills_system_when_knox_and_user_missing(self) -> None:
+        """knox_id/user_sdwt_prod 누락 시 기본값이 채워지는지 확인합니다."""
+        html = """
+        <data>
+          <comment>system-comment</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "system-comment")
+        self.assertEqual(row["user_sdwt_prod"], "System")
+
     def test_build_drone_sop_row_applies_needtosend_db_rule(self) -> None:
         """DB 규칙이 needtosend 계산에 적용되는지 확인합니다."""
         html = """
@@ -2993,12 +3006,88 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         self.assertEqual(result["filters"], [])
         self.assertEqual(result["params"], [])
 
+    def test_normalize_line_filter_mode_defaults_to_target_when_invalid(self) -> None:
+        """lineFilterMode가 유효하지 않으면 target_user_sdwt_prod 기본값으로 보정되는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        self.assertEqual(
+            table_schema.normalize_line_filter_mode("invalid-mode"),
+            table_schema.LINE_FILTER_MODE_TARGET_USER_SDWT,
+        )
+
     def test_build_line_filters_prefers_sdwt_prod(self) -> None:
         """sdwt_prod가 있으면 sdwt_prod 기준 필터를 사용하는지 확인합니다."""
 
         from api.drone.services import table_schema
 
         result = table_schema.build_line_filters(["user_sdwt_prod", "sdwt_prod", "line_id"], "L1")
+
+        expected = (
+            "sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_uses_target_user_sdwt_prod_when_requested(self) -> None:
+        """target_user_sdwt_prod 모드에서 target_user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(
+            ["target_user_sdwt_prod", "sdwt_prod", "user_sdwt_prod", "line_id"],
+            "L1",
+            filter_mode=table_schema.LINE_FILTER_MODE_TARGET_USER_SDWT,
+        )
+
+        expected = (
+            "target_user_sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_uses_user_sdwt_prod_when_requested(self) -> None:
+        """user_sdwt_prod 모드에서 user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(
+            ["target_user_sdwt_prod", "sdwt_prod", "user_sdwt_prod", "line_id"],
+            "L1",
+            filter_mode=table_schema.LINE_FILTER_MODE_USER_SDWT,
+        )
+
+        expected = (
+            "user_sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_uses_sdwt_prod_only_when_requested(self) -> None:
+        """sdwt_prod 모드에서 sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        result = table_schema.build_line_filters(
+            ["target_user_sdwt_prod", "sdwt_prod", "user_sdwt_prod", "line_id"],
+            "L1",
+            filter_mode=table_schema.LINE_FILTER_MODE_SDWT,
+        )
 
         expected = (
             "sdwt_prod IN ("
@@ -3071,6 +3160,99 @@ class DroneTablesEndpointTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["table"], "demo_table")
         self.assertEqual(payload["rowCount"], 1)
+
+    @patch("api.drone.services.table_ops._fetch_rows")
+    @patch("api.drone.services.table_ops.table_schema.build_line_filters")
+    @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
+    def test_tables_list_defaults_to_target_user_sdwt_filter_mode(
+        self,
+        mock_schema: Mock,
+        mock_build_line_filters: Mock,
+        mock_fetch_rows: Mock,
+    ) -> None:
+        """lineFilterMode 미지정 시 target_user_sdwt_prod 모드가 기본 적용되는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        mock_schema.return_value = SimpleNamespace(
+            name="demo_table",
+            columns=["id", "created_at", "target_user_sdwt_prod"],
+            timestamp_column="created_at",
+        )
+        mock_build_line_filters.return_value = {"filters": [], "params": []}
+        mock_fetch_rows.return_value = []
+
+        response = self.client.get(reverse("drone-tables"), {"lineId": "L1"})
+        self.assertEqual(response.status_code, 200)
+        mock_build_line_filters.assert_called_once_with(
+            ["id", "created_at", "target_user_sdwt_prod"],
+            "L1",
+            filter_mode=table_schema.LINE_FILTER_MODE_TARGET_USER_SDWT,
+        )
+
+    @patch("api.drone.services.table_ops._fetch_rows")
+    @patch("api.drone.services.table_ops.table_schema.build_line_filters")
+    @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
+    def test_tables_list_accepts_sdwt_filter_mode_override(
+        self,
+        mock_schema: Mock,
+        mock_build_line_filters: Mock,
+        mock_fetch_rows: Mock,
+    ) -> None:
+        """lineFilterMode=sdwt_prod가 전달되면 sdwt_prod 모드로 조회하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        mock_schema.return_value = SimpleNamespace(
+            name="demo_table",
+            columns=["id", "created_at", "sdwt_prod"],
+            timestamp_column="created_at",
+        )
+        mock_build_line_filters.return_value = {"filters": [], "params": []}
+        mock_fetch_rows.return_value = []
+
+        response = self.client.get(
+            reverse("drone-tables"),
+            {"lineId": "L1", "lineFilterMode": table_schema.LINE_FILTER_MODE_SDWT},
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_build_line_filters.assert_called_once_with(
+            ["id", "created_at", "sdwt_prod"],
+            "L1",
+            filter_mode=table_schema.LINE_FILTER_MODE_SDWT,
+        )
+
+    @patch("api.drone.services.table_ops._fetch_rows")
+    @patch("api.drone.services.table_ops.table_schema.build_line_filters")
+    @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
+    def test_tables_list_accepts_user_sdwt_filter_mode_override(
+        self,
+        mock_schema: Mock,
+        mock_build_line_filters: Mock,
+        mock_fetch_rows: Mock,
+    ) -> None:
+        """lineFilterMode=user_sdwt_prod가 전달되면 user_sdwt_prod 모드로 조회하는지 확인합니다."""
+
+        from api.drone.services import table_schema
+
+        mock_schema.return_value = SimpleNamespace(
+            name="demo_table",
+            columns=["id", "created_at", "user_sdwt_prod"],
+            timestamp_column="created_at",
+        )
+        mock_build_line_filters.return_value = {"filters": [], "params": []}
+        mock_fetch_rows.return_value = []
+
+        response = self.client.get(
+            reverse("drone-tables"),
+            {"lineId": "L1", "lineFilterMode": table_schema.LINE_FILTER_MODE_USER_SDWT},
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_build_line_filters.assert_called_once_with(
+            ["id", "created_at", "user_sdwt_prod"],
+            "L1",
+            filter_mode=table_schema.LINE_FILTER_MODE_USER_SDWT,
+        )
 
     @patch("api.drone.services.table_ops._fetch_rows")
     @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
