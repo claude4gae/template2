@@ -84,10 +84,7 @@ def build_inform_context(row: dict[str, Any]) -> dict[str, Any]:
     # 1) 주요 필드 정규화
     # -------------------------------------------------------------------------
     knoxid = str(row.get("knox_id") or row.get("knoxid") or "").strip()
-    resolved_user_sdwt_prod = (
-        str(row.get("target_user_sdwt_prod") or row.get("resolved_user_sdwt_prod") or row.get("user_sdwt_prod") or "")
-        .strip()
-    )
+    resolved_user_sdwt_prod = str(row.get("user_sdwt_prod") or "").strip()
     comment_raw = str(row.get("comment") or "").split("$@$", 1)[0]
     # -------------------------------------------------------------------------
     # 2) 템플릿 컨텍스트 구성

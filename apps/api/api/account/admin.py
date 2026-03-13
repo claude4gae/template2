@@ -548,7 +548,10 @@ class AccountUserAdmin(DjangoUserAdmin):
         # 4) 현재 user_sdwt_prod 유효성 확인
         # -----------------------------------------------------------------------------
         current_user_sdwt_prod = (getattr(obj, "user_sdwt_prod", None) or "").strip()
-        if not current_user_sdwt_prod or current_user_sdwt_prod == UNASSIGNED_USER_SDWT_PROD:
+        if (
+            not current_user_sdwt_prod
+            or current_user_sdwt_prod.casefold() == UNASSIGNED_USER_SDWT_PROD.casefold()
+        ):
             return
 
         # -----------------------------------------------------------------------------

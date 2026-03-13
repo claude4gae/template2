@@ -38,6 +38,25 @@ def _normalize_user_sdwt_value(value: Any) -> str | None:
     return trimmed if trimmed else None
 
 
+def _normalize_user_sdwt_lookup_key(value: Any) -> str | None:
+    """대소문자 비구분 비교용 소속 키를 정규화합니다.
+
+    인자:
+        value: 원본 값.
+
+    반환:
+        공백 제거 후 casefold 적용한 문자열 또는 None.
+
+    부작용:
+        없음. 순수 정규화입니다.
+    """
+
+    cleaned = _normalize_user_sdwt_value(value)
+    if not cleaned:
+        return None
+    return cleaned.casefold()
+
+
 @dataclass(frozen=True)
 class UserSdwtProdMapIndex:
     """사용자 소속 매핑 인덱스."""
@@ -74,12 +93,18 @@ def load_user_sdwt_prod_map_index() -> UserSdwtProdMapIndex:
         target = _normalize_user_sdwt_value(row.get("target_user_sdwt_prod"))
         if not target:
             continue
+        sdwt_lookup = _normalize_user_sdwt_lookup_key(sdwt)
+        user_lookup = _normalize_user_sdwt_lookup_key(user)
         if sdwt and user:
-            pair_map[(sdwt, user)] = target
+            assert sdwt_lookup is not None
+            assert user_lookup is not None
+            pair_map[(sdwt_lookup, user_lookup)] = target
         elif sdwt and not user:
-            sdwt_only_map[sdwt] = target
+            assert sdwt_lookup is not None
+            sdwt_only_map[sdwt_lookup] = target
         elif user and not sdwt:
-            user_only_map[user] = target
+            assert user_lookup is not None
+            user_only_map[user_lookup] = target
 
     return UserSdwtProdMapIndex(
         pair_map=pair_map,
@@ -116,8 +141,8 @@ def resolve_target_user_sdwt_prod(
     # -----------------------------------------------------------------------------
     # 2) 입력 정규화
     # -----------------------------------------------------------------------------
-    sdwt = _normalize_user_sdwt_value(row.get("sdwt_prod"))
-    user = _normalize_user_sdwt_value(row.get("user_sdwt_prod"))
+    sdwt = _normalize_user_sdwt_lookup_key(row.get("sdwt_prod"))
+    user = _normalize_user_sdwt_lookup_key(row.get("user_sdwt_prod"))
 
     # -----------------------------------------------------------------------------
     # 3) 우선순위 매칭
@@ -204,7 +229,9 @@ def resolve_target_user_sdwt_prod_values(
             targets.add(target.strip())
         row_id = row.get("id")
         if isinstance(row_id, int):
-            if persist and target != persisted_target:
+            if persist and _normalize_user_sdwt_lookup_key(target) != _normalize_user_sdwt_lookup_key(
+                persisted_target
+            ):
                 changed_target_by_id[row_id] = target
             if not isinstance(target, str) or not target.strip():
                 missing_ids.append(row_id)

@@ -44,6 +44,18 @@ from .templates.jira_template_registry import TEMPLATE_SOURCES
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_target_lookup_key(value: Any) -> str | None:
+    """대소문자 비구분 채널 조회용 target 키를 정규화합니다."""
+
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned.casefold()
+
+
 @dataclass(frozen=True)
 class DroneSopJiraCreateResult:
     """Drone SOP Jira 생성 실행 결과."""
@@ -212,8 +224,8 @@ def _mark_pending_jira_when_disabled(
         row_id = row.get("id")
         if not isinstance(row_id, int):
             continue
-        target = row.get("target_user_sdwt_prod")
-        config_row = channel_by_target.get(target.strip()) if isinstance(target, str) and target.strip() else None
+        target_lookup_key = _normalize_target_lookup_key(row.get("target_user_sdwt_prod"))
+        config_row = channel_by_target.get(target_lookup_key) if target_lookup_key else None
         if config_row and not bool(config_row.get("jira_enabled", True)):
             disabled_ids.append(row_id)
             continue

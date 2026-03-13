@@ -20,7 +20,7 @@ from .. import selectors
 from .access import _current_access_list, get_manageable_groups_with_members
 from .affiliation_requests import _serialize_affiliation_change
 from .affiliations import get_affiliation_reconfirm_status
-from .utils import _is_privileged_user
+from .utils import _is_privileged_user, _normalize_user_sdwt_lookup_key
 
 
 def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
@@ -86,13 +86,17 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
     # 6) 메일함 접근 요약 구성
     # -----------------------------------------------------------------------------
     mailbox_rows = email_services.get_mailbox_access_summary_for_user(user=user)
-    access_map = {entry["userSdwtProd"]: entry for entry in access_list}
+    access_map = {
+        _normalize_user_sdwt_lookup_key(entry.get("userSdwtProd")): entry
+        for entry in access_list
+        if _normalize_user_sdwt_lookup_key(entry.get("userSdwtProd"))
+    }
     is_privileged = _is_privileged_user(user)
 
     mailbox_payload: list[dict[str, object]] = []
     for mailbox in mailbox_rows:
         user_sdwt_prod = mailbox.get("userSdwtProd")
-        access = access_map.get(user_sdwt_prod)
+        access = access_map.get(_normalize_user_sdwt_lookup_key(user_sdwt_prod))
         if access is None and is_privileged:
             access_source = "privileged"
             role = "manager"

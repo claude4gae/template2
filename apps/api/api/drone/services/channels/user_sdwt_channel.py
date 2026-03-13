@@ -108,9 +108,15 @@ def upsert_drone_sop_user_sdwt_channel(
     # 2) 행 조회/생성 및 업데이트
     # -----------------------------------------------------------------------------
     with transaction.atomic():
-        channel, created = DroneSopUserSdwtChannel.objects.select_for_update().get_or_create(
-            target_user_sdwt_prod=normalized_target
+        channel = (
+            DroneSopUserSdwtChannel.objects.select_for_update()
+            .filter(target_user_sdwt_prod__iexact=normalized_target)
+            .order_by("id")
+            .first()
         )
+        created = channel is None
+        if channel is None:
+            channel = DroneSopUserSdwtChannel(target_user_sdwt_prod=normalized_target)
         update_fields: list[str] = []
 
         if jira_key is not _UNSET and channel.jira_key != jira_key:
@@ -159,10 +165,14 @@ def upsert_drone_sop_user_sdwt_channel(
             update_fields.append("is_active")
 
         if update_fields:
-            channel.save(update_fields=[*update_fields, "updated_at"])
+            if created:
+                channel.save()
+            else:
+                channel.save(update_fields=[*update_fields, "updated_at"])
             return channel, 1
 
         if created:
+            channel.save()
             return channel, 1
 
     return channel, 0

@@ -18,7 +18,12 @@ from django.db import IntegrityError, transaction
 
 from .. import selectors
 from ..models import UserSdwtProdAccess
-from .utils import _user_can_manage_user_sdwt_prod
+from .utils import (
+    _build_user_sdwt_display_map,
+    _normalize_user_sdwt_lookup_key,
+    _user_can_manage_user_sdwt_prod,
+    _same_user_sdwt_prod,
+)
 
 
 ROLE_ORDER = {
@@ -76,7 +81,7 @@ def _normalize_role_for_current_affiliation(
     normalized_role = _normalize_access_role(role)
     current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
     target_user_sdwt = (user_sdwt_prod or "").strip()
-    if current_user_sdwt and target_user_sdwt and current_user_sdwt == target_user_sdwt:
+    if _same_user_sdwt_prod(current_user_sdwt, target_user_sdwt):
         if normalized_role == UserSdwtProdAccess.Roles.VIEWER:
             return UserSdwtProdAccess.Roles.MEMBER
     return normalized_role
@@ -225,7 +230,7 @@ def grant_or_revoke_access(
     normalized_action = (action or "grant").lower()
     if normalized_action == "revoke":
         current_target_sdwt = (getattr(target_user, "user_sdwt_prod", None) or "").strip()
-        if current_target_sdwt and current_target_sdwt == normalized_target:
+        if _same_user_sdwt_prod(current_target_sdwt, normalized_target):
             return {"error": "Cannot revoke access for the user's current affiliation"}, 400
         access = selectors.get_access_row_for_user_and_prod(
             user=target_user,
@@ -313,14 +318,19 @@ def get_manageable_groups_with_members(*, user: Any) -> dict[str, object]:
     # -----------------------------------------------------------------------------
     # 2) 멤버 목록 구성
     # -----------------------------------------------------------------------------
-    members_by_group: Dict[str, List[Dict[str, object]]] = {prod: [] for prod in manageable_set}
+    manageable_display_map = _build_user_sdwt_display_map(sorted(manageable_set))
+    members_by_group: Dict[str, List[Dict[str, object]]] = {
+        prod: [] for prod in manageable_display_map.values()
+    }
     for access in selectors.list_group_members(user_sdwt_prods=manageable_set):
-        members_by_group.setdefault(access.user_sdwt_prod, []).append(_serialize_member(access))
+        lookup_key = _normalize_user_sdwt_lookup_key(access.user_sdwt_prod)
+        canonical_prod = manageable_display_map.get(lookup_key, access.user_sdwt_prod)
+        members_by_group.setdefault(canonical_prod, []).append(_serialize_member(access))
 
     # -----------------------------------------------------------------------------
     # 3) 응답 정렬 및 반환
     # -----------------------------------------------------------------------------
-    for prod in sorted(manageable_set):
+    for prod in sorted(manageable_display_map.values()):
         groups.append({"userSdwtProd": prod, "members": members_by_group.get(prod, [])})
 
     return {"groups": groups}
@@ -432,25 +442,34 @@ def _current_access_list(user: Any) -> List[Dict[str, object]]:
     # 1) 접근 권한 행 조회
     # -----------------------------------------------------------------------------
     rows = selectors.list_user_sdwt_prod_access_rows(user=user)
-    access_map = {row.user_sdwt_prod: row for row in rows}
+    access_map: dict[str, UserSdwtProdAccess | None] = {}
+    display_map = _build_user_sdwt_display_map(row.user_sdwt_prod for row in rows)
+    for row in rows:
+        lookup_key = _normalize_user_sdwt_lookup_key(row.user_sdwt_prod)
+        if not lookup_key:
+            continue
+        access_map.setdefault(lookup_key, row)
 
     # -----------------------------------------------------------------------------
     # 2) 현재 소속 포함
     # -----------------------------------------------------------------------------
     current_user_sdwt = getattr(user, "user_sdwt_prod", None)
-    if isinstance(current_user_sdwt, str) and current_user_sdwt.strip():
-        access_map.setdefault(current_user_sdwt, None)
+    current_lookup_key = _normalize_user_sdwt_lookup_key(current_user_sdwt)
+    if current_lookup_key:
+        display_map[current_lookup_key] = (getattr(user, "user_sdwt_prod", None) or "").strip()
+        access_map.setdefault(current_lookup_key, None)
 
     # -----------------------------------------------------------------------------
     # 3) 응답 목록 구성
     # -----------------------------------------------------------------------------
     result: List[Dict[str, object]] = []
-    for prod, entry in sorted(access_map.items()):
-        source = "self" if prod == current_user_sdwt else "grant"
+    for lookup_key, prod in sorted(display_map.items(), key=lambda item: item[1]):
+        entry = access_map.get(lookup_key)
+        source = "self" if lookup_key == current_lookup_key else "grant"
         if entry is None:
             fallback_role = (
                 UserSdwtProdAccess.Roles.MEMBER
-                if prod == current_user_sdwt
+                if lookup_key == current_lookup_key
                 else UserSdwtProdAccess.Roles.VIEWER
             )
             result.append(

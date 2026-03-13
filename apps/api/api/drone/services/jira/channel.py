@@ -11,6 +11,17 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def _normalize_target_lookup_key(value: Any) -> str | None:
+    """대소문자 비구분 채널 조회용 target 키를 정규화합니다."""
+
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned.casefold()
+
+
 @dataclass(frozen=True)
 class JiraChannelPlan:
     """Jira 전송 계획(프로젝트/템플릿 매핑) 결과."""
@@ -59,11 +70,10 @@ def resolve_jira_channel_plan(
         if not isinstance(row_id, int):
             continue
 
-        target = row.get("target_user_sdwt_prod")
-        if not isinstance(target, str) or not target.strip():
+        normalized_target = _normalize_target_lookup_key(row.get("target_user_sdwt_prod"))
+        if not normalized_target:
             skip_ids.append(row_id)
             continue
-        normalized_target = target.strip()
         config_row = channel_by_target.get(normalized_target)
         if not config_row:
             skip_ids.append(row_id)

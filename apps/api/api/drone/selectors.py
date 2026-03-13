@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from django.db import connection
 from django.db.models import Q, QuerySet
+from django.db.models.functions import Lower
 
 import api.account.selectors as account_selectors
 from api.common.services.db import run_query
@@ -129,6 +130,48 @@ def _normalize_str_list(values: Sequence[Any], *, allow_non_str: bool = False) -
     normalized: list[str] = []
     for value in values:
         cleaned = _normalize_str(value, allow_non_str=allow_non_str)
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_lookup_str(value: Any, *, allow_non_str: bool = False) -> str | None:
+    """대소문자 비구분 비교용 문자열 키를 정규화합니다.
+
+    인자:
+        value: 원본 값.
+        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
+
+    반환:
+        공백 제거 후 casefold 적용한 문자열 또는 None.
+
+    부작용:
+        없음. 순수 정규화입니다.
+    """
+
+    cleaned = _normalize_str(value, allow_non_str=allow_non_str)
+    if not cleaned:
+        return None
+    return cleaned.casefold()
+
+
+def _normalize_lookup_str_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
+    """대소문자 비구분 비교용 문자열 키 리스트를 정규화합니다.
+
+    인자:
+        values: 원본 값 시퀀스.
+        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
+
+    반환:
+        casefold 적용된 문자열 리스트.
+
+    부작용:
+        없음. 순수 정규화입니다.
+    """
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = _normalize_lookup_str(value, allow_non_str=allow_non_str)
         if cleaned:
             normalized.append(cleaned)
     return normalized
@@ -270,7 +313,10 @@ def get_drone_sop_needtosend_rule_by_target(
     # 2) 활성 규칙 조회
     # -----------------------------------------------------------------------------
     return (
-        DroneSopNeedToSendRule.objects.filter(target_user_sdwt_prod=normalized, is_active=True)
+        DroneSopNeedToSendRule.objects.filter(
+            target_user_sdwt_prod__iexact=normalized,
+            is_active=True,
+        )
         .order_by("id")
         .first()
     )
@@ -295,18 +341,21 @@ def list_drone_sop_user_sdwt_channels_by_targets(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    normalized_targets = _normalize_lookup_str_list(target_user_sdwt_prod_values)
     if not normalized_targets:
         return {}
 
     # -----------------------------------------------------------------------------
     # 2) 채널 설정 조회 및 매핑 구성
     # -----------------------------------------------------------------------------
-    rows = DroneSopUserSdwtChannel.objects.filter(
-        target_user_sdwt_prod__in=normalized_targets,
+    rows = DroneSopUserSdwtChannel.objects.annotate(
+        target_user_sdwt_prod_lookup=Lower("target_user_sdwt_prod")
+    ).filter(
+        target_user_sdwt_prod_lookup__in=normalized_targets,
         is_active=True,
     ).values(
         "target_user_sdwt_prod",
+        "target_user_sdwt_prod_lookup",
         "jira_key",
         "chatroom_id",
         "jira_template_key",
@@ -318,11 +367,11 @@ def list_drone_sop_user_sdwt_channels_by_targets(
     )
     mapping: dict[str, dict[str, str | bool | int | None]] = {}
     for row in rows:
-        target = _normalize_str(row.get("target_user_sdwt_prod"))
-        if not target:
+        target_lookup = _normalize_lookup_str(row.get("target_user_sdwt_prod"))
+        if not target_lookup:
             continue
         chatroom_id = _normalize_chatroom_id(row.get("chatroom_id"))
-        mapping[target] = {
+        mapping[target_lookup] = {
             "jira_key": _normalize_str(row.get("jira_key")),
             "chatroom_id": chatroom_id,
             "jira_template_key": _normalize_str(row.get("jira_template_key")),
@@ -354,10 +403,13 @@ def list_drone_sop_jira_templates_by_target_user_sdwt_prods(
     channels = list_drone_sop_user_sdwt_channels_by_targets(
         target_user_sdwt_prod_values=target_user_sdwt_prod_values,
     )
-    return {
-        target: _normalize_str(config.get("jira_template_key"))
-        for target, config in channels.items()
-    }
+    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    result: dict[str, str | None] = {}
+    for target in normalized_targets:
+        lookup_key = _normalize_lookup_str(target)
+        config = channels.get(lookup_key) if lookup_key else None
+        result[target] = _normalize_str(config.get("jira_template_key")) if config else None
+    return result
 
 
 def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
@@ -397,7 +449,11 @@ def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
         main_step = row.get("main_step")
         if not isinstance(user_sdwt_prod, str) or not isinstance(main_step, str):
             continue
-        key = (user_sdwt_prod.strip(), main_step.strip())
+        normalized_user_sdwt_prod = _normalize_lookup_str(user_sdwt_prod)
+        normalized_main_step = main_step.strip()
+        if not normalized_user_sdwt_prod or not normalized_main_step:
+            continue
+        key = (normalized_user_sdwt_prod, normalized_main_step)
         custom_end_step = row.get("custom_end_step")
         if custom_end_step is None:
             mapping[key] = None
@@ -770,7 +826,7 @@ def get_drone_sop_channel_by_target_user_sdwt_prod(
     # 2) 채널 설정 조회
     # -----------------------------------------------------------------------------
     return DroneSopUserSdwtChannel.objects.filter(
-        target_user_sdwt_prod=normalized,
+        target_user_sdwt_prod__iexact=normalized,
         is_active=True,
     ).first()
 
@@ -854,10 +910,13 @@ def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
     channels = list_drone_sop_user_sdwt_channels_by_targets(
         target_user_sdwt_prod_values=target_user_sdwt_prod_values,
     )
-    return {
-        target: _normalize_str(config.get("jira_key"))
-        for target, config in channels.items()
-    }
+    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    result: dict[str, str | None] = {}
+    for target in normalized_targets:
+        lookup_key = _normalize_lookup_str(target)
+        config = channels.get(lookup_key) if lookup_key else None
+        result[target] = _normalize_str(config.get("jira_key")) if config else None
+    return result
 
 
 def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
@@ -887,7 +946,7 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
         """
         SELECT DISTINCT line AS line_id
         FROM {table}
-        WHERE user_sdwt_prod = %s
+        WHERE LOWER(user_sdwt_prod) = LOWER(%s)
           AND line IS NOT NULL
           AND line <> ''
         ORDER BY line_id

@@ -13,10 +13,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Min, Q, QuerySet
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from api.common.services import UNKNOWN, UNCLASSIFIED_USER_SDWT_PROD
@@ -28,6 +29,118 @@ from .models import (
     UserSdwtProdAccess,
     UserSdwtProdChange,
 )
+
+
+def _normalize_user_sdwt_prod(value: Any) -> str | None:
+    """user_sdwt_prod 값을 공백 제거 기준으로 정규화합니다.
+
+    입력:
+    - value: 원본 값
+
+    반환:
+    - str | None: 정규화된 문자열 또는 None
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _normalize_user_sdwt_lookup_key(value: Any) -> str | None:
+    """대소문자 비구분 비교용 user_sdwt_prod 키를 생성합니다.
+
+    입력:
+    - value: 원본 값
+
+    반환:
+    - str | None: casefold 기준 비교 키 또는 None
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    cleaned = _normalize_user_sdwt_prod(value)
+    if not cleaned:
+        return None
+    return cleaned.casefold()
+
+
+def _normalize_user_sdwt_prod_values(values: Iterable[Any]) -> list[str]:
+    """user_sdwt_prod 값 목록을 정규화합니다.
+
+    입력:
+    - values: 원본 값 iterable
+
+    반환:
+    - list[str]: 공백 제거된 문자열 목록
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = _normalize_user_sdwt_prod(value)
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _build_user_sdwt_display_map(values: Iterable[Any]) -> dict[str, str]:
+    """case-insensitive 비교용 lookup key → 표시값 매핑을 생성합니다.
+
+    입력:
+    - values: 원본 값 iterable
+
+    반환:
+    - dict[str, str]: lookup key → 공백 제거된 원본 표시값
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    display_map: dict[str, str] = {}
+    for value in values:
+        cleaned = _normalize_user_sdwt_prod(value)
+        lookup_key = _normalize_user_sdwt_lookup_key(cleaned)
+        if cleaned and lookup_key and lookup_key not in display_map:
+            display_map[lookup_key] = cleaned
+    return display_map
+
+
+def _collapse_user_sdwt_prod_values(values: Iterable[Any]) -> set[str]:
+    """user_sdwt_prod 값들을 대소문자 비구분으로 중복 제거합니다.
+
+    입력:
+    - values: 원본 값 iterable
+
+    반환:
+    - set[str]: 중복 제거된 표시값 집합
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    return set(_build_user_sdwt_display_map(values).values())
 
 
 def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
@@ -64,7 +177,7 @@ def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
             .values_list("user_sdwt_prod", flat=True)
             .distinct()
         )
-        return {val.strip() for val in values if isinstance(val, str) and val.strip()}
+        return _collapse_user_sdwt_prod_values(values)
 
     # -----------------------------------------------------------------------------
     # 3) 접근 권한 및 본인 소속 포함
@@ -79,7 +192,7 @@ def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
     # -----------------------------------------------------------------------------
     # 4) 최종 정제 및 반환
     # -----------------------------------------------------------------------------
-    return {val for val in values if isinstance(val, str) and val.strip()}
+    return _collapse_user_sdwt_prod_values(values)
 
 
 def list_distinct_user_sdwt_prod_values() -> set[str]:
@@ -110,7 +223,7 @@ def list_distinct_user_sdwt_prod_values() -> set[str]:
     )
 
     combined = affiliation_values | access_values
-    return {val.strip() for val in combined if isinstance(val, str) and val.strip()}
+    return _collapse_user_sdwt_prod_values(combined)
 
 
 def list_affiliation_options() -> list[dict[str, str]]:
@@ -155,15 +268,20 @@ def get_existing_affiliation_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> s
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized = [value.strip() for value in user_sdwt_prods if isinstance(value, str) and value.strip()]
-    if not normalized:
+    display_map = _build_user_sdwt_display_map(user_sdwt_prods)
+    if not display_map:
         return set()
 
     # -----------------------------------------------------------------------------
     # 2) 기존 소속 조회
     # -----------------------------------------------------------------------------
-    rows = Affiliation.objects.filter(user_sdwt_prod__in=normalized).values_list("user_sdwt_prod", flat=True)
-    return {value for value in rows if isinstance(value, str) and value.strip()}
+    existing_lookup_keys = set(
+        Affiliation.objects.annotate(user_sdwt_prod_lookup=Lower("user_sdwt_prod"))
+        .filter(user_sdwt_prod_lookup__in=display_map.keys())
+        .values_list("user_sdwt_prod_lookup", flat=True)
+        .distinct()
+    )
+    return {display_map[key] for key in existing_lookup_keys if key in display_map}
 
 
 def get_affiliation_lines_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> dict[str, str]:
@@ -185,28 +303,31 @@ def get_affiliation_lines_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> d
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized = [value.strip() for value in user_sdwt_prods if isinstance(value, str) and value.strip()]
-    if not normalized:
+    display_map = _build_user_sdwt_display_map(user_sdwt_prods)
+    if not display_map:
         return {}
 
     # -----------------------------------------------------------------------------
     # 2) line 매핑 조회
     # -----------------------------------------------------------------------------
     rows = (
-        Affiliation.objects.filter(user_sdwt_prod__in=normalized)
+        Affiliation.objects.annotate(user_sdwt_prod_lookup=Lower("user_sdwt_prod"))
+        .filter(user_sdwt_prod_lookup__in=display_map.keys())
         .exclude(line__isnull=True)
         .exclude(line__exact="")
-        .values("user_sdwt_prod", "line")
+        .values("user_sdwt_prod_lookup", "line")
     )
     result: dict[str, str] = {}
     for row in rows:
-        user_sdwt_prod = row.get("user_sdwt_prod")
+        lookup_key = row.get("user_sdwt_prod_lookup")
         line = row.get("line")
-        if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        if not isinstance(lookup_key, str) or not lookup_key.strip():
             continue
         if not isinstance(line, str) or not line.strip():
             continue
-        result[user_sdwt_prod.strip()] = line
+        display_value = display_map.get(lookup_key)
+        if display_value and display_value not in result:
+            result[display_value] = line
     return result
 
 
@@ -229,20 +350,23 @@ def get_most_common_departments_by_user_sdwt_prods(*, user_sdwt_prods: list[str]
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized = [value.strip() for value in user_sdwt_prods if isinstance(value, str) and value.strip()]
-    if not normalized:
+    display_map = _build_user_sdwt_display_map(user_sdwt_prods)
+    if not display_map:
         return {}
 
     # -----------------------------------------------------------------------------
     # 2) department 빈도 집계(동률은 가장 먼저 등장한 id 우선)
     # -----------------------------------------------------------------------------
     rows = (
-        ExternalAffiliationSnapshot.objects.filter(predicted_user_sdwt_prod__in=normalized)
+        ExternalAffiliationSnapshot.objects.annotate(
+            predicted_user_sdwt_prod_lookup=Lower("predicted_user_sdwt_prod")
+        )
+        .filter(predicted_user_sdwt_prod_lookup__in=display_map.keys())
         .exclude(department__isnull=True)
         .exclude(department__exact="")
-        .values("predicted_user_sdwt_prod", "department")
+        .values("predicted_user_sdwt_prod_lookup", "department")
         .annotate(count=Count("id"), min_id=Min("id"))
-        .order_by("predicted_user_sdwt_prod", "-count", "min_id")
+        .order_by("predicted_user_sdwt_prod_lookup", "-count", "min_id")
     )
 
     # -----------------------------------------------------------------------------
@@ -250,14 +374,15 @@ def get_most_common_departments_by_user_sdwt_prods(*, user_sdwt_prods: list[str]
     # -----------------------------------------------------------------------------
     result: dict[str, str] = {}
     for row in rows:
-        key = row.get("predicted_user_sdwt_prod")
+        key = row.get("predicted_user_sdwt_prod_lookup")
         department = row.get("department")
         if not isinstance(key, str) or not key.strip():
             continue
         if not isinstance(department, str) or not department.strip():
             continue
-        if key not in result:
-            result[key] = department
+        display_value = display_map.get(key)
+        if display_value and display_value not in result:
+            result[display_value] = department
     return result
 
 
@@ -285,7 +410,7 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     # -----------------------------------------------------------------------------
     # 2) 존재 여부 조회
     # -----------------------------------------------------------------------------
-    return Affiliation.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).exists()
+    return Affiliation.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod.strip()).exists()
 
 
 def list_active_user_emails_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
@@ -315,7 +440,7 @@ def list_active_user_emails_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[st
     # -----------------------------------------------------------------------------
     User = get_user_model()
     rows = (
-        User.objects.filter(user_sdwt_prod=user_sdwt_prod.strip(), is_active=True)
+        User.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod.strip(), is_active=True)
         .exclude(email__isnull=True)
         .exclude(email__exact="")
         .values_list("email", flat=True)
@@ -362,7 +487,7 @@ def list_active_user_knox_ids_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[
     # -----------------------------------------------------------------------------
     User = get_user_model()
     rows = (
-        User.objects.filter(user_sdwt_prod=user_sdwt_prod.strip(), is_active=True)
+        User.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod.strip(), is_active=True)
         .exclude(knox_id__isnull=True)
         .exclude(knox_id__exact="")
         .values_list("knox_id", flat=True)
@@ -515,9 +640,13 @@ def user_has_manage_permission(*, user: Any, user_sdwt_prod: str) -> bool:
     - 없음
     """
 
+    normalized = _normalize_user_sdwt_prod(user_sdwt_prod)
+    if not normalized:
+        return False
+
     return UserSdwtProdAccess.objects.filter(
         user=user,
-        user_sdwt_prod=user_sdwt_prod,
+        user_sdwt_prod__iexact=normalized,
         role=UserSdwtProdAccess.Roles.MANAGER,
     ).exists()
 
@@ -744,7 +873,7 @@ def get_current_user_sdwt_prod_change(*, user: Any) -> UserSdwtProdChange | None
     # -----------------------------------------------------------------------------
     normalized = current_user_sdwt_prod.strip()
     return (
-        UserSdwtProdChange.objects.filter(user=user, to_user_sdwt_prod=normalized)
+        UserSdwtProdChange.objects.filter(user=user, to_user_sdwt_prod__iexact=normalized)
         .filter(Q(status=UserSdwtProdChange.Status.APPROVED) | Q(approved=True))
         .order_by("-effective_from", "-id")
         .first()
@@ -845,9 +974,14 @@ def get_access_row_for_user_and_prod(
     - 없음
     """
 
+    normalized = _normalize_user_sdwt_prod(user_sdwt_prod)
+    if not normalized:
+        return None
+
     return (
-        UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod=user_sdwt_prod)
+        UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod__iexact=normalized)
         .select_related("user")
+        .order_by("id")
         .first()
     )
 
@@ -873,9 +1007,13 @@ def other_manager_exists(
     - 없음
     """
 
+    normalized = _normalize_user_sdwt_prod(user_sdwt_prod)
+    if not normalized:
+        return False
+
     return (
         UserSdwtProdAccess.objects.filter(
-            user_sdwt_prod=user_sdwt_prod,
+            user_sdwt_prod__iexact=normalized,
             role=UserSdwtProdAccess.Roles.MANAGER,
         )
         .exclude(user=exclude_user)
@@ -908,7 +1046,7 @@ def list_manageable_user_sdwt_prod_values(*, user: Any) -> set[str]:
             flat=True,
         )
     )
-    return {val for val in values if isinstance(val, str) and val.strip()}
+    return _collapse_user_sdwt_prod_values(values)
 
 
 def list_approvable_user_sdwt_prod_values(*, user: Any) -> set[str]:
@@ -936,7 +1074,7 @@ def list_approvable_user_sdwt_prod_values(*, user: Any) -> set[str]:
             flat=True,
         )
     )
-    return {val for val in values if isinstance(val, str) and val.strip()}
+    return _collapse_user_sdwt_prod_values(values)
 
 
 def has_approver_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
@@ -960,7 +1098,7 @@ def has_approver_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
         return False
 
     return UserSdwtProdAccess.objects.filter(
-        user_sdwt_prod=normalized,
+        user_sdwt_prod__iexact=normalized,
         role__in=[UserSdwtProdAccess.Roles.MEMBER, UserSdwtProdAccess.Roles.MANAGER],
     ).exists()
 
@@ -1001,7 +1139,12 @@ def list_affiliation_change_requests(
     if allowed_user_sdwt_prods is not None:
         if not allowed_user_sdwt_prods:
             return UserSdwtProdChange.objects.none()
-        qs = qs.filter(to_user_sdwt_prod__in=allowed_user_sdwt_prods)
+        allowed_lookup_keys = list(_build_user_sdwt_display_map(allowed_user_sdwt_prods).keys())
+        if not allowed_lookup_keys:
+            return UserSdwtProdChange.objects.none()
+        qs = qs.annotate(to_user_sdwt_prod_lookup=Lower("to_user_sdwt_prod")).filter(
+            to_user_sdwt_prod_lookup__in=allowed_lookup_keys
+        )
 
     # -----------------------------------------------------------------------------
     # 3) 상태 필터
@@ -1033,7 +1176,7 @@ def list_affiliation_change_requests(
     # 4) 소속 필터
     # -----------------------------------------------------------------------------
     if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
-        qs = qs.filter(to_user_sdwt_prod=user_sdwt_prod.strip())
+        qs = qs.filter(to_user_sdwt_prod__iexact=user_sdwt_prod.strip())
 
     # -----------------------------------------------------------------------------
     # 5) 검색어 필터
@@ -1071,8 +1214,13 @@ def list_group_members(*, user_sdwt_prods: set[str]) -> QuerySet[UserSdwtProdAcc
     - 없음
     """
 
+    lookup_keys = list(_build_user_sdwt_display_map(user_sdwt_prods).keys())
+    if not lookup_keys:
+        return UserSdwtProdAccess.objects.none()
+
     return (
-        UserSdwtProdAccess.objects.filter(user_sdwt_prod__in=user_sdwt_prods)
+        UserSdwtProdAccess.objects.annotate(user_sdwt_prod_lookup=Lower("user_sdwt_prod"))
+        .filter(user_sdwt_prod_lookup__in=lookup_keys)
         .select_related("user")
         .order_by("user_sdwt_prod", "user_id")
     )
@@ -1256,14 +1404,15 @@ def get_affiliation_option(
     # -----------------------------------------------------------------------------
     # 2) 단일 행 조회
     # -----------------------------------------------------------------------------
-    try:
-        return Affiliation.objects.get(
+    return (
+        Affiliation.objects.filter(
             department=department.strip(),
             line=line.strip(),
-            user_sdwt_prod=user_sdwt_prod.strip(),
+            user_sdwt_prod__iexact=user_sdwt_prod.strip(),
         )
-    except Affiliation.DoesNotExist:
-        return None
+        .order_by("id")
+        .first()
+    )
 
 
 def get_affiliation_option_by_user_sdwt_prod(*, user_sdwt_prod: str) -> Affiliation | None:
@@ -1292,7 +1441,7 @@ def get_affiliation_option_by_user_sdwt_prod(*, user_sdwt_prod: str) -> Affiliat
     # 2) 단일 행 여부 확인
     # -----------------------------------------------------------------------------
     normalized = user_sdwt_prod.strip()
-    rows = list(Affiliation.objects.filter(user_sdwt_prod=normalized).order_by("id")[:2])
+    rows = list(Affiliation.objects.filter(user_sdwt_prod__iexact=normalized).order_by("id")[:2])
     if len(rows) != 1:
         return None
     return rows[0]

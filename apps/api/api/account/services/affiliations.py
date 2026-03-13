@@ -22,6 +22,7 @@ from ..models import Affiliation
 from .. import selectors
 from .access import _current_access_list
 from .affiliation_requests import request_affiliation_change
+from .utils import _same_user_sdwt_prod
 
 
 def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
@@ -386,7 +387,7 @@ def submit_affiliation_reconfirm_response(
         return {"error": "user_sdwt_prod is required"}, 400
 
     current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
-    if current_user_sdwt and current_user_sdwt == selected_user_sdwt:
+    if _same_user_sdwt_prod(current_user_sdwt, selected_user_sdwt):
         user.requires_affiliation_reconfirm = False
         user.save(update_fields=["requires_affiliation_reconfirm"])
         return {
@@ -405,7 +406,7 @@ def submit_affiliation_reconfirm_response(
     # 6) 변경 요청 생성 및 결과 반환
     # -----------------------------------------------------------------------------
     # 예측값과 다르면 승인 대기 강제
-    force_pending = selected_user_sdwt != predicted
+    force_pending = not _same_user_sdwt_prod(selected_user_sdwt, predicted)
     response_payload, status_code = request_affiliation_change(
         user=user,
         option=option,

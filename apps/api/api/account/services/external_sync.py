@@ -22,6 +22,11 @@ from django.utils import timezone
 from ..models import Affiliation, ExternalAffiliationSnapshot
 from .. import selectors
 from .access import ensure_self_access
+from .utils import (
+    _build_user_sdwt_display_map,
+    _normalize_user_sdwt_lookup_key,
+    _same_user_sdwt_prod,
+)
 
 
 def sync_external_affiliations(
@@ -111,7 +116,7 @@ def sync_external_affiliations(
         # -----------------------------------------------------------------------------
         # 4) 변경 여부 판단
         # -----------------------------------------------------------------------------
-        changed = snapshot.predicted_user_sdwt_prod != predicted
+        changed = not _same_user_sdwt_prod(snapshot.predicted_user_sdwt_prod, predicted)
         changed_department = (snapshot.department or "").strip() != department
         changed_source = snapshot.source_updated_at != source_updated_at
         if changed or changed_department or changed_source:
@@ -164,7 +169,7 @@ def sync_external_affiliations(
                 continue
 
             predicted = (predicted_by_knox.get(knox_id) or "").strip()
-            if not predicted or current_user_sdwt == predicted:
+            if not predicted or _same_user_sdwt_prod(current_user_sdwt, predicted):
                 continue
 
             user.requires_affiliation_reconfirm = True
@@ -179,13 +184,15 @@ def sync_external_affiliations(
     # 7) 소속 옵션 누락분 추가
     # -----------------------------------------------------------------------------
     if affiliation_candidates:
-        user_sdwt_prods = list(affiliation_candidates.keys())
+        user_sdwt_display_map = _build_user_sdwt_display_map(affiliation_candidates.keys())
+        user_sdwt_prods = list(user_sdwt_display_map.values())
         existing_user_sdwt_prods = selectors.get_existing_affiliation_user_sdwt_prods(
             user_sdwt_prods=user_sdwt_prods
         )
         most_common_departments = selectors.get_most_common_departments_by_user_sdwt_prods(
             user_sdwt_prods=user_sdwt_prods
         )
+        existing_lookup_keys = set(_build_user_sdwt_display_map(existing_user_sdwt_prods).keys())
         missing = [
             Affiliation(
                 department=most_common_departments.get(user_sdwt_prod) or affiliation_candidates[user_sdwt_prod],
@@ -193,7 +200,7 @@ def sync_external_affiliations(
                 user_sdwt_prod=user_sdwt_prod,
             )
             for user_sdwt_prod in user_sdwt_prods
-            if user_sdwt_prod not in existing_user_sdwt_prods
+            if _normalize_user_sdwt_lookup_key(user_sdwt_prod) not in existing_lookup_keys
         ]
         if missing:
             with transaction.atomic():

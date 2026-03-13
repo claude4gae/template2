@@ -219,10 +219,10 @@ def _resolve_channel_config(
 ) -> ChannelConfig | None:
     """row 기준 채널 설정을 조회합니다."""
 
-    target = row.get("target_user_sdwt_prod")
-    if not isinstance(target, str) or not target.strip():
+    target = _normalize_target_lookup_key(row.get("target_user_sdwt_prod"))
+    if not target:
         return None
-    return channel_by_target.get(target.strip())
+    return channel_by_target.get(target)
 
 
 def _normalize_string_value(value: Any) -> str | None:
@@ -232,6 +232,15 @@ def _normalize_string_value(value: Any) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned if cleaned else None
+
+
+def _normalize_target_lookup_key(value: Any) -> str | None:
+    """대소문자 비구분 채널 조회용 target 키를 정규화합니다."""
+
+    cleaned = _normalize_string_value(value)
+    if not cleaned:
+        return None
+    return cleaned.casefold()
 
 
 def _normalize_chatroom_id(value: Any) -> int | None:

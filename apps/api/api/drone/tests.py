@@ -376,6 +376,91 @@ class DroneSopJiraUpdateTests(TestCase):
         self.assertIsNotNone(refreshed.informed_at)
 
 
+class DroneSelectorCaseInsensitiveTests(TestCase):
+    """sdwt/user/target 소속 비교의 대소문자 비구분 동작을 검증합니다."""
+
+    def test_selector_lookups_ignore_case_for_user_sdwt_prod_and_target(self) -> None:
+        """소속/채널/수신자 조회가 대소문자를 무시하는지 확인합니다."""
+        User = get_user_model()
+        User.objects.create_user(
+            sabun="S71000",
+            password="test-password",
+            knox_id="knox-71000",
+            email="user71000@example.com",
+            user_sdwt_prod="TARGET-SDWT",
+        )
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="TARGET-SDWT",
+        )
+        DroneSopNeedToSendRule.objects.create(
+            target_user_sdwt_prod="TARGET-SDWT",
+            comment_last_at="$END",
+            ignore_sample_type=False,
+        )
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="TARGET-SDWT",
+            jira_key="PROJ",
+            jira_template_key="common",
+        )
+
+        rule = selectors.get_drone_sop_needtosend_rule_by_target(target_user_sdwt_prod="target-sdwt")
+        channel = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(
+            target_user_sdwt_prod="target-sdwt"
+        )
+        line_ids = selectors.list_line_ids_for_user_sdwt_prod(user_sdwt_prod="target-sdwt")
+        emails = selectors.list_mail_receiver_emails_for_user_sdwt_prod(user_sdwt_prod="target-sdwt")
+        knox_ids = selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+            user_sdwt_prod="target-sdwt"
+        )
+
+        self.assertIsNotNone(rule)
+        if rule is None:
+            return
+        self.assertEqual(rule.comment_last_at, "$END")
+        self.assertIsNotNone(channel)
+        if channel is None:
+            return
+        self.assertEqual(channel.jira_key, "PROJ")
+        self.assertEqual(line_ids, ["L1"])
+        self.assertEqual(emails, ["user71000@example.com"])
+        self.assertEqual(knox_ids, ["knox-71000"])
+
+    def test_build_drone_sop_row_applies_custom_end_step_case_insensitively(self) -> None:
+        """조기 알림 custom_end_step 매핑이 user_sdwt_prod 대소문자를 무시하는지 확인합니다."""
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="TARGET-SDWT",
+        )
+        DroneEarlyInform.objects.create(
+            line_id="L1",
+            main_step="MS",
+            custom_end_step="ST003",
+        )
+
+        early_inform_map = selectors.load_drone_sop_custom_end_step_map()
+        row = build_drone_sop_row(
+            html=(
+                "<html><body><data>"
+                "<line_id>L1</line_id>"
+                "<main_step>MS</main_step>"
+                "<metro_current_step>ST003</metro_current_step>"
+                "<status>IN_PROGRESS</status>"
+                "<user_sdwt_prod>target-sdwt</user_sdwt_prod>"
+                "</data></body></html>"
+            ),
+            early_inform_map=early_inform_map,
+        )
+
+        self.assertIsNotNone(row)
+        if row is None:
+            return
+        self.assertEqual(row["custom_end_step"], "ST003")
+        self.assertEqual(row["status"], "COMPLETE")
+
+
 class DroneSopInstantInformTests(TestCase):
     """즉시 인폼 요청 로직을 검증합니다."""
 
@@ -409,6 +494,30 @@ class DroneSopInstantInformTests(TestCase):
         self.assertEqual(refreshed.instant_inform, 1)
         self.assertEqual(refreshed.target_user_sdwt_prod, "TARGET-SDWT")
         self.assertEqual(refreshed.send_jira, -1)
+
+    def test_enqueue_instant_inform_resolves_target_case_insensitively(self) -> None:
+        """즉시 인폼 대상 매핑이 sdwt/user 소속 대소문자를 무시하는지 확인합니다."""
+        _ensure_target_mapping(
+            sdwt_prod="SDWT",
+            user_sdwt_prod="USR",
+            target_user_sdwt_prod="TARGET-SDWT",
+        )
+        row = _create_drone_sop(
+            sdwt_prod="sdwt",
+            user_sdwt_prod="usr",
+            status="IN_PROGRESS",
+            needtosend=0,
+            send_jira=-1,
+            instant_inform=-1,
+        )
+
+        result = services.enqueue_drone_sop_jira_instant_inform(sop_id=int(row.id), comment=None)
+
+        self.assertTrue(result.queued)
+        self.assertEqual(result.updated_fields.get("target_user_sdwt_prod"), "TARGET-SDWT")
+
+        refreshed = DroneSOP.objects.get(id=row.id)
+        self.assertEqual(refreshed.target_user_sdwt_prod, "TARGET-SDWT")
 
     def test_enqueue_instant_inform_returns_already_informed(self) -> None:
         """이미 Jira 전송된 항목도 instant_inform을 1로 유지하는지 확인합니다."""
@@ -693,6 +802,7 @@ class DroneEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json().get("hasCandidates"))
 
+
 class DroneJiraKeyEndpointTests(TestCase):
     """Jira 키/템플릿 키 엔드포인트를 검증합니다."""
 
@@ -730,6 +840,20 @@ class DroneJiraKeyEndpointTests(TestCase):
 
         self.client.force_login(self.user)
         response = self.client.get(reverse("line-dashboard-jira-keys"), {"userSdwtProd": "SDWT"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["jiraKey"], "PROJ")
+        self.assertEqual(response.json()["templateKey"], "common")
+
+    def test_jira_key_get_matches_user_sdwt_prod_case_insensitively(self) -> None:
+        """GET 조회가 userSdwtProd 대소문자를 구분하지 않는지 확인합니다."""
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT",
+            jira_template_key="common",
+            jira_key="PROJ",
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("line-dashboard-jira-keys"), {"userSdwtProd": "sdwt"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["jiraKey"], "PROJ")
         self.assertEqual(response.json()["templateKey"], "common")
@@ -784,6 +908,33 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(refreshed.jira_key, "PROJ")
         self.assertEqual(refreshed.jira_template_key, "common")
         self.assertEqual(refreshed.messenger_template_key, "common")
+
+    def test_jira_key_update_reuses_existing_channel_case_insensitively(self) -> None:
+        """POST 갱신이 target_user_sdwt_prod 대소문자를 무시하고 기존 채널을 재사용하는지 확인합니다."""
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT",
+            jira_template_key="old",
+            jira_key="OLD",
+        )
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(
+                {
+                    "userSdwtProd": "sdwt",
+                    "jiraKey": "PROJ",
+                    "templateKey": "common",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(DroneSopUserSdwtChannel.objects.count(), 1)
+        refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
+        self.assertEqual(refreshed.jira_key, "PROJ")
+        self.assertEqual(refreshed.jira_template_key, "common")
 
     def test_jira_key_post_rejects_snake_case_user_sdwt_prod(self) -> None:
         """POST 갱신은 user_sdwt_prod(snake_case) 키를 허용하지 않는지 확인합니다."""
@@ -3135,8 +3286,8 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         result = table_schema.build_line_filters(["user_sdwt_prod", "sdwt_prod", "line_id"], "L1")
 
         expected = (
-            "sdwt_prod IN ("
-            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "LOWER(sdwt_prod) IN ("
+            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
             "WHERE line = %s "
             "AND user_sdwt_prod IS NOT NULL "
             "AND user_sdwt_prod <> ''"
@@ -3157,8 +3308,8 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
         expected = (
-            "target_user_sdwt_prod IN ("
-            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "LOWER(target_user_sdwt_prod) IN ("
+            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
             "WHERE line = %s "
             "AND user_sdwt_prod IS NOT NULL "
             "AND user_sdwt_prod <> ''"
@@ -3179,8 +3330,8 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
         expected = (
-            "user_sdwt_prod IN ("
-            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "LOWER(user_sdwt_prod) IN ("
+            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
             "WHERE line = %s "
             "AND user_sdwt_prod IS NOT NULL "
             "AND user_sdwt_prod <> ''"
@@ -3201,8 +3352,8 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
         expected = (
-            "sdwt_prod IN ("
-            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "LOWER(sdwt_prod) IN ("
+            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
             "WHERE line = %s "
             "AND user_sdwt_prod IS NOT NULL "
             "AND user_sdwt_prod <> ''"
@@ -3219,8 +3370,8 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         result = table_schema.build_line_filters(["user_sdwt_prod", "line_id"], "L1")
 
         expected = (
-            "user_sdwt_prod IN ("
-            f"SELECT user_sdwt_prod FROM {table_schema.LINE_SDWT_TABLE_NAME} "
+            "LOWER(user_sdwt_prod) IN ("
+            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
             "WHERE line = %s "
             "AND user_sdwt_prod IS NOT NULL "
             "AND user_sdwt_prod <> ''"

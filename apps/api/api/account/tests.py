@@ -714,6 +714,53 @@ class AffiliationChangeRequestListTests(TestCase):
         self.assertEqual(len(ids), 1)
         self.assertEqual(payload["results"][0]["role"], "manager")
 
+    def test_manager_filters_manageable_groups_case_insensitively(self) -> None:
+        """관리 그룹 필터가 user_sdwt_prod 대소문자를 구분하지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 관리자/요청자 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        manager = User.objects.create_user(
+            sabun="S90010",
+            password="test-password",
+            knox_id="knox-90010",
+        )
+        UserSdwtProdAccess.objects.create(user=manager, user_sdwt_prod="GROUP-A", role="manager")
+
+        requester = User.objects.create_user(
+            sabun="S90011",
+            password="test-password",
+            knox_id="knox-90011",
+        )
+
+        # -----------------------------------------------------------------------------
+        # 2) 변경 요청 생성
+        # -----------------------------------------------------------------------------
+        change = UserSdwtProdChange.objects.create(
+            user=requester,
+            to_user_sdwt_prod="group-a",
+            effective_from=timezone.now(),
+            status=UserSdwtProdChange.Status.PENDING,
+            applied=False,
+            approved=False,
+            created_by=requester,
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 서비스 호출 및 결과 검증
+        # -----------------------------------------------------------------------------
+        payload, status_code = get_affiliation_change_requests(
+            user=manager,
+            status="pending",
+            search=None,
+            user_sdwt_prod="group-a",
+            page=1,
+            page_size=20,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual([entry["id"] for entry in payload["results"]], [change.id])
+
     def test_search_filters_by_sabun(self) -> None:
         """검색 조건이 사번 필터에 적용되는지 확인합니다."""
         # -----------------------------------------------------------------------------
@@ -945,6 +992,38 @@ class AccountOverviewTests(TestCase):
         group_a_row = next(row for row in payload["mailboxAccess"] if row["userSdwtProd"] == "group-a")
         self.assertEqual(group_a_row["myEmailCount"], 1)
 
+    def test_account_overview_collapses_accessible_groups_case_insensitively(self) -> None:
+        """개요 응답의 접근 가능 그룹이 대소문자 비구분으로 중복 제거되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자/접근 권한 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S90010",
+            password="test-password",
+            knox_id="knox-90010",
+        )
+        user.user_sdwt_prod = "GROUP-A"
+        user.save(update_fields=["user_sdwt_prod"])
+        UserSdwtProdAccess.objects.create(user=user, user_sdwt_prod="group-a", role="member")
+        UserSdwtProdAccess.objects.create(user=user, user_sdwt_prod="group-b", role="manager")
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        payload = get_account_overview(user=user, timezone_name="Asia/Seoul")
+
+        accessible_rows = payload["affiliation"]["accessibleUserSdwtProds"]
+        normalized_groups = {row["userSdwtProd"].casefold() for row in accessible_rows}
+
+        self.assertEqual(len(accessible_rows), 2)
+        self.assertEqual(normalized_groups, {"group-a", "group-b"})
+
+        group_a_row = next(
+            row for row in accessible_rows if isinstance(row["userSdwtProd"], str) and row["userSdwtProd"].casefold() == "group-a"
+        )
+        self.assertEqual(group_a_row["source"], "self")
+
     def test_request_affiliation_change_defaults_to_request_time(self) -> None:
         """effective_from이 없으면 요청 시각이 사용되는지 확인합니다."""
         User = get_user_model()
@@ -1094,6 +1173,31 @@ class AffiliationChangeRequestTests(TestCase):
         self.assertEqual(payload["error"], "already current affiliation")
         self.assertFalse(UserSdwtProdChange.objects.filter(user=user).exists())
 
+    def test_request_affiliation_change_rejects_same_as_current_case_insensitively(self) -> None:
+        """현재 소속과 대소문자만 다른 값으로 요청해도 거절되는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S50013",
+            password="test-password",
+            knox_id="knox-50013",
+        )
+        user.user_sdwt_prod = "GROUP-A"
+        user.save(update_fields=["user_sdwt_prod"])
+
+        option = Affiliation.objects.create(department="Dept", line="Line", user_sdwt_prod="group-a")
+
+        payload, status_code = request_affiliation_change(
+            user=user,
+            option=option,
+            to_user_sdwt_prod="group-a",
+            effective_from=timezone.now(),
+            timezone_name="Asia/Seoul",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(payload["error"], "already current affiliation")
+        self.assertFalse(UserSdwtProdChange.objects.filter(user=user).exists())
+
     def test_request_affiliation_change_creates_pending_when_no_approver_and_no_prediction(self) -> None:
         """승인자가 없어도 예측 소속이 없으면 승인 대기가 생성되는지 확인합니다."""
         User = get_user_model()
@@ -1169,6 +1273,41 @@ class AffiliationChangeRequestTests(TestCase):
         self.assertEqual(change.status, UserSdwtProdChange.Status.APPROVED)
         access = UserSdwtProdAccess.objects.get(user=user, user_sdwt_prod="group-auto")
         self.assertEqual(access.role, "member")
+
+    def test_request_affiliation_change_auto_applies_when_predicted_match_case_insensitively(self) -> None:
+        """예측 소속과 대소문자만 다른 요청도 자동 승인되는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S50023",
+            password="test-password",
+            knox_id="knox-50023",
+        )
+
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="knox-50023",
+            predicted_user_sdwt_prod="GROUP-AUTO",
+            source_updated_at=timezone.now(),
+            last_seen_at=timezone.now(),
+        )
+
+        option = Affiliation.objects.create(department="Dept", line="Line", user_sdwt_prod="group-auto")
+
+        payload, status_code = request_affiliation_change(
+            user=user,
+            option=option,
+            to_user_sdwt_prod="group-auto",
+            effective_from=timezone.now() - timedelta(days=30),
+            timezone_name="Asia/Seoul",
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["status"], "applied")
+
+        user.refresh_from_db()
+        self.assertEqual(user.user_sdwt_prod, "group-auto")
+
+        change = UserSdwtProdChange.objects.get(id=payload["changeId"])
+        self.assertEqual(change.status, UserSdwtProdChange.Status.APPROVED)
 
     def test_request_affiliation_change_supersedes_pending_and_skips_auto_apply(self) -> None:
         """기존 pending이 있으면 대체하고 자동 승인을 건너뛰는지 확인합니다."""
@@ -1315,6 +1454,51 @@ class ExternalAffiliationSyncTests(TestCase):
         self.assertEqual(result["updated"], 1)
         self.assertTrue(user.requires_affiliation_reconfirm)
 
+    def test_sync_external_affiliations_ignores_case_only_predicted_change(self) -> None:
+        """예측 소속이 대소문자만 다르면 변경으로 보지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자/스냅샷 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S70009", password="test-password")
+        user.knox_id = "loginid-ext-9"
+        user.user_sdwt_prod = "group-a"
+        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+
+        updated_at = timezone.now()
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="loginid-ext-9",
+            department="Dept",
+            predicted_user_sdwt_prod="GROUP-A",
+            source_updated_at=updated_at,
+            last_seen_at=updated_at,
+        )
+
+        # -----------------------------------------------------------------------------
+        # 2) 동일 소속(대소문자만 다름) 동기화 호출
+        # -----------------------------------------------------------------------------
+        result = sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "loginid-ext-9",
+                    "department": "Dept",
+                    "user_sdwt_prod": "group-a",
+                    "source_updated_at": updated_at,
+                }
+            ]
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        user.refresh_from_db()
+        snapshot = ExternalAffiliationSnapshot.objects.get(knox_id="loginid-ext-9")
+
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(result["unchanged"], 1)
+        self.assertFalse(user.requires_affiliation_reconfirm)
+        self.assertEqual(snapshot.predicted_user_sdwt_prod, "GROUP-A")
+
     def test_sync_external_affiliations_ignores_when_pending_exists(self) -> None:
         """대기 변경이 있으면 재확인 플래그를 켜지 않는지 확인합니다."""
         # -----------------------------------------------------------------------------
@@ -1441,6 +1625,34 @@ class ExternalAffiliationSyncTests(TestCase):
         self.assertIsNotNone(option)
         self.assertEqual(option.department, "Dept")
         self.assertEqual(option.line, "")
+
+    def test_sync_external_affiliations_reuses_affiliation_option_case_insensitively(self) -> None:
+        """기존 소속 옵션이 대소문자만 다르면 중복 생성하지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 기존 소속 옵션 준비
+        # -----------------------------------------------------------------------------
+        Affiliation.objects.create(department="Dept", line="", user_sdwt_prod="GROUP-NEW")
+
+        # -----------------------------------------------------------------------------
+        # 2) 외부 동기화 호출
+        # -----------------------------------------------------------------------------
+        sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "loginid-ext-13",
+                    "department": "Dept",
+                    "user_sdwt_prod": "group-new",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(Affiliation.objects.filter(user_sdwt_prod__iexact="group-new").count(), 1)
+        option = Affiliation.objects.get(user_sdwt_prod__iexact="group-new")
+        self.assertEqual(option.user_sdwt_prod, "GROUP-NEW")
 
     def test_sync_external_affiliations_sets_department_by_majority(self) -> None:
         """동일 user_sdwt_prod의 최빈 department로 소속 옵션이 생성되는지 확인합니다."""
@@ -1611,6 +1823,40 @@ class ExternalAffiliationSyncTests(TestCase):
         self.assertEqual(user.user_sdwt_prod, "group-x")
         self.assertFalse(user.requires_affiliation_reconfirm)
 
+    def test_reconfirm_response_keeps_current_affiliation_case_insensitively(self) -> None:
+        """재확인에서 현재 소속과 대소문자만 다른 선택을 해도 유지 처리되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S70010", password="test-password")
+        user.knox_id = "loginid-ext-10"
+        user.user_sdwt_prod = "GROUP-X"
+        user.requires_affiliation_reconfirm = True
+        user.save(update_fields=["knox_id", "user_sdwt_prod", "requires_affiliation_reconfirm"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 재확인 응답
+        # -----------------------------------------------------------------------------
+        payload, status_code = submit_affiliation_reconfirm_response(
+            user=user,
+            accepted=True,
+            department="Dept",
+            line="Line",
+            user_sdwt_prod="group-x",
+            timezone_name="Asia/Seoul",
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["status"], "kept")
+
+        user.refresh_from_db()
+        self.assertEqual(user.user_sdwt_prod, "GROUP-X")
+        self.assertFalse(user.requires_affiliation_reconfirm)
+
     def test_auto_approve_affiliation_from_snapshot(self) -> None:
         """외부 스냅샷 기반 자동 승인이 적용되는지 확인합니다."""
         # -----------------------------------------------------------------------------
@@ -1685,6 +1931,28 @@ class AffiliationLineSyncTests(TestCase):
         self.assertEqual(user_empty.line, "LineA")
         self.assertEqual(user_filled.line, "LineB")
 
+    def test_sync_user_lines_from_affiliations_matches_user_sdwt_prod_case_insensitively(self) -> None:
+        """line 동기화가 user_sdwt_prod 대소문자를 구분하지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 소속/사용자 준비
+        # -----------------------------------------------------------------------------
+        Affiliation.objects.create(department="Dept", line="LineA", user_sdwt_prod="GROUP-A")
+
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S71003", password="test-password")
+        user.user_sdwt_prod = "group-a"
+        user.line = ""
+        user.save(update_fields=["user_sdwt_prod", "line"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 동기화 실행 및 결과 검증
+        # -----------------------------------------------------------------------------
+        result = sync_user_lines_from_affiliations(users=[user])
+
+        self.assertEqual(result.get("updated"), 1)
+        user.refresh_from_db()
+        self.assertEqual(user.line, "LineA")
+
 
 class AccountProfileAccessServiceTests(TestCase):
     """프로필/접근 권한 서비스 로직을 검증합니다."""
@@ -1732,6 +2000,38 @@ class AccountProfileAccessServiceTests(TestCase):
         self.assertEqual(access.user_sdwt_prod, "group-a")
         self.assertEqual(
             UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod="group-a").count(),
+            1,
+        )
+
+    def test_ensure_self_access_reuses_existing_row_case_insensitively(self) -> None:
+        """기존 접근 권한 행이 대소문자만 다르면 재사용하는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자/기존 접근 권한 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S80003", password="test-password")
+        user.user_sdwt_prod = "GROUP-A"
+        user.save(update_fields=["user_sdwt_prod"])
+
+        existing = UserSdwtProdAccess.objects.create(
+            user=user,
+            user_sdwt_prod="group-a",
+            role="viewer",
+        )
+
+        # -----------------------------------------------------------------------------
+        # 2) 접근 권한 보장
+        # -----------------------------------------------------------------------------
+        access = ensure_self_access(user, role="member")
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertIsNotNone(access)
+        self.assertEqual(access.id, existing.id)
+        self.assertEqual(access.role, "member")
+        self.assertEqual(
+            UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod__iexact="group-a").count(),
             1,
         )
 
@@ -1787,6 +2087,24 @@ class AccountSelectorEmailTests(TestCase):
         # -----------------------------------------------------------------------------
         self.assertEqual(emails, ["dup@example.com", "other@example.com"])
 
+    def test_list_active_user_emails_matches_user_sdwt_prod_case_insensitively(self) -> None:
+        """활성 사용자 이메일 조회가 user_sdwt_prod 대소문자를 구분하지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 데이터 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+
+        user = User.objects.create_user(sabun="S82007", password="test-password")
+        user.user_sdwt_prod = "GROUP-A"
+        user.email = "case@example.com"
+        user.save(update_fields=["user_sdwt_prod", "email"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 셀렉터 호출 및 결과 검증
+        # -----------------------------------------------------------------------------
+        emails = list_active_user_emails_by_user_sdwt_prod(user_sdwt_prod="group-a")
+        self.assertEqual(emails, ["case@example.com"])
+
     def test_list_active_user_knox_ids_deduplicates_and_filters_invalid_values(self) -> None:
         """활성 사용자 knox_id 목록이 중복 제거/공백 제거되어 반환되는지 확인합니다."""
         # -----------------------------------------------------------------------------
@@ -1834,3 +2152,21 @@ class AccountSelectorEmailTests(TestCase):
         # 3) 결과 검증
         # -----------------------------------------------------------------------------
         self.assertEqual(knox_ids, ["knox-dup", "knox-other"])
+
+    def test_list_active_user_knox_ids_matches_user_sdwt_prod_case_insensitively(self) -> None:
+        """활성 사용자 knox_id 조회가 user_sdwt_prod 대소문자를 구분하지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 데이터 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+
+        user = User.objects.create_user(sabun="S82017", password="test-password")
+        user.user_sdwt_prod = "GROUP-A"
+        user.knox_id = "knox-case"
+        user.save(update_fields=["user_sdwt_prod", "knox_id"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 셀렉터 호출 및 결과 검증
+        # -----------------------------------------------------------------------------
+        knox_ids = list_active_user_knox_ids_by_user_sdwt_prod(user_sdwt_prod="group-a")
+        self.assertEqual(knox_ids, ["knox-case"])

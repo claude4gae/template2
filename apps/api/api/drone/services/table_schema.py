@@ -161,8 +161,8 @@ def _build_line_sdwt_subquery_filter(*, column_name: str) -> str:
     """account_affiliation(line, user_sdwt_prod) 서브쿼리 기반 필터를 생성합니다."""
 
     return (
-        "{col} IN ("
-        "SELECT user_sdwt_prod FROM {table} "
+        "LOWER({col}) IN ("
+        "SELECT LOWER(user_sdwt_prod) FROM {table} "
         "WHERE line = %s "
         "AND user_sdwt_prod IS NOT NULL "
         "AND user_sdwt_prod <> ''"

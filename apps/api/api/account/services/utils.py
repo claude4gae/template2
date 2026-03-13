@@ -12,10 +12,100 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
 from .. import selectors
 from ..models import UserSdwtProdAccess
+
+
+def _normalize_user_sdwt_prod(value: Any) -> str:
+    """user_sdwt_prod 값을 공백 제거 기준으로 정규화합니다.
+
+    입력:
+    - value: 원본 값
+
+    반환:
+    - str: 정규화된 문자열(없으면 빈 문자열)
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _normalize_user_sdwt_lookup_key(value: Any) -> str:
+    """대소문자 비구분 비교용 user_sdwt_prod 키를 생성합니다.
+
+    입력:
+    - value: 원본 값
+
+    반환:
+    - str: casefold 기준 비교 키(없으면 빈 문자열)
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    normalized = _normalize_user_sdwt_prod(value)
+    if not normalized:
+        return ""
+    return normalized.casefold()
+
+
+def _same_user_sdwt_prod(left: Any, right: Any) -> bool:
+    """두 user_sdwt_prod 값이 대소문자 비구분으로 같은지 확인합니다.
+
+    입력:
+    - left: 비교 대상 1
+    - right: 비교 대상 2
+
+    반환:
+    - bool: 같은 값 여부
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    left_key = _normalize_user_sdwt_lookup_key(left)
+    right_key = _normalize_user_sdwt_lookup_key(right)
+    return bool(left_key and right_key and left_key == right_key)
+
+
+def _build_user_sdwt_display_map(values: Iterable[Any]) -> dict[str, str]:
+    """case-insensitive 비교용 lookup key → 표시값 매핑을 생성합니다.
+
+    입력:
+    - values: 원본 값 iterable
+
+    반환:
+    - dict[str, str]: lookup key → 공백 제거된 표시값
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    display_map: dict[str, str] = {}
+    for value in values:
+        normalized = _normalize_user_sdwt_prod(value)
+        lookup_key = _normalize_user_sdwt_lookup_key(normalized)
+        if normalized and lookup_key and lookup_key not in display_map:
+            display_map[lookup_key] = normalized
+    return display_map
 
 
 def _is_privileged_user(user: Any) -> bool:
@@ -91,7 +181,7 @@ def _user_can_approve_affiliation_change(*, user: Any, target_user_sdwt_prod: st
     # -----------------------------------------------------------------------------
     # 2) 역할 기반 승인 권한 확인
     # -----------------------------------------------------------------------------
-    normalized_target = (target_user_sdwt_prod or "").strip()
+    normalized_target = _normalize_user_sdwt_prod(target_user_sdwt_prod)
     access = selectors.get_access_row_for_user_and_prod(
         user=user,
         user_sdwt_prod=normalized_target,

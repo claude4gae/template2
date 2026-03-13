@@ -22,7 +22,13 @@ from django.utils import timezone
 from ..models import UserSdwtProdChange
 from .. import selectors
 from .access import downgrade_member_access, ensure_self_access
-from .utils import _is_privileged_user, _user_can_approve_affiliation_change
+from .utils import (
+    _build_user_sdwt_display_map,
+    _is_privileged_user,
+    _normalize_user_sdwt_lookup_key,
+    _same_user_sdwt_prod,
+    _user_can_approve_affiliation_change,
+)
 
 
 def _serialize_actor(user: Any) -> dict[str, object] | None:
@@ -227,7 +233,9 @@ def get_affiliation_change_requests(
             allowed_user_sdwt_prods.add(current_user_sdwt.strip())
         if not allowed_user_sdwt_prods:
             return {"error": "forbidden"}, 403
-        if user_sdwt_prod and user_sdwt_prod not in allowed_user_sdwt_prods:
+        allowed_lookup_keys = set(_build_user_sdwt_display_map(allowed_user_sdwt_prods).keys())
+        requested_lookup_key = _normalize_user_sdwt_lookup_key(user_sdwt_prod)
+        if requested_lookup_key and requested_lookup_key not in allowed_lookup_keys:
             return {"error": "forbidden"}, 403
         approvable_user_sdwt_prods = allowed_user_sdwt_prods
 
@@ -334,7 +342,7 @@ def _apply_affiliation_change(*, change: UserSdwtProdChange, approver: Any | Non
     )
 
     ensure_self_access(target_user, role="member")
-    if previous_user_sdwt and previous_user_sdwt != (change.to_user_sdwt_prod or "").strip():
+    if previous_user_sdwt and not _same_user_sdwt_prod(previous_user_sdwt, change.to_user_sdwt_prod):
         downgrade_member_access(user=target_user, user_sdwt_prod=previous_user_sdwt)
 
     return {
@@ -381,7 +389,7 @@ def request_affiliation_change(
     # -----------------------------------------------------------------------------
     normalized_target = (to_user_sdwt_prod or "").strip()
     current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
-    if current_user_sdwt and normalized_target and current_user_sdwt == normalized_target:
+    if _same_user_sdwt_prod(current_user_sdwt, normalized_target):
         return {"error": "already current affiliation"}, 400
 
     # -----------------------------------------------------------------------------
@@ -404,7 +412,7 @@ def request_affiliation_change(
         snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(knox_id=knox_id)
         predicted_user_sdwt = (snapshot.predicted_user_sdwt_prod or "").strip() if snapshot else ""
 
-    predicted_match = bool(predicted_user_sdwt and predicted_user_sdwt == normalized_target)
+    predicted_match = _same_user_sdwt_prod(predicted_user_sdwt, normalized_target)
     should_auto_apply = predicted_match
     if force_pending:
         should_auto_apply = False

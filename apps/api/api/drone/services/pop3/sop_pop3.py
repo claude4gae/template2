@@ -63,6 +63,17 @@ def _normalize_blank(value: Any) -> Any:
     return value
 
 
+def _normalize_user_sdwt_lookup_key(value: Any) -> str | None:
+    """대소문자 비구분 비교용 user_sdwt_prod 키를 정규화합니다."""
+
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned.casefold()
+
+
 def _extract_first_data_tag(html: str) -> dict[str, str]:
     """HTML에서 첫 번째 <data> 태그의 자식 정보를 추출합니다.
 
@@ -135,10 +146,14 @@ def _get_needtosend_rule_for_target(
     """
 
     # -------------------------------------------------------------------------
-    # 1) 캐시 조회
+    # 1) 캐시 키 정규화 및 조회
     # -------------------------------------------------------------------------
-    cached = cache.get(target_user_sdwt_prod)
-    if cached is not None or target_user_sdwt_prod in cache:
+    lookup_key = _normalize_user_sdwt_lookup_key(target_user_sdwt_prod)
+    if not lookup_key:
+        return None
+
+    cached = cache.get(lookup_key)
+    if cached is not None or lookup_key in cache:
         return cached
 
     # -------------------------------------------------------------------------
@@ -148,14 +163,14 @@ def _get_needtosend_rule_for_target(
         target_user_sdwt_prod=target_user_sdwt_prod,
     )
     if not rule_model:
-        cache[target_user_sdwt_prod] = None
+        cache[lookup_key] = None
         return None
 
     rule = NeedToSendRule(
         comment_last_at=str(rule_model.comment_last_at or "").strip(),
         ignore_sample_type=bool(rule_model.ignore_sample_type),
     )
-    cache[target_user_sdwt_prod] = rule
+    cache[lookup_key] = rule
     return rule
 
 
@@ -366,7 +381,7 @@ def _build_drone_sop_row(
     # -------------------------------------------------------------------------
     # 4) 조기 알림 기준 custom_end_step 적용
     # -------------------------------------------------------------------------
-    user_sdwt_prod = str(row.get("user_sdwt_prod") or "").strip()
+    user_sdwt_prod = _normalize_user_sdwt_lookup_key(row.get("user_sdwt_prod")) or ""
     main_step = str(row.get("main_step") or "").strip()
     custom_end_step = early_inform_map.get((user_sdwt_prod, main_step))
     if custom_end_step is not None:
