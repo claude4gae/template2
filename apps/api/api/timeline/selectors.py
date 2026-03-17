@@ -1,14 +1,16 @@
 # =============================================================================
 # 모듈 설명: timeline DB 데이터 셀렉터를 제공합니다.
 # - 주요 함수: list_lines, list_sdwt_for_line, get_merged_logs 등
-# - 불변 조건: timeline 전용 DB에서 조회합니다.
+# - 불변 조건: timeline 전용 DB에서 조회하며, 드론 로그는 기본 DB를 사용합니다.
 # =============================================================================
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import re
 from typing import Dict, List, Sequence
 
+from django.conf import settings
 from django.db import connections
 
 TIMELINE_DB_ALIAS = "timeline"
@@ -19,6 +21,7 @@ TIMELINE_DB_PASSWORD = "airflow"
 TIMELINE_DB_HOST = "10.172.117.91"
 TIMELINE_DB_PORT = "8010"
 TIMELINE_DB_CONN_MAX_AGE = 60
+TIMELINE_QUERY_DAYS = 30
 
 
 # =============================================================================
@@ -31,6 +34,11 @@ def _safe_text(value: object) -> str:
 
     return "" if value is None else str(value)
 
+
+def _period_date(days: int = TIMELINE_QUERY_DAYS) -> str:
+    """조회 기준일(YYYY-MM-DD)을 반환합니다."""
+
+    return datetime.strftime(datetime.now() - timedelta(days=days), "%Y-%m-%d")
 
 def _get_timeline_connection():
     """타임라인 DB 연결 설정을 갱신하고 연결 객체를 반환합니다."""
@@ -55,6 +63,17 @@ def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Dict[
     """타임라인 DB에서 조회 결과를 dict 리스트로 반환합니다."""
 
     with _get_timeline_connection().cursor() as cursor:
+        cursor.execute(query, params or [])
+        columns = [col[0] for col in (cursor.description or [])]
+        rows = cursor.fetchall()
+
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def _fetch_all_on_default(query: str, params: Sequence[object] | None = None) -> List[Dict[str, object]]:
+    """기본 DB에서 조회 결과를 dict 리스트로 반환합니다."""
+
+    with connections["default"].cursor() as cursor:
         cursor.execute(query, params or [])
         columns = [col[0] for col in (cursor.description or [])]
         rows = cursor.fetchall()
@@ -322,7 +341,7 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
 
 
 def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    query_date = datetime.strftime(datetime.now() - timedelta(days=90), "%Y-%m-%d")
+    query_date = _period_date()
     rows = _fetch_all(
         """
         select
@@ -356,40 +375,72 @@ def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
 
 
 def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    query_date = _period_date()
     rows = _fetch_all(
         """
+        with base as (
+            select distinct
+                case
+                    when tip_chamber_id is null then eqp_id
+                    when tip_chamber_id like '%-%' or tip_chamber_id like '%MAIN%' then eqp_id
+                    else concat(eqp_id, '-', tip_chamber_id)
+                end as eqp_cb,
+                case
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'PREVENT/TIP_OCCUR/LEVEL1' then 'L1_TIP'
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'PREVENT/TIP_RELEASE/LEVEL1' then 'L1_CNT'
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'DOING/TIP_RELEASE/LEVEL1' then 'DOING'
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'PREVENT/TIP_OCCUR/LEVEL2' then 'L2_TIP'
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'PREVENT/TIP_RELEASE/LEVEL2' then 'L2_CNT'
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'PREVENT/TIP_OCCUR/LEVEL3' then 'L3_TIP'
+                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
+                        = 'PREVENT/TIP_RELEASE/LEVEL3' then 'L3_CNT'
+                    else 'unknown'
+                end as event_type,
+                gpm_update_date,
+                register_name,
+                tip_comment,
+                line_id,
+                process_id,
+                step_seq,
+                ppid
+            from gpm_tip_hist
+        )
         select
-            tip_log_id as id,
+            concat('TIP-', row_number() over (order by gpm_update_date)) as id,
+            eqp_cb as eqp_cb,
+            'TIP' as log_type,
             event_type as event_type,
-            event_time as event_time,
-            operator as operator,
-            level as level,
-            comment as comment,
-            url as url,
+            gpm_update_date as event_time,
+            split_part(register_name, '-', 1) as operator,
+            tip_comment as comment,
             line_id as line_id,
-            eqp_id as eqp_id,
-            process as process,
-            step as step,
+            process_id as process,
+            step_seq as step,
             ppid as ppid
-        from gpm_tip_hist
-        where eqp_id = %s
-        order by event_time
+        from base
+        where gpm_update_date > %s
+          and eqp_cb = %s
+        order by gpm_update_date
         """,
-        [eqp_id],
+        [query_date, eqp_id],
     )
 
     return [
         {
             "id": row.get("id"),
-            "logType": "TIP",
+            "eqpId": row.get("eqp_cb"),
+            "logType": row.get("log_type"),
             "eventType": row.get("event_type"),
             "eventTime": row.get("event_time"),
             "operator": row.get("operator"),
-            "level": row.get("level"),
             "comment": row.get("comment"),
-            "url": row.get("url"),
             "lineId": row.get("line_id"),
-            "eqpId": row.get("eqp_id"),
             "process": row.get("process"),
             "step": row.get("step"),
             "ppid": row.get("ppid"),
@@ -399,43 +450,67 @@ def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
 
 
 def _fetch_ctttm_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    period = _period_date()
+    base_url = getattr(settings, "DRONE_CTTTM_BASE_URL", "")
     rows = _fetch_all(
         """
         select
-            ctttm_log_id as id,
-            event_type as event_type,
-            event_time as event_time,
-            operator as operator,
-            recipe as recipe,
-            comment as comment,
-            duration as duration,
-            line_id as line_id,
-            eqp_id as eqp_id
+            workorder_id as id,
+            eqp_id as eqp_id,
+            'CTTTM' as log_type,
+            work_type as event_type,
+            inprg_date as event_time,
+            null as operator,
+            description as comment,
+            concat(%s, workorder_id, '&lineId=', line_id) as url
         from ctttm_workorder_list
         where eqp_id = %s
-        order by event_time
+          and inprg_date > %s
+        order by inprg_date
         """,
-        [eqp_id],
+        [base_url, eqp_id, period],
     )
+
+    if not rows:
+        return []
+
+    workorder_ids = list({row.get("id") for row in rows if row.get("id") is not None})
+    summary_rows: List[Dict[str, object]] = []
+    if workorder_ids:
+        summary_rows = _fetch_all(
+            """
+            select
+                wono as id,
+                llm_summary_body as summary
+            from llm_ctttm
+            where wono = any(%s)
+            """,
+            [workorder_ids],
+        )
+    summary_map = {
+        row.get("id"): row.get("summary")
+        for row in summary_rows
+        if row.get("id") is not None
+    }
 
     return [
         {
             "id": row.get("id"),
-            "logType": "CTTTM",
+            "eqpId": row.get("eqp_id"),
+            "logType": row.get("log_type"),
             "eventType": row.get("event_type"),
             "eventTime": row.get("event_time"),
             "operator": row.get("operator"),
-            "recipe": row.get("recipe"),
             "comment": row.get("comment"),
-            "duration": row.get("duration"),
-            "lineId": row.get("line_id"),
-            "eqpId": row.get("eqp_id"),
+            "url": row.get("url"),
+            "summary": summary_map.get(row.get("id")),
         }
         for row in rows
     ]
 
 
 def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    period = _period_date()
     rows = _fetch_all(
         """
         select
@@ -448,9 +523,10 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             eqp_id as eqp_id
         from racb_hist
         where eqp_id = %s
+          and event_time > %s
         order by event_time
         """,
-        [eqp_id],
+        [eqp_id, period],
     )
 
     return [
@@ -468,30 +544,55 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
-def _fetch_jira_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    rows = _fetch_all(
-        """
+def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    period = _period_date()
+    base_eqp = eqp_id
+    chamber_candidates: List[str] = []
+    if "-" in eqp_id:
+        base_eqp, suffix = eqp_id.split("-", 1)
+        digits = re.findall(r"\d", suffix)
+        if digits:
+            seen = set()
+            chamber_candidates = [d for d in digits if not (d in seen or seen.add(d))]
+        else:
+            seen = set()
+            chamber_candidates = [
+                ch for ch in suffix.strip() if ch and not (ch in seen or seen.add(ch))
+            ]
+
+    if chamber_candidates:
+        like_clauses = " or ".join(["chamber_ids like %s"] * len(chamber_candidates))
+        match_clause = f" and ({like_clauses})"
+        match_params: List[object] = [f"%{ch}%" for ch in chamber_candidates]
+    else:
+        match_clause = ""
+        match_params = []
+
+    rows = _fetch_all_on_default(
+        f"""
         select
-            jira_log_id as id,
-            event_type as event_type,
-            event_time as event_time,
-            operator as operator,
+            id as id,
+            sample_type as event_type,
+            created_at as event_time,
+            user_sdwt_prod as operator,
             status as status,
             comment as comment,
             jira_key as jira_key,
             line_id as line_id,
             eqp_id as eqp_id
-        from ein_ecn
-        where eqp_id = %s
-        order by event_time
+        from drone_sop
+        where created_at > %s
+          and eqp_id = %s
+          {match_clause}
+        order by created_at
         """,
-        [eqp_id],
+        [period, base_eqp, *match_params],
     )
 
     return [
         {
             "id": row.get("id"),
-            "logType": "JIRA",
+            "logType": "DRONE",
             "eventType": row.get("event_type"),
             "eventTime": row.get("event_time"),
             "operator": row.get("operator"),
@@ -527,7 +628,7 @@ def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]
         "tip": _fetch_tip_logs(eqp_id=eqp_key),
         "ctttm": _fetch_ctttm_logs(eqp_id=eqp_key),
         "racb": _fetch_racb_logs(eqp_id=eqp_key),
-        "jira": _fetch_jira_logs(eqp_id=eqp_key),
+        "jira": _fetch_drone_logs(eqp_id=eqp_key),
         "event": [],
     }
 
@@ -561,7 +662,7 @@ def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
     if type_key == "racb":
         return _fetch_racb_logs(eqp_id=eqp_key)
     if type_key == "jira":
-        return _fetch_jira_logs(eqp_id=eqp_key)
+        return _fetch_drone_logs(eqp_id=eqp_key)
 
     return []
 
