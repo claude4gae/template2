@@ -503,6 +503,7 @@ export function DataTable({ lineId }) {
         filteredTotal={filteredTotal}
         totalLoaded={totalLoaded}
         pagination={pagination}
+        pageSizeOptions={[15, 25, 30, 40, 50, 100]}
       />
     </section>
   )

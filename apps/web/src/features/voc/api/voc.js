@@ -20,15 +20,11 @@ function normalizeAuthor(raw) {
     (typeof raw.name === "string" && raw.name.trim()) ||
     (typeof raw.username === "string" && raw.username.trim()) ||
     (typeof raw.usr_id === "string" && raw.usr_id.trim()) ||
-    (typeof raw.email === "string" && raw.email.trim()) ||
     ""
 
   const payload = {
     id: raw.id ?? raw.usr_id ?? null,
     name: nameCandidate || "알 수 없음",
-  }
-  if (typeof raw.email === "string" && raw.email.trim()) {
-    payload.email = raw.email
   }
   return payload
 }

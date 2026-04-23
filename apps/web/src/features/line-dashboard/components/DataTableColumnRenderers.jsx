@@ -82,6 +82,27 @@ function showRetryFailedToast(message) {
   })
 }
 
+async function copyTextToClipboard(text) {
+  if (!text || !navigator?.clipboard?.writeText) {
+    throw new Error("clipboard_unavailable")
+  }
+  await navigator.clipboard.writeText(text)
+}
+
+function showLotIdCopiedToast(lotId) {
+  toast.success("LOT ID 복사 완료", {
+    description: lotId,
+    ...buildToastOptions({ intent: "success", duration: 1800 }),
+  })
+}
+
+function showLotIdCopyFailedToast() {
+  toast.error("LOT ID 복사 실패", {
+    description: "클립보드에 값을 복사하지 못했습니다.",
+    ...buildToastOptions({ intent: "destructive", duration: 2600 }),
+  })
+}
+
 function renderSendChannelCell({ value, rowOriginal, channelKey, meta }) {
   const { state, numericValue, isOn, isError } = deriveFlagState(value, 0)
   const label = CHANNEL_LABELS[channelKey] ?? channelKey
@@ -201,6 +222,30 @@ const CellRenderers = {
       >
         <ExternalLink className="h-4 w-4" />
       </a>
+    )
+  },
+
+  lot_id: ({ value }) => {
+    const lotId = typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim()
+    if (!lotId) return formatCellValue(value)
+
+    return (
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await copyTextToClipboard(lotId)
+            showLotIdCopiedToast(lotId)
+          } catch {
+            showLotIdCopyFailedToast()
+          }
+        }}
+        className="inline-flex max-w-full cursor-copy items-center justify-center truncate rounded-sm text-inherit transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        title={`${lotId} 복사`}
+        aria-label={`Copy lot id ${lotId}`}
+      >
+        <span className="truncate">{lotId}</span>
+      </button>
     )
   },
 

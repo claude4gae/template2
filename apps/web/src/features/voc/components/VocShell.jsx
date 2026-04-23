@@ -65,11 +65,15 @@ export function VocShell() {
     name: currentUserName,
     roles: currentUserRoles,
   }
-  const isAdmin = currentUserRoles.some((role) => {
-    if (typeof role !== "string") return false
-    const lower = role.toLowerCase()
-    return lower === "admin" || lower === "administrator"
-  })
+  const isAdmin = Boolean(
+    user?.is_staff ||
+      user?.is_superuser ||
+      currentUserRoles.some((role) => {
+        if (typeof role !== "string") return false
+        const lower = role.toLowerCase()
+        return lower === "admin" || lower === "administrator"
+      }),
+  )
 
   const boardState = useVocBoardState({ currentUser, isAdmin })
   const sidebar = (

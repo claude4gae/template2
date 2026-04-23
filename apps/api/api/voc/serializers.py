@@ -9,6 +9,29 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 
+def _build_user_display_name(user: Any) -> str:
+    """VOC 작성자 표시 이름을 생성합니다."""
+
+    # -----------------------------------------------------------------------------
+    # 1) username/knox_id만 사용해 표시 이름을 구성
+    # -----------------------------------------------------------------------------
+    username = getattr(user, "username", None)
+    username = username.strip() if isinstance(username, str) else ""
+    knox_id = getattr(user, "knox_id", None)
+    knox_id = knox_id.strip() if isinstance(knox_id, str) else ""
+
+    # -----------------------------------------------------------------------------
+    # 2) knox_id가 있으면 이름 뒤에 함께 표시
+    # -----------------------------------------------------------------------------
+    if username and knox_id:
+        return f"{username}({knox_id})"
+    if username:
+        return username
+    if knox_id:
+        return knox_id
+    return ""
+
+
 def serialize_user(user: Any) -> dict[str, Any] | None:
     """작성자 정보를 API 응답 형태로 직렬화합니다.
 
@@ -30,13 +53,7 @@ def serialize_user(user: Any) -> dict[str, Any] | None:
     # -----------------------------------------------------------------------------
     if not user:
         return None
-    name = (user.get_full_name() or "").strip() or user.get_username() or user.email
-    payload: dict[str, Any] = {"id": user.pk, "name": name or "사용자"}
-    # -----------------------------------------------------------------------------
-    # 2) 이메일 포함 여부 결정
-    # -----------------------------------------------------------------------------
-    if user.email:
-        payload["email"] = user.email
+    payload: dict[str, Any] = {"id": user.pk, "name": _build_user_display_name(user)}
     return payload
 
 

@@ -22,9 +22,8 @@ export function DataTablePagination({
   filteredTotal,
   totalLoaded,
   pagination,
+  pageSizeOptions = [15, 25, 30, 40, 50],
 }) {
-  const pageSizeOptions = [15, 25, 30, 40, 50]
-
   return (
     <div className="flex mt-2 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

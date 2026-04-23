@@ -20,6 +20,7 @@ class VocEndpointTests(TestCase):
             sabun="S80000",
             password="test-password",
             knox_id="knox-80000",
+            username="정진우",
         )
         self.client.force_login(self.user)
 
@@ -29,6 +30,27 @@ class VocEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["total"], 1)
         self.assertEqual(response.json()["results"][0]["app"], "기타")
+        self.assertEqual(response.json()["results"][0]["author"]["name"], "정진우(knox-80000)")
+
+    def test_voc_author_display_uses_only_username_and_knox_id(self) -> None:
+        User = get_user_model()
+        fallback_user = User.objects.create_user(
+            sabun="S80001",
+            password="test-password",
+            knox_id="knox-80001",
+            username="",
+            first_name="진우",
+            last_name="정",
+            email="jinwoo@example.com",
+        )
+        VocPost.objects.create(title="Fallback", content="Body", author=fallback_user, status="접수")
+
+        response = self.client.get(reverse("voc-posts"))
+
+        self.assertEqual(response.status_code, 200)
+        results = response.json()["results"]
+        fallback_post = next(post for post in results if post["title"] == "Fallback")
+        self.assertEqual(fallback_post["author"]["name"], "knox-80001")
 
     def test_voc_posts_create_update_delete_and_reply(self) -> None:
         # -----------------------------------------------------------------------------
