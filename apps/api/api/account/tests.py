@@ -119,6 +119,116 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(options.status_code, 200)
         self.assertIn("lines", options.json())
 
+    def test_account_user_pool_requires_authentication(self) -> None:
+        """사용자 pool 조회는 인증된 사용자에게만 허용되어야 합니다."""
+
+        response = self.client.get(reverse("account-users"))
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_account_user_pool_filters_by_search_and_group(self) -> None:
+        """사용자 pool 조회가 검색어와 user_sdwt_prod 필터를 적용하는지 확인합니다."""
+
+        User = get_user_model()
+        searched_user = User.objects.create_user(
+            sabun="S50003",
+            password="test-password",
+            knox_id="knox-50003",
+            email="searched@example.com",
+            username="검색대상",
+            user_sdwt_prod="group-a",
+        )
+        group_user = User.objects.create_user(
+            sabun="S50004",
+            password="test-password",
+            knox_id="knox-50004",
+            email="group@example.com",
+            username="그룹대상",
+            user_sdwt_prod="group-b",
+        )
+
+        self.client.force_login(self.user)
+        search_response = self.client.get(reverse("account-users"), {"search": "검색대상"})
+        group_response = self.client.get(reverse("account-users"), {"userSdwtProd": "group-b"})
+
+        self.assertEqual(search_response.status_code, 200)
+        search_ids = {row["id"] for row in search_response.json()["results"]}
+        self.assertIn(searched_user.id, search_ids)
+        self.assertNotIn(group_user.id, search_ids)
+
+        self.assertEqual(group_response.status_code, 200)
+        group_ids = {row["id"] for row in group_response.json()["results"]}
+        self.assertIn(group_user.id, group_ids)
+        self.assertNotIn(searched_user.id, group_ids)
+
+    def test_account_user_pool_filters_by_contact_field(self) -> None:
+        """사용자 pool 조회가 요청한 연락처 보유 사용자만 반환하는지 확인합니다."""
+
+        User = get_user_model()
+        email_user = User.objects.create_user(
+            sabun="S50006",
+            password="test-password",
+            knox_id="knox-50006",
+            email="with-email@example.com",
+            username="메일있음",
+            user_sdwt_prod="group-a",
+        )
+        no_email_user = User.objects.create_user(
+            sabun="S50007",
+            password="test-password",
+            knox_id="knox-50007",
+            username="메일없음",
+            user_sdwt_prod="group-a",
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("account-users"),
+            {"userSdwtProd": "group-a", "contactField": "email", "limit": "all"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user_ids = {row["id"] for row in response.json()["results"]}
+        self.assertIn(email_user.id, user_ids)
+        self.assertNotIn(no_email_user.id, user_ids)
+
+    def test_account_user_pool_rejects_unknown_contact_field(self) -> None:
+        """지원하지 않는 연락처 필드는 명시적으로 거부해야 합니다."""
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("account-users"), {"contactField": "phone"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "contactField must be email or knox_id")
+
+    def test_account_user_pool_returns_all_group_users_when_requested(self) -> None:
+        """소속 단위 전체 불러오기는 기본 500명 제한 없이 해당 소속 사용자를 반환해야 합니다."""
+
+        User = get_user_model()
+        User.objects.bulk_create(
+            [
+                User(
+                    sabun=f"S51{index:03d}",
+                    knox_id=f"knox-51{index:03d}",
+                    email=f"bulk-{index}@example.com",
+                    username=f"Bulk {index}",
+                    user_sdwt_prod="bulk-group-all",
+                    is_active=True,
+                )
+                for index in range(505)
+            ]
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("account-users"),
+            {"userSdwtProd": "bulk-group-all", "limit": "all"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 505)
+
     def test_auth_me_creates_access_row_for_current_affiliation(self) -> None:
         """auth_me 호출 시 현재 소속 접근 권한 행이 생성되는지 확인합니다."""
         self.assertFalse(

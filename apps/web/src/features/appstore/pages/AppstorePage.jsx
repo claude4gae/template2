@@ -68,6 +68,15 @@ export function AppstorePage() {
     return Array.from(unique)
   }, [apps])
 
+  const formCategoryOptions = useMemo(() => {
+    const unique = new Set()
+    apps.forEach((app) => {
+      const value = typeof app.category === "string" ? app.category.trim() : ""
+      if (value) unique.add(value)
+    })
+    return Array.from(unique)
+  }, [apps])
+
   const categoryCounts = useMemo(() => {
     return apps.reduce((acc, app) => {
       const key = app.category || "기타"
@@ -310,6 +319,7 @@ export function AppstorePage() {
         }}
         onSubmit={handleSubmitApp}
         initialData={editingApp}
+        categoryOptions={formCategoryOptions}
         defaultContactName={defaultContactName}
         defaultContactKnoxid={defaultContactKnoxid}
         isSubmitting={createAppMutation.isPending || updateAppMutation.isPending}

@@ -293,7 +293,7 @@ class AccountOverviewView(APIView):
         - 예시 요청: GET /api/v1/account/overview
 
         예시 응답:
-        - 예시 응답: 200 {"user": {...}, "affiliationHistory": [...], "mailboxAccess": [...]}
+        - 예시 응답: 200 {"user": {...}, "affiliationHistory": [...], "manageableGroups": [...]}
 
         snake/camel 호환:
         - 해당 없음(요청 바디 없음)
@@ -778,7 +778,75 @@ class AccountGrantListView(APIView):
 
 
 # =============================================================================
-# 10) line/user_sdwt_prod 선택 옵션 조회 (DB에 존재하는 조합만)
+# 10) 사용자 pool 조회
+# =============================================================================
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountUserPoolView(APIView):
+    """수신인 선택 UI에서 사용할 account_user 기반 사용자 pool 조회."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """활성 사용자 검색 결과와 user_sdwt_prod 옵션을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 사용자 옵션 및 소속 옵션
+
+        부작용:
+        - 없음
+
+        오류:
+        - 401: 미인증
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/account/users?search=kim
+        - 예시 요청: GET /api/v1/account/users?userSdwtProd=PHOTO_B
+
+        snake/camel 호환:
+        - user_sdwt_prod / userSdwtProd (쿼리 키 매핑)
+        """
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        # -----------------------------------------------------------------------------
+        # 2) 쿼리 파라미터 정규화
+        # -----------------------------------------------------------------------------
+        search = normalize_text(request.GET.get("search"))
+        user_sdwt_prod = normalize_text(request.GET.get("user_sdwt_prod"))
+        if not user_sdwt_prod:
+            user_sdwt_prod = normalize_text(request.GET.get("userSdwtProd"))
+        contact_field = normalize_text(request.GET.get("contactField"))
+        if contact_field and contact_field not in {"email", "knox_id"}:
+            return JsonResponse({"error": "contactField must be email or knox_id"}, status=400)
+        raw_limit = normalize_text(request.GET.get("limit"))
+        limit = None if raw_limit == "all" and user_sdwt_prod else min(_parse_int(raw_limit, 50), 500)
+
+        # -----------------------------------------------------------------------------
+        # 3) 사용자 pool 및 소속 옵션 조회
+        # -----------------------------------------------------------------------------
+        results = selectors.list_active_user_pool(
+            search=search,
+            user_sdwt_prod=user_sdwt_prod,
+            contact_field=contact_field,
+            limit=limit,
+        )
+        user_sdwt_prods = selectors.list_distinct_active_user_sdwt_prod_values()
+        return JsonResponse(
+            {
+                "results": results,
+                "userSdwtProds": user_sdwt_prods,
+            }
+        )
+
+
+# =============================================================================
+# 11) line/user_sdwt_prod 선택 옵션 조회 (DB에 존재하는 조합만)
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class LineSdwtOptionsView(APIView):

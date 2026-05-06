@@ -14,3 +14,11 @@ export {
   updateLineSetting,
 } from "./lineSettings"
 export { fetchUserSdwtJiraKey, updateUserSdwtJiraKey } from "./lineJiraKey"
+export {
+  createNotificationTarget,
+  fetchAccountUserPool,
+  fetchNotificationRecipientPermissions,
+  fetchNotificationRecipients,
+  fetchNotificationTargets,
+  updateNotificationRecipients,
+} from "./notificationRecipients"

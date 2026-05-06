@@ -10,6 +10,44 @@ export function toHttpUrl(raw) {
   return `https://${value}`
 }
 
+export function splitHttpUrls(raw) {
+  if (raw == null) return []
+  return String(raw)
+    .split(",")
+    .map((value) => toHttpUrl(value))
+    .filter(Boolean)
+}
+
+function normalizeDefectUrlEntry(entry, index) {
+  if (typeof entry === "object" && !Array.isArray(entry)) {
+    const href = toHttpUrl(entry.map_url)
+    if (!href) return null
+    const label = String(entry.label ?? entry.step_seq ?? entry.step_desc ?? index + 1).trim()
+    const imageRows = Array.isArray(entry.image_rows) ? entry.image_rows : []
+    return { href, label: label || String(index + 1), imageRows }
+  }
+  return null
+}
+
+export function parseDefectUrls(raw) {
+  if (raw == null) return []
+  const value = String(raw).trim()
+  if (!value) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((entry, index) => normalizeDefectUrlEntry(entry, index))
+        .filter(Boolean)
+    }
+  } catch {
+    // 신규 데이터는 defect_json 기반 JSON 배열만 사용합니다.
+  }
+
+  return []
+}
+
 export function getRecordId(rowOriginal) {
   const rawId = rowOriginal?.id
   if (rawId === undefined || rawId === null) return null

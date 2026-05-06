@@ -4,6 +4,12 @@ import { ExternalLink, Check, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   buildJiraBrowseUrl,
   getRecordId,
   normalizeComment,
@@ -11,7 +17,7 @@ import {
   normalizeJiraKey,
   normalizeNeedToSend,
   normalizeStatus,
-  toHttpUrl,
+  parseDefectUrls,
 } from "../utils/dataTableColumnNormalizers"
 import {
   formatCellValue,
@@ -189,23 +195,61 @@ function renderSendChannelCell({ value, rowOriginal, channelKey, meta }) {
   )
 }
 
-const CellRenderers = {
-  defect_url: ({ value }) => {
-    const href = toHttpUrl(value)
-    if (!href) return null
+function DefectUrlCell({ value }) {
+  const links = parseDefectUrls(value)
+  if (!links.length) return null
+
+  if (links.length === 1) {
+    const [link] = links
     return (
       <a
-        href={href}
+        href={link.href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center justify-center text-primary transition-colors hover:text-primary/80"
+        className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border px-1 text-xs font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary/80"
         aria-label="Open defect URL in a new tab"
-        title="Open defect"
+        title={`${link.label}: ${link.href}`}
       >
         <ExternalLink className="h-4 w-4" />
       </a>
     )
-  },
+  }
+
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border px-1.5 text-xs font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-label={`${links.length} defect URLs`}
+          title={`${links.length} defect URLs`}
+        >
+          {links.length}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center" className="w-52 p-1">
+        {links.map((link, index) => (
+          <DropdownMenuItem key={`${link.href}:${index}`} asChild>
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex cursor-pointer items-center justify-between gap-2"
+              title={link.href}
+              aria-label={`Open defect URL ${link.label || index + 1} in a new tab`}
+            >
+              <span className="min-w-0 truncate">{link.label || index + 1}</span>
+              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </a>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+const CellRenderers = {
+  defect_url: ({ value }) => <DefectUrlCell value={value} />,
 
   jira_key: ({ value }) => {
     const key = normalizeJiraKey(value)

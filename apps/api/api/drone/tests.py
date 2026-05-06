@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
@@ -24,10 +25,12 @@ from api.drone import selectors, services
 from api.drone.models import (
     DroneEarlyInform,
     DroneSOP,
+    DroneSopChannelRecipient,
     DroneSopNeedToSendRule,
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
 )
+from api.drone.services.channels import recipients as recipient_services
 from api.drone.services.jira.sop_jira import update_drone_sop_jira_status
 from api.drone.services.pop3.sop_pop3 import build_drone_sop_row, upsert_drone_sop_rows
 
@@ -130,10 +133,86 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "knox")
         self.assertEqual(row["needtosend"], 0)
         self.assertEqual(row["status"], "COMPLETE")
-        self.assertEqual(row["defect_url"], "https://example.com")
-        self.assertEqual(row["defect_png_url"], "https://example.com/defect.png")
+        self.assertIsNone(row["defect_url"])
+        self.assertIsNone(row["defect_png_url"])
         self.assertEqual(row["custom_end_step"], "ST002")
         self.assertEqual(row["target_user_sdwt_prod"], "dummy-target")
+
+    def test_build_drone_sop_row_parses_defect_json_links(self) -> None:
+        """defect_json과 defect_png_url에서 map metadata와 image_rows를 추출하는지 확인합니다."""
+        def _image_url(*, map_file: str, selected_row: int) -> str:
+            return (
+                "https://app.nyms.abc.net/map/api/map-image/v3/defect-map"
+                f"?file={map_file}&amp;selected_row={selected_row}&amp;profileid=DEFAULT"
+            )
+
+        map_url_a = "https://app.nyms.abc.net/map/api/mapg/map?dtype=PQ&file=abc_df.parquet&mtype=DEFECT&signin_yn=y"
+        map_url_b = "https://app.nyms.abc.net/map/api/mapg/map?dtype=PQ&file=other_df.parquet&mtype=DEFECT&signin_yn=y"
+        defect_png_urls = ",".join(
+            [
+                _image_url(map_file="abc_df.parquet", selected_row=0),
+                _image_url(map_file="abc_df.parquet", selected_row=1),
+                _image_url(map_file="abc_df.parquet", selected_row=2),
+                _image_url(map_file="other_df.parquet", selected_row=3),
+            ]
+        )
+        defect_json = json.dumps(
+            [
+                {
+                    "LINE_ID": "L1",
+                    "PROC_ID": "P1",
+                    "ROOT_LOT_ID": "ROOT.1",
+                    "LOT_ID": "LOT.1",
+                    "STEP_SEQ": "ST001",
+                    "STEP_DESC": "Desc 1",
+                    "DEFECT_MAP_URL": map_url_a,
+                },
+                {
+                    "STEP_SEQ": "ST002",
+                    "STEP_DESC": "Desc 2",
+                    "DEFECT_MAP_URL": map_url_b,
+                },
+            ]
+        ).replace("&", "&amp;")
+        html = f"""
+        <html><body>
+          <data>
+            <lot_id>LOT.1</lot_id>
+            <defect_png_url>{defect_png_urls}</defect_png_url>
+            <defect_json>{defect_json}</defect_json>
+          </data>
+        </body></html>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+
+        defect_entries = json.loads(str(row["defect_url"]))
+        self.assertEqual(
+            defect_entries,
+            [
+                {
+                    "map_url": map_url_a,
+                    "line_id": "L1",
+                    "proc_id": "P1",
+                    "root_lot_id": "ROOT.1",
+                    "lot_id": "LOT.1",
+                    "step_seq": "ST001",
+                    "step_desc": "Desc 1",
+                    "map_file": "abc_df.parquet",
+                    "image_rows": [0, 1, 2],
+                    "label": "ST001",
+                },
+                {
+                    "map_url": map_url_b,
+                    "step_seq": "ST002",
+                    "step_desc": "Desc 2",
+                    "map_file": "other_df.parquet",
+                    "image_rows": [3],
+                    "label": "ST002",
+                },
+            ],
+        )
 
     def test_build_drone_sop_row_fills_system_when_knox_and_user_missing(self) -> None:
         """knox_id/user_sdwt_prod 누락 시 기본값이 채워지는지 확인합니다."""
@@ -382,7 +461,7 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
     def test_selector_lookups_ignore_case_for_user_sdwt_prod_and_target(self) -> None:
         """소속/채널/수신자 조회가 대소문자를 무시하는지 확인합니다."""
         User = get_user_model()
-        User.objects.create_user(
+        user = User.objects.create_user(
             sabun="S71000",
             password="test-password",
             knox_id="knox-71000",
@@ -404,14 +483,25 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
             jira_key="PROJ",
             jira_template_key="common",
         )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="TARGET-SDWT",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=user,
+        )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="TARGET-SDWT",
+            channel=DroneSopChannelRecipient.Channels.MESSENGER,
+            user=user,
+        )
 
         rule = selectors.get_drone_sop_needtosend_rule_by_target(target_user_sdwt_prod="target-sdwt")
         channel = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(
             target_user_sdwt_prod="target-sdwt"
         )
         line_ids = selectors.list_line_ids_for_user_sdwt_prod(user_sdwt_prod="target-sdwt")
-        emails = selectors.list_mail_receiver_emails_for_user_sdwt_prod(user_sdwt_prod="target-sdwt")
+        emails = selectors.list_mail_receiver_emails_for_user_sdwt_prod(line_id="L1", user_sdwt_prod="target-sdwt")
         knox_ids = selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+            line_id="L1",
             user_sdwt_prod="target-sdwt"
         )
 
@@ -786,6 +876,8 @@ class DroneEndpointTests(TestCase):
         )
         response = self.client.post(
             reverse("drone-sop-pipeline-trigger"),
+            data=json.dumps({}),
+            content_type="application/json",
             HTTP_AUTHORIZATION="Bearer token",
         )
         self.assertEqual(response.status_code, 200)
@@ -801,6 +893,630 @@ class DroneEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json().get("hasCandidates"))
+
+
+class DroneSopChannelRecipientTests(TestCase):
+    """Drone SOP 채널 수신인 설정과 조회를 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 사용자와 소속 옵션을 준비합니다."""
+
+        User = get_user_model()
+        self.actor = User.objects.create_superuser(
+            sabun="S71000",
+            password="test-password",
+            knox_id="knox-71000",
+        )
+        self.mail_user = User.objects.create_user(
+            sabun="S71001",
+            password="test-password",
+            knox_id="knox-71001",
+            email="mail-user@example.com",
+            user_sdwt_prod="PHOTO_B",
+        )
+        self.same_group_user = User.objects.create_user(
+            sabun="S71002",
+            password="test-password",
+            knox_id="knox-71002",
+            email="same-group@example.com",
+            user_sdwt_prod="ETCH_A",
+        )
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="ETCH_A",
+        )
+
+    def test_mail_receiver_lookup_uses_drone_recipients_not_user_affiliation(self) -> None:
+        """메일 수신자 조회가 account_user.user_sdwt_prod 직접 조회를 사용하지 않는지 확인합니다."""
+
+        services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        receiver_emails = selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+            line_id="L1",
+            user_sdwt_prod="ETCH_A",
+        )
+
+        self.assertEqual(receiver_emails, ["mail-user@example.com"])
+        self.assertNotIn("same-group@example.com", receiver_emails)
+
+    def test_same_target_cannot_be_reused_by_another_line(self) -> None:
+        """같은 target_user_sdwt_prod는 다른 line 수신인 설정에 재사용할 수 없어야 합니다."""
+
+        services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+        with self.assertRaisesMessage(ValueError, "targetUserSdwtProd already belongs to another line"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L2",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids=[self.same_group_user.id],
+                actor=self.actor,
+            )
+
+        self.assertEqual(
+            selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+                line_id="L1",
+                user_sdwt_prod="ETCH_A",
+            ),
+            ["mail-user@example.com"],
+        )
+
+    def test_replace_preserves_existing_affiliation_target_source(self) -> None:
+        """수신인 저장이 기존 affiliation target을 custom으로 바꾸지 않아야 합니다."""
+
+        target = DroneSopUserSdwtChannel.objects.create(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            source=DroneSopUserSdwtChannel.Sources.AFFILIATION,
+        )
+
+        services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        target.refresh_from_db()
+        self.assertEqual(target.source, DroneSopUserSdwtChannel.Sources.AFFILIATION)
+
+    def test_replace_allows_custom_target_without_affiliation(self) -> None:
+        """account_affiliation에 없는 커스텀 target도 수신인으로 저장할 수 있어야 합니다."""
+
+        custom_target = "CUSTOM_TARGET"
+
+        result = services.replace_drone_sop_channel_recipients(
+            line_id="CUSTOM_LINE",
+            target_user_sdwt_prod=custom_target,
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        self.assertFalse(selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=custom_target))
+        self.assertEqual(result["lineId"], "CUSTOM_LINE")
+        self.assertEqual(result["targetUserSdwtProd"], custom_target)
+        self.assertEqual(result["recipients"][0]["userId"], self.mail_user.id)
+        target = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(
+            target_user_sdwt_prod=custom_target
+        )
+        self.assertIsNotNone(target)
+        if target is None:
+            return
+        self.assertEqual(target.line_id, "CUSTOM_LINE")
+        self.assertEqual(target.source, DroneSopUserSdwtChannel.Sources.CUSTOM)
+        self.assertEqual(
+            selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+                line_id="CUSTOM_LINE",
+                user_sdwt_prod=custom_target,
+            ),
+            ["mail-user@example.com"],
+        )
+
+    def test_replace_reactivates_and_deactivates_recipient_rows(self) -> None:
+        """수신인 저장이 기존 row를 soft replace 방식으로 갱신하는지 확인합니다."""
+
+        recipient = DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.same_group_user,
+            is_active=True,
+        )
+
+        result = services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        recipient.refresh_from_db()
+        self.assertFalse(recipient.is_active)
+        self.assertEqual(len(result["recipients"]), 1)
+        self.assertEqual(result["recipients"][0]["userId"], self.mail_user.id)
+
+        result = services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.same_group_user.id],
+            actor=self.actor,
+        )
+
+        recipient.refresh_from_db()
+        self.assertTrue(recipient.is_active)
+        self.assertEqual(len(result["recipients"]), 1)
+        self.assertEqual(result["recipients"][0]["userId"], self.same_group_user.id)
+
+    def test_replace_rejects_invalid_user_ids_in_service_layer(self) -> None:
+        """서비스 직접 호출도 잘못된 user_ids를 명시적으로 거부해야 합니다."""
+
+        with self.assertRaisesMessage(ValueError, "user_ids must contain only integers"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids=["invalid"],
+                actor=self.actor,
+            )
+
+        with self.assertRaisesMessage(ValueError, "user_ids must contain only positive integers"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids=[-1],
+                actor=self.actor,
+            )
+
+        with self.assertRaisesMessage(ValueError, "user_ids must contain only integers"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids=[True],
+                actor=self.actor,
+            )
+
+        with self.assertRaisesMessage(ValueError, "user_ids must contain only integers"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids=[1.0],
+                actor=self.actor,
+            )
+
+        with self.assertRaisesMessage(ValueError, "user_ids must be a list"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids="12",
+                actor=self.actor,
+            )
+
+        self.assertFalse(
+            DroneSopChannelRecipient.objects.filter(
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MAIL,
+            ).exists()
+        )
+
+    def test_get_or_create_recovers_when_concurrent_create_already_inserted_row(self) -> None:
+        """동시 요청이 같은 수신인을 먼저 생성해도 기존 row를 재조회해 성공 처리해야 합니다."""
+
+        existing = DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.mail_user,
+            is_active=False,
+        )
+
+        with patch(
+            "api.drone.services.channels.recipients.DroneSopChannelRecipient.objects.create",
+            side_effect=IntegrityError("duplicate key"),
+        ):
+            recipient, created = recipient_services._get_or_create_recipient_row(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MAIL,
+                user_id=self.mail_user.id,
+                actor=self.actor,
+            )
+
+        self.assertEqual(recipient.id, existing.id)
+        self.assertFalse(created)
+
+    def test_get_or_create_reraises_integrity_error_without_duplicate_row(self) -> None:
+        """동시 생성 row가 없으면 원래 IntegrityError를 숨기지 않아야 합니다."""
+
+        with patch(
+            "api.drone.services.channels.recipients.DroneSopChannelRecipient.objects.create",
+            side_effect=IntegrityError("foreign key failure"),
+        ):
+            with self.assertRaisesMessage(IntegrityError, "foreign key failure"):
+                recipient_services._get_or_create_recipient_row(
+                    line_id="L1",
+                    target_user_sdwt_prod="ETCH_A",
+                    channel=DroneSopChannelRecipient.Channels.MAIL,
+                    user_id=self.mail_user.id,
+                    actor=self.actor,
+                )
+
+    @patch("api.drone.services.channels.recipients._get_or_create_recipient_row")
+    def test_replace_handles_concurrent_create_fallback_result(self, mock_get_or_create: Mock) -> None:
+        """public service도 동시 생성 fallback 결과를 받아 row를 재활성화해야 합니다."""
+
+        def return_existing_row(**kwargs: object) -> tuple[DroneSopChannelRecipient, bool]:
+            row = DroneSopChannelRecipient.objects.create(
+                target_user_sdwt_prod=str(kwargs["target_user_sdwt_prod"]),
+                channel=str(kwargs["channel"]),
+                user_id=int(kwargs["user_id"]),
+                is_active=False,
+            )
+            return row, False
+
+        mock_get_or_create.side_effect = return_existing_row
+
+        result = services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        recipient = DroneSopChannelRecipient.objects.get(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.mail_user,
+        )
+        self.assertTrue(recipient.is_active)
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(result["reactivated"], 1)
+        self.assertEqual([row["userId"] for row in result["recipients"]], [self.mail_user.id])
+
+    def test_notification_recipient_endpoint_replaces_mail_recipients(self) -> None:
+        """수신인 API가 최종 userIds 스냅샷으로 메일 수신인을 저장하는지 확인합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [self.mail_user.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["lineId"], "L1")
+        self.assertEqual(payload["targetUserSdwtProd"], "ETCH_A")
+        self.assertEqual(payload["channel"], "mail")
+        self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
+
+    def test_notification_recipient_endpoint_returns_mail_recipients(self) -> None:
+        """수신인 API가 target/channel의 활성 메일 수신인을 반환하는지 확인합니다."""
+
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.mail_user,
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.get(
+            reverse("line-dashboard-notification-recipients"),
+            {"lineId": "L1", "targetUserSdwtProd": "etch_a", "channel": "mail"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["lineId"], "L1")
+        self.assertEqual(payload["targetUserSdwtProd"], "etch_a")
+        self.assertEqual(payload["channel"], "mail")
+        self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
+
+    def test_notification_recipient_endpoint_forbids_non_operator_read(self) -> None:
+        """운영자가 아닌 사용자는 수신인 목록도 조회할 수 없어야 합니다."""
+
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.mail_user,
+        )
+
+        self.client.force_login(self.same_group_user)
+        response = self.client.get(
+            reverse("line-dashboard-notification-recipients"),
+            {"lineId": "L1", "targetUserSdwtProd": "ETCH_A", "channel": "mail"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "forbidden")
+
+    def test_notification_recipient_endpoint_forbids_non_operator_update(self) -> None:
+        """운영자가 아닌 사용자는 수신인을 저장할 수 없어야 합니다."""
+
+        self.client.force_login(self.same_group_user)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [self.mail_user.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            DroneSopChannelRecipient.objects.filter(
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MAIL,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_notification_recipient_endpoint_ignores_account_group_manager_permission(self) -> None:
+        """account 공통 그룹 manager만으로는 Drone 수신인을 저장할 수 없어야 합니다."""
+
+        User = get_user_model()
+        account_manager = User.objects.create_user(
+            sabun="S71005",
+            password="test-password",
+            knox_id="knox-71005",
+            email="account-manager@example.com",
+            user_sdwt_prod="ETCH_A",
+        )
+        account_services.ensure_self_access(account_manager, role="manager")
+
+        self.client.force_login(account_manager)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [self.mail_user.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            DroneSopChannelRecipient.objects.filter(
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MAIL,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_notification_recipient_permission_endpoint_returns_drone_context(self) -> None:
+        """권한 컨텍스트 API가 운영자 여부를 반환하는지 확인합니다."""
+
+        self.client.force_login(self.same_group_user)
+        response = self.client.get(reverse("line-dashboard-notification-recipient-permissions"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["isOperator"])
+        self.assertEqual(payload["manageableUserSdwtProds"], [])
+
+    def test_notification_recipient_permission_endpoint_operator_can_manage_all_targets(self) -> None:
+        """운영자는 모든 Drone SOP 대상 관리 권한을 가져야 합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.get(reverse("line-dashboard-notification-recipient-permissions"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["isOperator"])
+        self.assertIn("ETCH_A", payload["manageableUserSdwtProds"])
+
+    def test_notification_target_endpoint_lists_configured_and_affiliation_targets(self) -> None:
+        """알림 target 목록은 설정된 target과 account_affiliation 추천값을 함께 반환해야 합니다."""
+
+        DroneSopUserSdwtChannel.objects.create(
+            line_id="L1",
+            target_user_sdwt_prod="CUSTOM_TARGET",
+            source=DroneSopUserSdwtChannel.Sources.CUSTOM,
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.get(reverse("line-dashboard-notification-targets"), {"lineId": "L1"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("CUSTOM_TARGET", payload["targetUserSdwtProds"])
+        self.assertIn("ETCH_A", payload["targetUserSdwtProds"])
+
+    def test_notification_target_endpoint_creates_custom_target(self) -> None:
+        """account_affiliation에 없는 커스텀 target도 line 소유 target으로 생성할 수 있어야 합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.post(
+            reverse("line-dashboard-notification-targets"),
+            data=json.dumps({"lineId": "L1", "targetUserSdwtProd": "L1_NIGHT_SHIFT"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        target = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="L1_NIGHT_SHIFT")
+        self.assertEqual(target.line_id, "L1")
+        self.assertEqual(target.source, DroneSopUserSdwtChannel.Sources.CUSTOM)
+
+    def test_notification_recipient_endpoint_empty_list_deactivates_recipients(self) -> None:
+        """빈 userIds 저장은 기존 활성 수신인을 모두 비활성화해야 합니다."""
+
+        recipient = DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.mail_user,
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        recipient.refresh_from_db()
+        self.assertFalse(recipient.is_active)
+        self.assertEqual(response.json()["recipients"], [])
+
+    def test_notification_recipient_endpoint_rejects_boolean_user_id(self) -> None:
+        """userIds의 boolean 값은 정수 id로 오해하지 않고 거부해야 합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [True],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "userIds must contain only integers")
+        self.assertFalse(
+            DroneSopChannelRecipient.objects.filter(
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MAIL,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_notification_recipient_endpoint_rejects_mail_user_without_email(self) -> None:
+        """메일 수신인에는 email이 있는 사용자만 저장할 수 있어야 합니다."""
+
+        User = get_user_model()
+        no_email_user = User.objects.create_user(
+            sabun="S71003",
+            password="test-password",
+            knox_id="knox-71003",
+            user_sdwt_prod="PHOTO_B",
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [no_email_user.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "mail recipients require email")
+        self.assertFalse(
+            DroneSopChannelRecipient.objects.filter(
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MAIL,
+                user=no_email_user,
+            ).exists()
+        )
+
+    def test_notification_recipient_endpoint_replaces_messenger_recipients(self) -> None:
+        """수신인 API가 메신저 채널도 최종 userIds 스냅샷으로 저장하는지 확인합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "messenger",
+                    "userIds": [self.mail_user.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["channel"], "messenger")
+        self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
+
+    def test_notification_recipient_endpoint_rejects_messenger_user_without_knox_id(self) -> None:
+        """메신저 수신인에는 knox_id가 있는 사용자만 저장할 수 있어야 합니다."""
+
+        User = get_user_model()
+        no_knox_user = User.objects.create_user(
+            sabun="S71004",
+            password="test-password",
+            email="no-knox@example.com",
+            user_sdwt_prod="PHOTO_B",
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "messenger",
+                    "userIds": [no_knox_user.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "messenger recipients require knox_id")
+        self.assertFalse(
+            DroneSopChannelRecipient.objects.filter(
+                target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopChannelRecipient.Channels.MESSENGER,
+                user=no_knox_user,
+            ).exists()
+        )
 
 
 class DroneJiraKeyEndpointTests(TestCase):
@@ -886,7 +1602,7 @@ class DroneJiraKeyEndpointTests(TestCase):
 
     def test_jira_key_update_requires_superuser(self) -> None:
         """Jira 키 갱신은 슈퍼유저만 가능해야 합니다."""
-        payload = {"userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "common"}
+        payload = {"lineId": "L1", "userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "common"}
 
         self.client.force_login(self.user)
         response = self.client.post(
@@ -908,6 +1624,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(refreshed.jira_key, "PROJ")
         self.assertEqual(refreshed.jira_template_key, "common")
         self.assertEqual(refreshed.messenger_template_key, "common")
+        self.assertEqual(refreshed.line_id, "L1")
 
     def test_jira_key_update_reuses_existing_channel_case_insensitively(self) -> None:
         """POST 갱신이 target_user_sdwt_prod 대소문자를 무시하고 기존 채널을 재사용하는지 확인합니다."""
@@ -935,6 +1652,22 @@ class DroneJiraKeyEndpointTests(TestCase):
         refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
         self.assertEqual(refreshed.jira_key, "PROJ")
         self.assertEqual(refreshed.jira_template_key, "common")
+
+    def test_jira_key_post_requires_line_id_for_new_target(self) -> None:
+        """새 알림 target의 Jira 키를 저장할 때는 lineId가 필요합니다."""
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps({"userSdwtProd": "CUSTOM_TARGET", "jiraKey": "PROJ"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "line_id is required for new target")
+        self.assertFalse(
+            DroneSopUserSdwtChannel.objects.filter(target_user_sdwt_prod="CUSTOM_TARGET").exists()
+        )
 
     def test_jira_key_post_rejects_snake_case_user_sdwt_prod(self) -> None:
         """POST 갱신은 user_sdwt_prod(snake_case) 키를 허용하지 않는지 확인합니다."""
@@ -1601,7 +2334,7 @@ class DroneSopInformPolicyTests(TestCase):
         _ensure_target_mapping(sdwt_prod="SDWT1", user_sdwt_prod="SDWT1")
 
     @override_settings(DRONE_JIRA_BASE_URL="http://example.local/jira")
-    @patch("api.drone.services.mail.mail_sender.send_drone_sop_mail")
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_mail")
     @patch("api.drone.services.messenger.messenger_api.send_drone_sop_messenger_message")
     @patch("api.drone.services.jira.sop_jira._jira_session")
     def test_inform_marks_missing_target_as_failed(
@@ -1800,6 +2533,7 @@ class DroneSopInformPolicyTests(TestCase):
             lot_id="LOT.1",
             main_step="MS",
             status="COMPLETE",
+            target_user_sdwt_prod="SDWT1",
             needtosend=1,
             send_jira=-1,
             send_messenger=-1,
@@ -2125,7 +2859,7 @@ class DroneSopInformPolicyTests(TestCase):
         DRONE_JIRA_BASE_URL="http://example.local/jira",
         DRONE_MAIL_SENDER="sender@example.com",
     )
-    @patch("api.drone.services.mail.mail_sender.send_drone_sop_mail")
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_mail")
     def test_inform_sets_informed_at_when_mail_succeeds(self, mock_mail: Mock) -> None:
         """메일 전송 성공 시 informed_at이 설정되는지 확인합니다."""
         User = get_user_model()
@@ -2138,6 +2872,11 @@ class DroneSopInformPolicyTests(TestCase):
             target_user_sdwt_prod="SDWT1",
             mail_template_key="common",
         )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=user,
+        )
 
         sop = DroneSOP.objects.create(
             line_id="L1",
@@ -2148,6 +2887,7 @@ class DroneSopInformPolicyTests(TestCase):
             lot_id="LOT.1",
             main_step="MS",
             status="COMPLETE",
+            target_user_sdwt_prod="SDWT1",
             needtosend=1,
             send_jira=-1,
             send_messenger=-1,
@@ -2293,6 +3033,16 @@ class DroneSopInformPolicyTests(TestCase):
             target_user_sdwt_prod="SDWT1",
             messenger_template_key="common",
         )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopChannelRecipient.Channels.MESSENGER,
+            user=user_a,
+        )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopChannelRecipient.Channels.MESSENGER,
+            user=user_b,
+        )
 
         sop = DroneSOP.objects.create(
             line_id="L1",
@@ -2392,6 +3142,16 @@ class DroneSopInformPolicyTests(TestCase):
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
             messenger_template_key="common",
+        )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopChannelRecipient.Channels.MESSENGER,
+            user=user_a,
+        )
+        DroneSopChannelRecipient.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopChannelRecipient.Channels.MESSENGER,
+            user=user_b,
         )
 
         sop_1 = DroneSOP.objects.create(
@@ -2543,7 +3303,12 @@ class DroneTriggerAuthTests(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(mock_run.call_count, 0)
 
-        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
+        resp = self.client.post(
+            url,
+            data=json.dumps({}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer expected-token",
+        )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["matched"], 1)
         self.assertEqual(mock_run.call_count, 1)
@@ -2568,7 +3333,12 @@ class DroneTriggerAuthTests(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(mock_run.call_count, 0)
 
-        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
+        resp = self.client.post(
+            url,
+            data=json.dumps({}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer expected-token",
+        )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["jiraCreated"], 1)
         mock_run.assert_called_once_with(limit=None)
@@ -2841,7 +3611,7 @@ class DroneSopDefectMapPostTests(TestCase):
         "api.drone.services.pop3.sop_pop3.timezone.now",
         return_value=datetime(2026, 2, 5, 4, 0, 0, 750000, tzinfo=dt_timezone.utc),
     )
-    def test_dummy_mode_posts_defect_png_url_to_defectmap(
+    def test_dummy_mode_posts_defect_json_image_urls_to_defectmap(
         self,
         _mock_now: Mock,
         _mock_end_step: Mock,
@@ -2850,7 +3620,30 @@ class DroneSopDefectMapPostTests(TestCase):
         mock_delete: Mock,
         mock_post: Mock,
     ) -> None:
-        """defect_png_url이 있으면 지정 payload로 POST 요청을 보내는지 확인합니다."""
+        """defect_url JSON에서 defectmap image URL을 재구성해 POST하는지 확인합니다."""
+        map_url = "https://app.nyms.abc.net/map/api/mapg/map?dtype=PQ&file=abc_df.parquet&mtype=DEFECT&signin_yn=y"
+        defect_json = json.dumps(
+            [
+                {
+                    "STEP_SEQ": "ST003",
+                    "DEFECT_MAP_URL": map_url,
+                }
+            ]
+        ).replace("&", "&amp;")
+        defect_png_url = (
+            "https://ignored.local/map/api/map-image/v3/defect-map"
+            "?file=abc_df.parquet&amp;selected_row=0&amp;width=999,"
+            "https://ignored.local/map/api/map-image/v3/defect-map"
+            "?file=abc_df.parquet&amp;selected_row=1&amp;width=999"
+        )
+        expected_data = (
+            "https://app.nyms.samsungds.net/map/api/map-image/v3/defect-map"
+            "?file=abc_df.parquet&selected_row=0&profileid=DEFAULT&themeid=DEFAULT"
+            "&width=500&height=500&site=GH&targetDB=APP&useCache=true&includeCoordinate=false,"
+            "https://app.nyms.samsungds.net/map/api/map-image/v3/defect-map"
+            "?file=abc_df.parquet&selected_row=1&profileid=DEFAULT&themeid=DEFAULT"
+            "&width=500&height=500&site=GH&targetDB=APP&useCache=true&includeCoordinate=false"
+        )
         mock_list.return_value = [
             {
                 "id": 1,
@@ -2859,7 +3652,8 @@ class DroneSopDefectMapPostTests(TestCase):
                     "<data>"
                     "<lot_id>LOT-1</lot_id>"
                     "<metro_current_step>ST003</metro_current_step>"
-                    '<defect_png_url>"https://example.com/defect.png"</defect_png_url>'
+                    f"<defect_png_url>{defect_png_url}</defect_png_url>"
+                    f"<defect_json>{defect_json}</defect_json>"
                     "</data>"
                 ),
             }
@@ -2881,7 +3675,7 @@ class DroneSopDefectMapPostTests(TestCase):
                 "scandate": "2026-02-05 13:00:00.750 +0900",
                 "step": "",
                 "stepid": "ST003",
-                "data": "https://example.com/defect.png",
+                "data": expected_data,
             },
         )
 
@@ -2896,7 +3690,7 @@ class DroneSopDefectMapPostTests(TestCase):
     @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
     @patch("api.drone.services.pop3.sop_pop3._list_dummy_mail_messages")
     @patch("api.drone.services.pop3.sop_pop3.selectors.load_drone_sop_custom_end_step_map", return_value={})
-    def test_dummy_mode_skips_defectmap_post_when_defect_png_url_empty(
+    def test_dummy_mode_skips_defectmap_post_when_defect_url_json_empty(
         self,
         _mock_end_step: Mock,
         mock_list: Mock,
@@ -2904,12 +3698,18 @@ class DroneSopDefectMapPostTests(TestCase):
         mock_delete: Mock,
         mock_post: Mock,
     ) -> None:
-        """defect_png_url이 없으면 POST 요청을 보내지 않는지 확인합니다."""
+        """defect_url JSON이 없으면 defect_png_url 원문만으로 POST하지 않는지 확인합니다."""
         mock_list.return_value = [
             {
                 "id": 1,
                 "subject": "[drone_sop] alert-1",
-                "body_html": "<data><lot_id>LOT-1</lot_id><metro_current_step>ST003</metro_current_step></data>",
+                "body_html": (
+                    "<data>"
+                    "<lot_id>LOT-1</lot_id>"
+                    "<metro_current_step>ST003</metro_current_step>"
+                    '<defect_png_url>"https://example.com/defect.png"</defect_png_url>'
+                    "</data>"
+                ),
             }
         ]
         mock_upsert.return_value = 1
@@ -2949,7 +3749,15 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
             "knox_id": "knox",
             "user_sdwt_prod": "prod",
             "comment": "hello",
-            "defect_url": "https://example.com/defect",
+            "defect_url": json.dumps(
+                [
+                    {
+                        "step_seq": "ST001",
+                        "map_url": "https://example.com/defect",
+                        "label": "LOT.1",
+                    }
+                ]
+            ),
         }
 
         fields = jira_delivery._build_jira_issue_fields(
@@ -2963,6 +3771,58 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
         self.assertIn("CTTTM URL", description)
         self.assertIn("Defect URL", description)
         self.assertIn("https://example.com/defect", description)
+        self.assertIn(">ST001<", description)
+
+    def test_build_jira_issue_fields_renders_multiple_defect_links(self) -> None:
+        """defect_url JSON 문자열의 여러 링크가 렌더링되는지 확인합니다."""
+        from api.drone.services.jira import delivery as jira_delivery
+
+        config = services.DroneJiraConfig(
+            base_url="http://example.local/jira",
+            token="dummy-token",
+            issue_type="Task",
+            use_bulk_api=False,
+            bulk_size=20,
+            connect_timeout=5,
+            read_timeout=20,
+        )
+        row = {
+            "sdwt_prod": "SDWT",
+            "main_step": "ST003",
+            "ppid": "PPID",
+            "eqp_id": "EQP",
+            "chamber_ids": "1",
+            "lot_id": "LOT.1",
+            "knox_id": "knox",
+            "user_sdwt_prod": "prod",
+            "defect_url": json.dumps(
+                [
+                    {
+                        "step_seq": "ST001",
+                        "map_url": "https://example.com/defect-a",
+                        "label": "LOT.1",
+                    },
+                    {
+                        "step_seq": "ST002",
+                        "map_url": "https://example.com/defect-b",
+                        "label": "LOT.1",
+                    },
+                ]
+            ),
+        }
+
+        fields = jira_delivery._build_jira_issue_fields(
+            row=row,
+            project_key="DUMMY",
+            template_key="common",
+            config=config,
+        )
+        description = fields.get("description") or ""
+        self.assertIn("https://example.com/defect-a", description)
+        self.assertIn("https://example.com/defect-b", description)
+        self.assertIn(">ST001<", description)
+        self.assertIn(">ST002<", description)
+        self.assertIn(">ST001</a>,", description)
 
     def test_build_jira_issue_fields_renders_ctttm_links(self) -> None:
         """CTTTM 링크가 렌더링되는지 확인합니다."""
@@ -3156,6 +4016,64 @@ class DroneSopMessengerLineATemplateTests(TestCase):
         self.assertIn("Step_seq", captured.get("html", ""))
         self.assertIn("📄 CTTTM URL", captured.get("html", ""))
         self.assertIn("https://example.com/ctttm", captured.get("html", ""))
+        self.assertFalse(os.path.exists(captured.get("html_path", "")))
+
+    @patch("api.drone.services.messenger.templates.messenger_template_common.messenger_services.send_excel_table_message_from_file")
+    def test_send_excel_table_message_renders_multiple_defect_links(self, mock_send_excel: Mock) -> None:
+        """common 메신저 템플릿이 여러 Defect 링크를 렌더링하는지 확인합니다."""
+
+        from api.drone.services.messenger.messenger_sender import (
+            build_drone_sop_messenger_template_inputs,
+        )
+        from api.drone.services.messenger.templates import messenger_template_common as common_template
+        from api.messenger import services as messenger_services
+
+        captured: dict[str, str] = {}
+
+        def _capture_excel_payload(**kwargs: object) -> None:
+            html_path = str(kwargs.get("html_path") or "")
+            with open(html_path, "r", encoding="utf-8") as file:
+                captured["html"] = file.read()
+            captured["html_path"] = html_path
+
+        mock_send_excel.side_effect = _capture_excel_payload
+        context, actions = build_drone_sop_messenger_template_inputs(
+            row={
+                "id": 1,
+                "main_step": "ST003",
+                "ppid": "PPID",
+                "eqp_id": "EQP",
+                "chamber_ids": "1",
+                "lot_id": "LOT-1",
+                "user_sdwt_prod": "SDWT",
+                "knox_id": "knox",
+                "defect_url": json.dumps(
+                    [
+                        {"step_seq": "ST001", "map_url": "https://example.com/defect-a", "label": "ST001"},
+                        {"step_seq": "ST002", "map_url": "https://example.com/defect-b", "label": "ST002"},
+                    ]
+                ),
+            }
+        )
+        config = messenger_services.KnoxMessengerConfig(
+            base_url="http://example.local/messenger/",
+            authorization="Bearer test",
+            system_id="sys-test",
+            timeout_seconds=5,
+        )
+
+        common_template.send_excel_table_message(
+            chatroom_id=123,
+            context=context,
+            actions=actions,
+            ttl=900,
+            config=config,
+        )
+
+        self.assertIn("https://example.com/defect-a", captured.get("html", ""))
+        self.assertIn("https://example.com/defect-b", captured.get("html", ""))
+        self.assertIn(">ST001<", captured.get("html", ""))
+        self.assertIn(">ST002<", captured.get("html", ""))
         self.assertFalse(os.path.exists(captured.get("html_path", "")))
 
 

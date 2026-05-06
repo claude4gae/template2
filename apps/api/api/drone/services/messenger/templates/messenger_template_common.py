@@ -40,10 +40,12 @@ def _normalize_comment(value: Any) -> str:
     return s if s else "-"
 
 
-def _split_ctttm_and_defect_links(actions: list[dict[str, Any]]) -> tuple[list[dict[str, str]], str]:
-    """OpenUrl 액션을 CTTTM 링크 목록과 Defect URL로 분리합니다."""
+def _split_ctttm_and_defect_links(
+    actions: list[dict[str, Any]],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """OpenUrl 액션을 CTTTM 링크 목록과 Defect URL 목록으로 분리합니다."""
     ctttm_links: list[dict[str, str]] = []
-    defect_url = ""
+    defect_links: list[dict[str, str]] = []
 
     for action in actions:
         if not isinstance(action, dict):
@@ -56,13 +58,19 @@ def _split_ctttm_and_defect_links(actions: list[dict[str, Any]]) -> tuple[list[d
         label_raw = str(action.get("title") or "Link").strip() or "Link"
         label_key = label_raw.strip().lower().replace(" ", "").replace("_", "")
 
-        if label_key in {"defect", "defecturl"}:
-            defect_url = url
+        if action.get("kind") == "defect" or label_key in {"defect", "defecturl"}:
+            defect_links.append({"label": label_raw, "url": url})
             continue
 
         ctttm_links.append({"label": label_raw, "url": url})
 
-    return ctttm_links, defect_url
+    return ctttm_links, defect_links
+
+
+def _resolve_defect_label(*, label: str, lot_id: str) -> str:
+    """기존 Defect 단일 링크 라벨은 LOT ID로 대체합니다."""
+
+    return lot_id if label in {"Defect", "Defect URL"} else label
 
 
 def build_excel_table_html(*, context: dict[str, Any], actions: list[dict[str, Any]]) -> str:
@@ -86,7 +94,7 @@ def build_excel_table_html(*, context: dict[str, Any], actions: list[dict[str, A
     user_sdwt_prod = _normalize_text(context.get("user_sdwt_prod"))
     comment = _normalize_comment(context.get("comment_raw"))
 
-    ctttm_links, defect_url = _split_ctttm_and_defect_links(actions)
+    ctttm_links, defect_links = _split_ctttm_and_defect_links(actions)
 
     ctttm_link_html = (
         ", ".join(
@@ -100,8 +108,17 @@ def build_excel_table_html(*, context: dict[str, Any], actions: list[dict[str, A
     )
 
     defect_link_html = (
-        f'<a href="{escape(defect_url, quote=True)}" target="_blank" rel="noopener noreferrer" style="font-size:14px;">{escape(lot_id)}</a>'
-        if defect_url
+        ", ".join(
+            [
+                (
+                    f'<a href="{escape(item["url"], quote=True)}" target="_blank" '
+                    f'rel="noopener noreferrer" style="font-size:14px;">'
+                    f'{escape(_resolve_defect_label(label=item["label"], lot_id=lot_id))}</a>'
+                )
+                for item in defect_links
+            ]
+        )
+        if defect_links
         else '<span style="font-size:14px; color:#999;">-</span>'
     )
 

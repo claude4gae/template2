@@ -18,6 +18,7 @@ from api.common.services.db import run_query
 from .models import (
     DroneEarlyInform,
     DroneSOP,
+    DroneSopChannelRecipient,
     DroneSopNeedToSendRule,
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
@@ -762,6 +763,73 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
     return values
 
 
+def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[str, object]]:
+    """라인별 Drone SOP 알림 target 목록을 조회합니다.
+
+    account_affiliation 값은 초기 선택을 돕는 추천값으로만 병합하고,
+    실제 설정 소유권은 DroneSopUserSdwtChannel.line_id를 기준으로 판단합니다.
+
+    인자:
+        line_id: 라인 ID.
+
+    반환:
+        target 정보 dict 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    normalized_line_id = _normalize_str(line_id)
+    if not normalized_line_id:
+        return []
+
+    targets_by_key: dict[str, dict[str, object]] = {}
+
+    configured_rows = (
+        DroneSopUserSdwtChannel.objects.filter(
+            line_id__iexact=normalized_line_id,
+            is_active=True,
+        )
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .order_by("target_user_sdwt_prod", "id")
+    )
+    for row in configured_rows:
+        target_value = _normalize_str(row.target_user_sdwt_prod)
+        if not target_value:
+            continue
+        targets_by_key[target_value.casefold()] = {
+            "lineId": row.line_id or normalized_line_id,
+            "targetUserSdwtProd": target_value,
+            "source": row.source or DroneSopUserSdwtChannel.Sources.CUSTOM,
+            "isConfigured": True,
+            "jiraKey": row.jira_key or None,
+        }
+
+    for target_value in list_user_sdwt_prod_values_for_line(line_id=normalized_line_id):
+        normalized_target = _normalize_str(target_value)
+        if not normalized_target:
+            continue
+        targets_by_key.setdefault(
+            normalized_target.casefold(),
+            {
+                "lineId": normalized_line_id,
+                "targetUserSdwtProd": normalized_target,
+                "source": DroneSopUserSdwtChannel.Sources.AFFILIATION,
+                "isConfigured": False,
+                "jiraKey": None,
+            },
+        )
+
+    return sorted(
+        targets_by_key.values(),
+        key=lambda item: (
+            0 if item.get("isConfigured") else 1,
+            str(item.get("targetUserSdwtProd") or "").casefold(),
+        ),
+    )
+
+
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     """user_sdwt_prod에 대응하는 소속 존재 여부를 확인합니다.
 
@@ -778,11 +846,96 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     return account_selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
 
 
-def list_mail_receiver_emails_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
-    """user_sdwt_prod에 해당하는 메일 수신자 이메일 목록을 조회합니다.
+def _collapse_display_values(values: Sequence[Any]) -> list[str]:
+    """표시값을 유지하면서 대소문자 비구분 중복을 제거합니다."""
+
+    display_by_key: dict[str, str] = {}
+    for value in values:
+        normalized = _normalize_str(value)
+        if not normalized:
+            continue
+        display_by_key.setdefault(normalized.casefold(), normalized)
+    return sorted(display_by_key.values())
+
+
+def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
+    """Drone SOP 설정 대상 user_sdwt_prod 목록을 조회합니다.
 
     인자:
-        user_sdwt_prod: 최종 사용자 소속 값.
+        없음.
+
+    반환:
+        대상 user_sdwt_prod 문자열 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) account 사용자 pool과 Drone 설정 테이블의 대상값을 병합
+    # -----------------------------------------------------------------------------
+    values: list[Any] = list(account_selectors.list_distinct_active_user_sdwt_prod_values())
+    values.extend(
+        DroneSopUserSdwtChannel.objects.exclude(target_user_sdwt_prod="")
+        .values_list("target_user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    values.extend(
+        DroneSopUserSdwtProdMap.objects.exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod="")
+        .values_list("target_user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    return _collapse_display_values(values)
+
+
+def user_can_manage_drone_sop_recipients(*, user: Any) -> bool:
+    """사용자가 Drone SOP 수신인 설정을 관리할 수 있는지 확인합니다.
+
+    인자:
+        user: Django 사용자 객체.
+
+    반환:
+        관리 가능 여부.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 이번 범위에서는 별도 앱 권한 없이 전역 운영자만 허용
+    # -----------------------------------------------------------------------------
+    return account_selectors.is_operator_user(user=user)
+
+
+def get_drone_sop_permission_context(*, user: Any) -> dict[str, object]:
+    """프론트엔드에서 사용할 Drone SOP 권한 컨텍스트를 반환합니다.
+
+    인자:
+        user: Django 사용자 객체.
+
+    반환:
+        운영자 여부와 관리 가능한 target_user_sdwt_prod 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    is_operator = user_can_manage_drone_sop_recipients(user=user)
+    return {
+        "isOperator": is_operator,
+        "manageableUserSdwtProds": (
+            list_drone_sop_target_user_sdwt_prod_values() if is_operator else []
+        ),
+    }
+
+
+def list_mail_receiver_emails_for_user_sdwt_prod(*, line_id: str, user_sdwt_prod: str) -> list[str]:
+    """Drone SOP 메일 수신자 이메일 목록을 조회합니다.
+
+    인자:
+        line_id: 호환성을 위해 받는 라인 ID. 실제 수신인은 target 기준으로 조회합니다.
+        user_sdwt_prod: 최종 알림 대상 소속 값.
 
     반환:
         이메일 주소 리스트.
@@ -791,14 +944,19 @@ def list_mail_receiver_emails_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.list_active_user_emails_by_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+    return _list_active_recipient_contact_values(
+        target_user_sdwt_prod=user_sdwt_prod,
+        channel=DroneSopChannelRecipient.Channels.MAIL,
+        contact_field="email",
+    )
 
 
-def list_messenger_receiver_knox_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
-    """user_sdwt_prod에 해당하는 메신저 수신자 knox_id 목록을 조회합니다.
+def list_messenger_receiver_knox_ids_for_user_sdwt_prod(*, line_id: str, user_sdwt_prod: str) -> list[str]:
+    """Drone SOP 메신저 수신자 knox_id 목록을 조회합니다.
 
     인자:
-        user_sdwt_prod: 최종 사용자 소속 값.
+        line_id: 호환성을 위해 받는 라인 ID. 실제 수신인은 target 기준으로 조회합니다.
+        user_sdwt_prod: 최종 알림 대상 소속 값.
 
     반환:
         knox_id 리스트.
@@ -807,7 +965,119 @@ def list_messenger_receiver_knox_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) 
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.list_active_user_knox_ids_by_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+    return _list_active_recipient_contact_values(
+        target_user_sdwt_prod=user_sdwt_prod,
+        channel=DroneSopChannelRecipient.Channels.MESSENGER,
+        contact_field="knox_id",
+    )
+
+
+def _list_active_recipient_contact_values(
+    *,
+    target_user_sdwt_prod: str,
+    channel: str,
+    contact_field: str,
+) -> list[str]:
+    """채널 수신인에서 사용자 연락처 값을 중복 없이 조회합니다."""
+
+    normalized = _normalize_str(target_user_sdwt_prod)
+    if not normalized:
+        return []
+
+    rows = (
+        DroneSopChannelRecipient.objects.filter(
+            target_user_sdwt_prod__iexact=normalized,
+            channel=channel,
+            is_active=True,
+            user__is_active=True,
+        )
+        .exclude(**{f"user__{contact_field}__isnull": True})
+        .exclude(**{f"user__{contact_field}__exact": ""})
+        .values_list(f"user__{contact_field}", flat=True)
+        .order_by(f"user__{contact_field}")
+        .distinct()
+    )
+
+    normalized_values: list[str] = []
+    seen: set[str] = set()
+    for value in rows:
+        cleaned = _normalize_str(value)
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized_values.append(cleaned)
+    return normalized_values
+
+
+def list_drone_sop_channel_recipients(
+    *,
+    line_id: str,
+    target_user_sdwt_prod: str,
+    channel: str,
+) -> list[dict[str, object]]:
+    """Drone SOP target/channel에 등록된 활성 수신인을 조회합니다.
+
+    커스텀 target_user_sdwt_prod를 허용하므로 account_affiliation 매핑은 요구하지 않습니다.
+
+    인자:
+        line_id: 호환성을 위해 받는 라인 ID. 실제 수신인은 target 기준으로 조회합니다.
+        target_user_sdwt_prod: 최종 알림 대상 소속 값.
+        channel: mail 또는 messenger.
+
+    반환:
+        사용자 정보가 포함된 수신인 dict 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    normalized = _normalize_str(target_user_sdwt_prod)
+    if not normalized:
+        return []
+
+    target_row = get_drone_sop_channel_by_target_user_sdwt_prod(target_user_sdwt_prod=normalized)
+    response_line_id = (target_row.line_id if target_row and target_row.line_id else _normalize_str(line_id)) or ""
+
+    rows = (
+        DroneSopChannelRecipient.objects.filter(
+            target_user_sdwt_prod__iexact=normalized,
+            channel=channel,
+            is_active=True,
+            user__is_active=True,
+        )
+        .select_related("user")
+        .order_by("user__user_sdwt_prod", "user__username", "user_id")
+    )
+
+    recipients: list[dict[str, object]] = []
+    for row in rows:
+        user = row.user
+        display_name = (
+            getattr(user, "username", None)
+            or getattr(user, "username_en", None)
+            or getattr(user, "givenname", None)
+            or getattr(user, "knox_id", None)
+            or getattr(user, "sabun", None)
+            or ""
+        )
+        recipients.append(
+            {
+                "id": row.id,
+                "userId": user.id,
+                "username": getattr(user, "username", None) or "",
+                "displayName": display_name,
+                "sabun": getattr(user, "sabun", None) or "",
+                "knoxId": getattr(user, "knox_id", None) or "",
+                "email": getattr(user, "email", None) or "",
+                "department": getattr(user, "department", None) or "",
+                "line": getattr(user, "line", None) or "",
+                "userSdwtProd": getattr(user, "user_sdwt_prod", None) or "",
+                "channel": row.channel,
+                "lineId": response_line_id,
+                "targetUserSdwtProd": row.target_user_sdwt_prod,
+            }
+        )
+    return recipients
 
 
 def get_drone_sop_channel_by_target_user_sdwt_prod(
@@ -977,6 +1247,7 @@ def list_distinct_line_ids() -> list[str]:
         없음. 읽기 전용 조회입니다.
     """
 
+    values: list[Any] = []
     rows = run_query(
         """
         SELECT DISTINCT line AS line_id
@@ -985,7 +1256,15 @@ def list_distinct_line_ids() -> list[str]:
         ORDER BY line_id
         """.format(table=LINE_SDWT_TABLE_NAME)
     )
-    return _normalize_str_list([row.get("line_id") for row in rows])
+    values.extend(row.get("line_id") for row in rows)
+    values.extend(
+        DroneSopUserSdwtChannel.objects.filter(is_active=True)
+        .exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .values_list("line_id", flat=True)
+        .distinct()
+    )
+    return _collapse_display_values(values)
 
 
 def get_line_history_payload(

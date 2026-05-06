@@ -537,6 +537,56 @@ class AppstoreEndpointTests(TestCase):
         delete_response = self.client.delete(reverse("appstore-app-detail", kwargs={"app_id": self.app.pk}))
         self.assertEqual(delete_response.status_code, 200)
 
+    def test_staff_user_can_manage_appstore_content(self) -> None:
+        """staff 계정이 타인 AppStore 콘텐츠를 편집할 수 있는지 검증합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) staff 사용자로 전환
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        staff = User.objects.create_user(
+            sabun="S44444",
+            password="test-password",
+            email="s44444@example.com",
+            knox_id="knox-44444",
+            is_staff=True,
+        )
+        self.client.force_login(staff)
+
+        # -----------------------------------------------------------------------------
+        # 2) 타인 앱 편집 권한 노출 확인
+        # -----------------------------------------------------------------------------
+        detail_response = self.client.get(reverse("appstore-app-detail", kwargs={"app_id": self.app.pk}))
+        self.assertEqual(detail_response.status_code, 200)
+        detail_payload = detail_response.json()
+        self.assertTrue(detail_payload["app"]["canEdit"])
+        self.assertTrue(detail_payload["app"]["canDelete"])
+
+        # -----------------------------------------------------------------------------
+        # 3) 타인 앱 수정 허용 확인
+        # -----------------------------------------------------------------------------
+        update_response = self.client.patch(
+            reverse("appstore-app-detail", kwargs={"app_id": self.app.pk}),
+            data='{"description":"staff updated"}',
+            content_type="application/json",
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["app"]["description"], "staff updated")
+
+        # -----------------------------------------------------------------------------
+        # 4) 타인 댓글 수정 허용 확인
+        # -----------------------------------------------------------------------------
+        comment = create_comment(app=self.app, user=self.user, content="owner comment")
+        comment_response = self.client.patch(
+            reverse(
+                "appstore-app-comment-detail",
+                kwargs={"app_id": self.app.pk, "comment_id": comment.pk},
+            ),
+            data='{"content":"staff comment update"}',
+            content_type="application/json",
+        )
+        self.assertEqual(comment_response.status_code, 200)
+        self.assertEqual(comment_response.json()["comment"]["content"], "staff comment update")
+
     def test_appstore_comments_endpoints(self) -> None:
         """댓글 목록/생성/수정/삭제/좋아요 API를 검증합니다."""
         # -----------------------------------------------------------------------------

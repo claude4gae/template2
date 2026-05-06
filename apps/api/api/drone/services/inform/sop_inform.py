@@ -314,12 +314,16 @@ def _get_or_create_chatroom_id(
 
     existing_chatroom_id = _normalize_chatroom_id(config_row.get("chatroom_id"))
     if existing_chatroom_id:
+        # target_user_sdwt_prod는 운영상 라인별 고유값으로 관리되므로,
+        # 기존 chatroom_id는 target 단위로 재사용합니다.
         return existing_chatroom_id, None
 
     # -----------------------------------------------------------------------------
     # 2) 수신자 knox_id 조회
     # -----------------------------------------------------------------------------
+    line_id = _normalize_string_value(row.get("line_id"))
     receiver_knox_ids = selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+        line_id=line_id,
         user_sdwt_prod=target,
     )
     normalized_knox_ids = _normalize_unique_strings(receiver_knox_ids)
@@ -516,7 +520,9 @@ def _run_mail_inform(
             continue
 
         target_user_sdwt_prod = _normalize_string_value(row.get("target_user_sdwt_prod")) or ""
+        line_id = _normalize_string_value(row.get("line_id")) or ""
         receiver_emails = selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+            line_id=line_id,
             user_sdwt_prod=target_user_sdwt_prod,
         )
         if not receiver_emails:

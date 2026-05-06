@@ -135,6 +135,12 @@ def default_contact(user) -> Tuple[str, str]:
     return (_user_display_name(user) or "사용자").strip(), _user_knoxid(user)
 
 
+def _has_appstore_editor_permission(user) -> bool:
+    """AppStore 전체 편집 권한이 있는 계정인지 확인합니다."""
+
+    return bool(getattr(user, "is_superuser", False) or getattr(user, "is_staff", False))
+
+
 def sanitize_screenshot_urls(value: Any) -> List[str]:
     """스크린샷 URL 목록을 정규화합니다.
 
@@ -241,7 +247,7 @@ def can_manage_app(user, app: Any) -> bool:
     # -----------------------------------------------------------------------------
     if not user or not getattr(user, "is_authenticated", False):
         return False
-    if getattr(user, "is_superuser", False):
+    if _has_appstore_editor_permission(user):
         return True
     # -----------------------------------------------------------------------------
     # 2) 소유자 여부 확인
@@ -271,7 +277,7 @@ def can_manage_comment(user, comment: Any) -> bool:
     # -----------------------------------------------------------------------------
     if not user or not getattr(user, "is_authenticated", False):
         return False
-    if getattr(user, "is_superuser", False):
+    if _has_appstore_editor_permission(user):
         return True
     # -----------------------------------------------------------------------------
     # 2) 작성자 여부 확인

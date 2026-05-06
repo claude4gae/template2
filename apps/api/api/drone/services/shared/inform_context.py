@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -67,6 +68,62 @@ def _normalize_ctttm_urls(value: Any) -> list[dict[str, str]]:
     return urls
 
 
+def _normalize_defect_url_entry(*, entry: Any, lot_id: Any = None) -> dict[str, Any] | None:
+    """Defect map 항목을 템플릿용 dict로 정규화합니다."""
+
+    if not isinstance(entry, dict):
+        return None
+    map_url = str(entry.get("map_url") or "").strip()
+    if not map_url:
+        return None
+    step_seq = str(entry.get("step_seq") or "").strip()
+    label = str(step_seq or entry.get("label") or lot_id or map_url).strip()
+    image_rows = entry.get("image_rows")
+    return {
+        "map_url": map_url,
+        "label": label or map_url,
+        "step_seq": step_seq,
+        "step_desc": str(entry.get("step_desc") or "").strip(),
+        "map_file": str(entry.get("map_file") or "").strip(),
+        "image_rows": image_rows if isinstance(image_rows, list) else [],
+    }
+
+
+def _normalize_defect_urls(*, value: Any, lot_id: Any = None) -> list[dict[str, Any]]:
+    """JSON 문자열을 Defect map 리스트로 정규화합니다."""
+
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return [
+            normalized
+            for entry in value
+            if (normalized := _normalize_defect_url_entry(entry=entry, lot_id=lot_id)) is not None
+        ]
+
+    raw = str(value).strip()
+    if not raw:
+        return []
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if isinstance(parsed, list):
+        return [
+            normalized
+            for entry in parsed
+            if (normalized := _normalize_defect_url_entry(entry=entry, lot_id=lot_id)) is not None
+        ]
+    if isinstance(parsed, dict):
+        normalized = _normalize_defect_url_entry(entry=parsed, lot_id=lot_id)
+        return [normalized] if normalized else []
+
+    return []
+
+
 def build_inform_context(row: dict[str, Any]) -> dict[str, Any]:
     """알림 템플릿 렌더링에 사용할 컨텍스트를 구성합니다.
 
@@ -85,6 +142,7 @@ def build_inform_context(row: dict[str, Any]) -> dict[str, Any]:
     # -------------------------------------------------------------------------
     knoxid = str(row.get("knox_id") or row.get("knoxid") or "").strip()
     resolved_user_sdwt_prod = str(row.get("user_sdwt_prod") or "").strip()
+    lot_id = row.get("lot_id")
     comment_raw = str(row.get("comment") or "").split("$@$", 1)[0]
     # -------------------------------------------------------------------------
     # 2) 템플릿 컨텍스트 구성
@@ -93,11 +151,14 @@ def build_inform_context(row: dict[str, Any]) -> dict[str, Any]:
         "main_step": row.get("main_step"),
         "ppid": row.get("ppid"),
         "eqp_cb": _build_eqp_cb(row),
-        "lot_id": row.get("lot_id"),
+        "lot_id": lot_id,
         "knoxid": knoxid,
         "user_sdwt_prod": resolved_user_sdwt_prod,
         "ctttm_urls": _normalize_ctttm_urls(row.get("url")),
-        "defect_url": row.get("defect_url"),
+        "defect_urls": _normalize_defect_urls(
+            value=row.get("defect_urls") if "defect_urls" in row else row.get("defect_url"),
+            lot_id=lot_id,
+        ),
         "comment_raw": comment_raw,
     }
 

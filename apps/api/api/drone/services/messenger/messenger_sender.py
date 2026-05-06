@@ -37,11 +37,18 @@ def _build_actions(context: dict[str, Any]) -> list[dict[str, Any]]:
             if not url:
                 continue
             label = str(item.get("label") or item.get("eqp_id") or "CTTTM").strip() or "CTTTM"
-            actions.append({"type": "Action.OpenUrl", "title": label, "url": url})
+            actions.append({"type": "Action.OpenUrl", "kind": "ctttm", "title": label, "url": url})
 
-    defect_url = str(context.get("defect_url") or "").strip()
-    if defect_url:
-        actions.append({"type": "Action.OpenUrl", "title": "Defect", "url": defect_url})
+    defect_urls = context.get("defect_urls")
+    if isinstance(defect_urls, list):
+        for item in defect_urls:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("map_url") or "").strip()
+            if not url:
+                continue
+            label = str(item.get("label") or item.get("step_seq") or "Defect").strip() or "Defect"
+            actions.append({"type": "Action.OpenUrl", "kind": "defect", "title": label, "url": url})
 
     return actions
 

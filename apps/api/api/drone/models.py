@@ -5,6 +5,7 @@
 # =============================================================================
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Now
@@ -208,9 +209,19 @@ class DroneSopUserSdwtProdMap(models.Model):
 
 
 class DroneSopUserSdwtChannel(models.Model):
-    """target_user_sdwt_prod 기준 채널 키/템플릿/채팅룸 ID를 저장하는 모델입니다."""
+    """Drone SOP 알림 target 기준 채널 설정을 저장하는 모델입니다.
+
+    target_user_sdwt_prod는 알림 묶음의 고유 식별자이며, line_id는 해당 target이
+    어느 라인 설정 화면에서 관리되는지 나타내는 소유 라인입니다.
+    """
+
+    class Sources(models.TextChoices):
+        AFFILIATION = "affiliation", "Affiliation"
+        CUSTOM = "custom", "Custom"
 
     target_user_sdwt_prod = models.CharField(max_length=64)
+    line_id = models.CharField(max_length=50, blank=True, default="")
+    source = models.CharField(max_length=20, choices=Sources.choices, default=Sources.CUSTOM)
     jira_key = models.CharField(max_length=64, null=True, blank=True)
     chatroom_id = models.BigIntegerField(null=True, blank=True)
     jira_template_key = models.CharField(max_length=50, null=True, blank=True)
@@ -220,6 +231,13 @@ class DroneSopUserSdwtChannel(models.Model):
     messenger_enabled = models.BooleanField(default=True)
     mail_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_drone_sop_notification_targets",
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 
@@ -231,12 +249,67 @@ class DroneSopUserSdwtChannel(models.Model):
                 name="uniq_dro_sop_usr_chn",
             ),
         ]
+        indexes = [
+            models.Index(fields=["line_id"], name="idx_dro_sop_usr_chn_ln"),
+        ]
 
     def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         chatroom_display = self.chatroom_id if self.chatroom_id is not None else "-"
-        return f"{self.target_user_sdwt_prod} (jira={self.jira_key or '-'}, msg={chatroom_display})"
+        line_display = self.line_id or "-"
+        return f"{line_display} / {self.target_user_sdwt_prod} (jira={self.jira_key or '-'}, msg={chatroom_display})"
+
+
+class DroneSopChannelRecipient(models.Model):
+    """Drone SOP 채널별 실제 수신인 사용자를 저장하는 모델입니다.
+
+    target_user_sdwt_prod는 운영 데이터에서 이미 라인별 고유값으로 관리되며,
+    line_id 소유권은 DroneSopUserSdwtChannel에서 관리합니다.
+    """
+
+    class Channels(models.TextChoices):
+        MAIL = "mail", "Mail"
+        MESSENGER = "messenger", "Messenger"
+
+    target_user_sdwt_prod = models.CharField(max_length=64)
+    channel = models.CharField(max_length=16, choices=Channels.choices)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="drone_sop_recipients",
+    )
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_drone_sop_recipients",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_channel_recipient"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_user_sdwt_prod", "channel", "user"],
+                name="uniq_dro_sop_chn_rcp_usr",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["target_user_sdwt_prod", "channel"],
+                name="idx_dro_sop_chn_rcp_tgt",
+            ),
+            models.Index(fields=["user"], name="idx_dro_sop_chn_rcp_usr"),
+        ]
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        return f"{self.target_user_sdwt_prod} / {self.channel} / {self.user_id}"
 
 
 class DroneSopNeedToSendRule(models.Model):
@@ -292,6 +365,7 @@ class DroneEarlyInform(models.Model):
 __all__ = [
     "DroneEarlyInform",
     "DroneSOP",
+    "DroneSopChannelRecipient",
     "DroneSopNeedToSendRule",
     "DroneSopUserSdwtChannel",
     "DroneSopUserSdwtProdMap",

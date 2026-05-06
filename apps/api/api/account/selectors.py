@@ -507,6 +507,226 @@ def list_active_user_knox_ids_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[
     return normalized_knox_ids
 
 
+def list_active_user_ids_by_ids(*, user_ids: Iterable[int]) -> set[int]:
+    """활성 사용자 id 집합을 조회합니다.
+
+    입력:
+    - user_ids: 검증할 사용자 id 목록
+
+    반환:
+    - set[int]: 실제 존재하는 활성 사용자 id 집합
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 양의 정수 id만 중복 제거
+    # -----------------------------------------------------------------------------
+    normalized_ids = {
+        int(user_id)
+        for user_id in user_ids
+        if isinstance(user_id, int) and user_id > 0
+    }
+    if not normalized_ids:
+        return set()
+
+    # -----------------------------------------------------------------------------
+    # 2) 활성 사용자 id 조회
+    # -----------------------------------------------------------------------------
+    User = get_user_model()
+    return set(
+        User.objects.filter(id__in=normalized_ids, is_active=True).values_list("id", flat=True)
+    )
+
+
+def list_active_user_ids_with_contact_by_ids(*, user_ids: Iterable[int], contact_field: str) -> set[int]:
+    """활성 사용자 중 지정 연락처 값이 있는 사용자 id 집합을 조회합니다.
+
+    입력:
+    - user_ids: 검증할 사용자 id 목록
+    - contact_field: email 또는 knox_id
+
+    반환:
+    - set[int]: 연락처 값이 있는 활성 사용자 id 집합
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - ValueError: 지원하지 않는 연락처 필드일 때
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 연락처 필드와 id 입력값 검증
+    # -----------------------------------------------------------------------------
+    if contact_field not in {"email", "knox_id"}:
+        raise ValueError("contact_field must be email or knox_id")
+    normalized_ids = {
+        int(user_id)
+        for user_id in user_ids
+        if isinstance(user_id, int) and user_id > 0
+    }
+    if not normalized_ids:
+        return set()
+
+    # -----------------------------------------------------------------------------
+    # 2) 연락처가 있는 활성 사용자 id 조회
+    # -----------------------------------------------------------------------------
+    User = get_user_model()
+    rows = (
+        User.objects.filter(id__in=normalized_ids, is_active=True)
+        .exclude(**{f"{contact_field}__isnull": True})
+        .values("id", contact_field)
+    )
+    valid_ids: set[int] = set()
+    for row in rows:
+        value = row.get(contact_field)
+        if isinstance(value, str) and value.strip():
+            valid_ids.add(int(row["id"]))
+    return valid_ids
+
+
+def list_distinct_active_user_sdwt_prod_values() -> list[str]:
+    """활성 사용자 pool에 존재하는 user_sdwt_prod 목록을 반환합니다.
+
+    입력:
+    - 없음
+
+    반환:
+    - list[str]: 정렬된 user_sdwt_prod 목록
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 활성 사용자에서 소속 값 수집
+    # -----------------------------------------------------------------------------
+    User = get_user_model()
+    values = (
+        User.objects.filter(is_active=True)
+        .exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .order_by("user_sdwt_prod")
+        .distinct()
+    )
+
+    # -----------------------------------------------------------------------------
+    # 2) 공백 제거 및 대소문자 비구분 중복 제거
+    # -----------------------------------------------------------------------------
+    return sorted(_collapse_user_sdwt_prod_values(values))
+
+
+def list_active_user_pool(
+    *,
+    search: str = "",
+    user_sdwt_prod: str = "",
+    contact_field: str = "",
+    limit: int | None = 50,
+) -> list[dict[str, object]]:
+    """수신인 선택 UI에서 사용할 활성 사용자 pool을 조회합니다.
+
+    입력:
+    - search: 이름/사번/knox_id/email 검색어
+    - user_sdwt_prod: 특정 소속 필터
+    - contact_field: email 또는 knox_id 보유 사용자 필터
+    - limit: 최대 반환 개수(None이면 제한 없음)
+
+    반환:
+    - list[dict[str, object]]: 사용자 선택 옵션 목록
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 기본 사용자 queryset 구성
+    # -----------------------------------------------------------------------------
+    safe_limit = None if limit is None else max(1, min(int(limit or 50), 500))
+    normalized_search = search.strip() if isinstance(search, str) else ""
+    normalized_user_sdwt = user_sdwt_prod.strip() if isinstance(user_sdwt_prod, str) else ""
+    normalized_contact_field = contact_field.strip() if isinstance(contact_field, str) else ""
+
+    User = get_user_model()
+    queryset = User.objects.filter(is_active=True)
+    if normalized_user_sdwt:
+        queryset = queryset.filter(user_sdwt_prod__iexact=normalized_user_sdwt)
+    if normalized_contact_field in {"email", "knox_id"}:
+        queryset = queryset.exclude(**{f"{normalized_contact_field}__isnull": True}).exclude(
+            **{f"{normalized_contact_field}__exact": ""}
+        )
+
+    # -----------------------------------------------------------------------------
+    # 2) 검색어 필터 적용
+    # -----------------------------------------------------------------------------
+    if normalized_search:
+        queryset = queryset.filter(
+            Q(username__icontains=normalized_search)
+            | Q(username_en__icontains=normalized_search)
+            | Q(givenname__icontains=normalized_search)
+            | Q(surname__icontains=normalized_search)
+            | Q(sabun__icontains=normalized_search)
+            | Q(knox_id__icontains=normalized_search)
+            | Q(email__icontains=normalized_search)
+            | Q(user_sdwt_prod__icontains=normalized_search)
+        )
+
+    rows = queryset.order_by("user_sdwt_prod", "username", "id").values(
+        "id",
+        "username",
+        "username_en",
+        "givenname",
+        "surname",
+        "sabun",
+        "knox_id",
+        "email",
+        "department",
+        "line",
+        "user_sdwt_prod",
+    )
+    if safe_limit is not None:
+        rows = rows[:safe_limit]
+
+    # -----------------------------------------------------------------------------
+    # 3) 프론트엔드 선택 옵션 형태로 직렬화
+    # -----------------------------------------------------------------------------
+    results: list[dict[str, object]] = []
+    for row in rows:
+        display_name = (
+            row.get("username")
+            or row.get("username_en")
+            or row.get("givenname")
+            or row.get("knox_id")
+            or row.get("sabun")
+            or ""
+        )
+        results.append(
+            {
+                "id": row["id"],
+                "username": row.get("username") or "",
+                "displayName": display_name,
+                "sabun": row.get("sabun") or "",
+                "knoxId": row.get("knox_id") or "",
+                "email": row.get("email") or "",
+                "department": row.get("department") or "",
+                "line": row.get("line") or "",
+                "userSdwtProd": row.get("user_sdwt_prod") or "",
+            }
+        )
+    return results
+
+
 def list_user_sdwt_prod_access_rows(*, user: Any) -> list[UserSdwtProdAccess]:
     """사용자의 접근 권한(UserSdwtProdAccess) 행 목록을 조회합니다.
 
@@ -557,6 +777,36 @@ def get_user_profile_role(*, user: Any) -> str:
     if profile is None:
         return UserProfile.Roles.VIEWER
     return profile.role or UserProfile.Roles.VIEWER
+
+
+def is_operator_user(*, user: Any) -> bool:
+    """전역 운영자 권한 여부를 조회합니다.
+
+    입력:
+    - user: Django 사용자 객체
+
+    반환:
+    - bool: 운영자이면 True
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 인증 및 Django 특권 플래그 확인
+    # -----------------------------------------------------------------------------
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+        return True
+
+    # -----------------------------------------------------------------------------
+    # 2) account profile의 admin 역할을 운영자로 해석
+    # -----------------------------------------------------------------------------
+    return get_user_profile_role(user=user) == UserProfile.Roles.ADMIN
 
 
 def get_user_profile_by_user(*, user: Any) -> UserProfile | None:

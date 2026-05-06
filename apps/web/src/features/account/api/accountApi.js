@@ -8,6 +8,7 @@ const endpoints = {
   grants: "/api/v1/account/access/grants",
   manageable: "/api/v1/account/access/manageable",
   mailboxMembers: "/api/v1/emails/mailboxes/members/",
+  users: "/api/v1/account/users",
 }
 
 async function request(url, options = {}) {
@@ -45,7 +46,59 @@ async function unwrap(response, defaultMessage) {
   throw new Error(message || "Request failed")
 }
 
+function normalizeUser(rawUser) {
+  if (!rawUser || typeof rawUser !== "object") return null
+  const userId = Number.parseInt(rawUser.userId ?? rawUser.id, 10)
+  if (!Number.isFinite(userId) || userId <= 0) return null
+
+  return {
+    id: userId,
+    userId,
+    username: typeof rawUser.username === "string" ? rawUser.username : "",
+    displayName: typeof rawUser.displayName === "string" ? rawUser.displayName : "",
+    sabun: typeof rawUser.sabun === "string" ? rawUser.sabun : "",
+    knoxId: typeof rawUser.knoxId === "string" ? rawUser.knoxId : "",
+    email: typeof rawUser.email === "string" ? rawUser.email : "",
+    department: typeof rawUser.department === "string" ? rawUser.department : "",
+    line: typeof rawUser.line === "string" ? rawUser.line : "",
+    userSdwtProd: typeof rawUser.userSdwtProd === "string" ? rawUser.userSdwtProd : "",
+  }
+}
+
+function normalizeUsers(values) {
+  return (Array.isArray(values) ? values : []).map(normalizeUser).filter(Boolean)
+}
+
+function normalizeTextValues(values) {
+  return Array.isArray(values)
+    ? values.filter((value) => typeof value === "string" && value.trim())
+    : []
+}
+
+export async function fetchAccountUserPool({
+  search = "",
+  userSdwtProd = "",
+  contactField = "",
+  limit = 50,
+} = {}) {
+  const params = new URLSearchParams()
+  if (search) params.set("search", search)
+  if (userSdwtProd) params.set("userSdwtProd", userSdwtProd)
+  if (contactField) params.set("contactField", contactField)
+  params.set("limit", String(limit))
+
+  const url = buildBackendUrl(`${endpoints.users}?${params.toString()}`)
+  const response = await request(url, { cache: "no-store" })
+  const payload = await unwrap(response, "Failed to load account users")
+  return {
+    results: normalizeUsers(payload?.results),
+    userSdwtProds: normalizeTextValues(payload?.userSdwtProds),
+  }
+}
+
 export const accountApi = {
+  fetchUserPool: fetchAccountUserPool,
+
   async fetchAffiliation() {
     const url = buildBackendUrl(endpoints.affiliation)
     const response = await request(url, { cache: "no-store" })

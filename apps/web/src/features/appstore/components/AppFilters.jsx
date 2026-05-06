@@ -1,13 +1,23 @@
 // 앱스토어 필터 패널
 import { Plus, Search, X } from "lucide-react"
 
-import { CATEGORY_OPTIONS } from "./AppFormDialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
 const ALL_CATEGORY = "all"
-const CATEGORY_ORDER_SET = new Set(CATEGORY_OPTIONS)
+const CATEGORY_DISPLAY_ORDER = [
+  "DX App",
+  "Engineer App",
+  "Etch Report",
+  "PM Report",
+  "품질 Report",
+  "환경안전 Report",
+  "생산지원 Report",
+  "설치기술 Report",
+  "E린이 필수 App",
+]
+const CATEGORY_ORDER_SET = new Set(CATEGORY_DISPLAY_ORDER)
 
 const getCategoryLabel = (option) => (option === ALL_CATEGORY ? "Total" : option)
 const getOrderedCategories = (categories) => {
@@ -15,7 +25,7 @@ const getOrderedCategories = (categories) => {
 
   return [
     ...(categorySet.has(ALL_CATEGORY) ? [ALL_CATEGORY] : []),
-    ...CATEGORY_OPTIONS.filter((option) => categorySet.has(option)),
+    ...CATEGORY_DISPLAY_ORDER.filter((option) => categorySet.has(option)),
     ...categories.filter(
       (option) => option !== ALL_CATEGORY && !CATEGORY_ORDER_SET.has(option),
     ),

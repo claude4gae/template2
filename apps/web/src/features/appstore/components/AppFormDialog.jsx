@@ -1,5 +1,5 @@
 // 앱스토어 앱 등록/수정 다이얼로그
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+
+const MAX_CATEGORY_LENGTH = 100
 
 function getClipboardImageFiles(clipboardData) {
   const items = Array.from(clipboardData?.items ?? [])
@@ -31,29 +33,21 @@ function fileToDataUrl(file) {
   })
 }
 
-export const CATEGORY_OPTIONS = [
-  "DX App",
-  "Engineer App",
-  "Etch Report",
-  "PM Report",
-  "품질 Report",
-  "환경안전 Report",
-  "생산지원 Report",
-  "설치기술 Report",
-  "E린이 필수 App",
-]
-
 export function AppFormDialog({
   open,
   onOpenChange,
   onSubmit,
   initialData,
   isSubmitting,
+  categoryOptions = [],
   defaultContactName = "",
   defaultContactKnoxid = "",
 }) {
   const [name, setName] = useState("")
   const [category, setCategory] = useState("")
+  const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false)
+  const [isAddingCategory, setIsAddingCategory] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState("")
   const [url, setUrl] = useState("")
   const [manualUrl, setManualUrl] = useState("")
   const [description, setDescription] = useState("")
@@ -62,9 +56,13 @@ export function AppFormDialog({
   const [screenshotUrls, setScreenshotUrls] = useState([])
   const [coverScreenshotIndex, setCoverScreenshotIndex] = useState(0)
   const [screenshotError, setScreenshotError] = useState("")
+  const newCategoryInputRef = useRef(null)
 
   useEffect(() => {
     if (!open) return
+    setIsCategorySelectOpen(false)
+    setIsAddingCategory(false)
+    setNewCategoryName("")
     if (initialData) {
       setName(initialData.name || "")
       setCategory(initialData.category || "")
@@ -109,10 +107,61 @@ export function AppFormDialog({
     setContactKnoxid((prev) => (prev ? prev : defaultContactKnoxid || ""))
   }, [defaultContactName, defaultContactKnoxid, initialData, open])
 
+  useEffect(() => {
+    if (!isAddingCategory || !isCategorySelectOpen) return undefined
+    const frameId = requestAnimationFrame(() => {
+      newCategoryInputRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(frameId)
+  }, [isAddingCategory, isCategorySelectOpen])
+
   const title = useMemo(
     () => (initialData ? "앱 정보 수정" : "새 앱 등록"),
     [initialData],
   )
+  const normalizedCategoryOptions = useMemo(() => {
+    const unique = new Set()
+    categoryOptions.forEach((option) => {
+      if (typeof option !== "string") return
+      const trimmed = option.trim()
+      if (trimmed) unique.add(trimmed)
+    })
+    const currentCategory = initialData?.category
+    if (typeof currentCategory === "string" && currentCategory.trim()) {
+      unique.add(currentCategory.trim())
+    }
+    return Array.from(unique)
+  }, [categoryOptions, initialData])
+  const categorySelectOptions = useMemo(() => {
+    const unique = new Set(normalizedCategoryOptions)
+    const trimmedCategory = category.trim()
+    if (trimmedCategory) unique.add(trimmedCategory)
+    return Array.from(unique)
+  }, [category, normalizedCategoryOptions])
+  const selectedCategoryOption = categorySelectOptions.includes(category.trim()) ? category.trim() : ""
+
+  const handleCategorySelectOpenChange = (nextOpen) => {
+    setIsCategorySelectOpen(nextOpen)
+    if (nextOpen) return
+    setIsAddingCategory(false)
+    setNewCategoryName("")
+  }
+
+  const handleCategorySelect = (value) => {
+    setCategory(value)
+    setIsAddingCategory(false)
+    setNewCategoryName("")
+    setIsCategorySelectOpen(false)
+  }
+
+  const handleAddCategory = () => {
+    const nextCategory = newCategoryName.trim()
+    if (!nextCategory) return
+    setCategory(nextCategory)
+    setIsAddingCategory(false)
+    setNewCategoryName("")
+    setIsCategorySelectOpen(false)
+  }
 
   const handleSubmit = async () => {
     if (!name.trim() || !category.trim() || !url.trim()) return
@@ -182,17 +231,98 @@ export function AppFormDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="app-category">카테고리</Label>
-            <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger id="app-category">
-                <SelectValue placeholder="카테고리 선택" />
+            <Label htmlFor={isAddingCategory ? "app-category-new" : "app-category-select"}>카테고리</Label>
+            <Select
+              open={isCategorySelectOpen}
+              onOpenChange={handleCategorySelectOpenChange}
+              value={selectedCategoryOption}
+              onValueChange={handleCategorySelect}
+            >
+              <SelectTrigger id="app-category-select" aria-label="기존 카테고리 선택" className="w-full">
+                <SelectValue placeholder={categorySelectOptions.length ? "기존 카테고리 선택" : "기존 카테고리 없음"} />
               </SelectTrigger>
               <SelectContent>
-                {CATEGORY_OPTIONS.map((option) => (
+                {categorySelectOptions.map((option) => (
                   <SelectItem key={option} value={option}>
                     {option}
                   </SelectItem>
                 ))}
+                {categorySelectOptions.length > 0 ? <SelectSeparator /> : null}
+                {isAddingCategory ? (
+                  <div
+                    className="grid gap-2 p-2"
+                    onPointerDownCapture={(event) => event.stopPropagation()}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="app-category-new"
+                        ref={newCategoryInputRef}
+                        value={newCategoryName}
+                        onChange={(event) => setNewCategoryName(event.target.value)}
+                        onKeyDown={(event) => {
+                          event.stopPropagation()
+                          if (event.key === "Enter") {
+                            event.preventDefault()
+                            handleAddCategory()
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault()
+                            setIsAddingCategory(false)
+                            setNewCategoryName("")
+                          }
+                        }}
+                        placeholder="새 카테고리 입력"
+                        maxLength={MAX_CATEGORY_LENGTH}
+                        className="h-8"
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={handleAddCategory}
+                        disabled={!newCategoryName.trim()}
+                        className="h-8 shrink-0"
+                      >
+                        추가
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsAddingCategory(false)
+                        setNewCategoryName("")
+                      }}
+                      className="h-7 justify-start px-2 text-xs text-muted-foreground"
+                    >
+                      취소
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="relative flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                    onPointerDown={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setIsAddingCategory(true)
+                      setNewCategoryName("")
+                      setIsCategorySelectOpen(true)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setIsAddingCategory(true)
+                      setNewCategoryName("")
+                      setIsCategorySelectOpen(true)
+                    }}
+                  >
+                    + 새 카테고리 추가
+                  </button>
+                )}
               </SelectContent>
             </Select>
           </div>

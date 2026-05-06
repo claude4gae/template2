@@ -23,6 +23,7 @@ from .views import (
     AccountGrantListView,
     AccountGrantView,
     AccountOverviewView,
+    AccountUserPoolView,
     LineSdwtOptionsView,
 )
 
@@ -51,5 +52,6 @@ urlpatterns = [
     ),
     path("access/grants", AccountGrantView.as_view(), name="account-access-grant"),
     path("access/manageable", AccountGrantListView.as_view(), name="account-access-manageable"),
+    path("users", AccountUserPoolView.as_view(), name="account-users"),
     path("line-sdwt-options", LineSdwtOptionsView.as_view(), name="account-line-sdwt-options"),
 ]

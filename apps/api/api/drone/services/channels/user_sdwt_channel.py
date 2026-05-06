@@ -1,22 +1,56 @@
 # =============================================================================
 # 모듈: Drone SOP 채널 설정 서비스
-# 주요 함수: upsert_drone_sop_user_sdwt_channel
-# 주요 가정: target_user_sdwt_prod 단위로 단일 행을 관리합니다.
+# 주요 함수: upsert_drone_sop_user_sdwt_channel, ensure_drone_sop_notification_target
+# 주요 가정: target_user_sdwt_prod 단위로 단일 알림 target을 관리합니다.
 # =============================================================================
 """Drone SOP 채널 설정 갱신 서비스 모음."""
 
 from __future__ import annotations
+
+from typing import Any
 
 from django.db import transaction
 
 from ...models import DroneSopUserSdwtChannel
 
 _UNSET = object()
+VALID_TARGET_SOURCES = {
+    DroneSopUserSdwtChannel.Sources.AFFILIATION,
+    DroneSopUserSdwtChannel.Sources.CUSTOM,
+}
+
+
+def _normalize_optional_text(value: Any) -> str:
+    """선택 문자열 값을 공백 제거 기준으로 정규화합니다."""
+
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _same_text(left: str | None, right: str | None) -> bool:
+    """대소문자 차이를 무시하고 두 문자열이 같은지 확인합니다."""
+
+    normalized_left = _normalize_optional_text(left)
+    normalized_right = _normalize_optional_text(right)
+    return normalized_left.casefold() == normalized_right.casefold()
+
+
+def _normalize_target_source(value: str | object) -> str | object:
+    """target source 값을 허용된 값으로 정규화합니다."""
+
+    if value is _UNSET:
+        return value
+    normalized = _normalize_optional_text(value)
+    if normalized not in VALID_TARGET_SOURCES:
+        raise ValueError("source must be affiliation or custom")
+    return normalized
 
 
 def upsert_drone_sop_user_sdwt_channel(
     *,
     target_user_sdwt_prod: str,
+    line_id: str | None | object = _UNSET,
+    source: str | object = _UNSET,
+    actor: Any | None = None,
     jira_key: str | None | object = _UNSET,
     chatroom_id: int | None | object = _UNSET,
     jira_template_key: str | None | object = _UNSET,
@@ -26,10 +60,13 @@ def upsert_drone_sop_user_sdwt_channel(
     messenger_enabled: bool | object = _UNSET,
     mail_enabled: bool | object = _UNSET,
 ) -> tuple[DroneSopUserSdwtChannel, int]:
-    """target_user_sdwt_prod에 대한 채널 키/템플릿을 생성 또는 갱신합니다.
+    """target_user_sdwt_prod에 대한 알림 target/채널 설정을 생성 또는 갱신합니다.
 
     입력:
     - target_user_sdwt_prod: 최종 소속 식별자
+    - line_id: target 소유 라인(없으면 기존 값을 유지)
+    - source: affiliation/custom 중 target 생성 출처
+    - actor: target을 생성한 사용자
     - jira_key: Jira 프로젝트 키(없으면 None, 미지정 시 _UNSET)
     - chatroom_id: 채팅룸 ID(없으면 None, 미지정 시 _UNSET)
     - jira_template_key: Jira 템플릿 키(없으면 None, 미지정 시 _UNSET)
@@ -56,7 +93,9 @@ def upsert_drone_sop_user_sdwt_channel(
     if not isinstance(target_user_sdwt_prod, str) or not target_user_sdwt_prod.strip():
         raise ValueError("target_user_sdwt_prod is required")
     if (
-        jira_key is _UNSET
+        line_id is _UNSET
+        and source is _UNSET
+        and jira_key is _UNSET
         and chatroom_id is _UNSET
         and jira_template_key is _UNSET
         and mail_template_key is _UNSET
@@ -91,6 +130,8 @@ def upsert_drone_sop_user_sdwt_channel(
     _validate_optional_str(jira_template_key, "jira_template_key")
     _validate_optional_str(mail_template_key, "mail_template_key")
     _validate_optional_str(messenger_template_key, "messenger_template_key")
+    normalized_line_id = _normalize_optional_text(line_id) if line_id is not _UNSET else _UNSET
+    normalized_source = _normalize_target_source(source)
     if jira_enabled is not _UNSET and not isinstance(jira_enabled, bool):
         raise ValueError("jira_enabled must be bool")
     if messenger_enabled is not _UNSET and not isinstance(messenger_enabled, bool):
@@ -116,8 +157,26 @@ def upsert_drone_sop_user_sdwt_channel(
         )
         created = channel is None
         if channel is None:
+            if normalized_line_id is _UNSET:
+                raise ValueError("line_id is required for new target")
             channel = DroneSopUserSdwtChannel(target_user_sdwt_prod=normalized_target)
         update_fields: list[str] = []
+
+        if normalized_line_id is not _UNSET:
+            if not normalized_line_id and created:
+                raise ValueError("line_id is required for new target")
+            if normalized_line_id:
+                if channel.line_id and not _same_text(channel.line_id, normalized_line_id):
+                    raise ValueError("targetUserSdwtProd already belongs to another line")
+                if channel.line_id != normalized_line_id:
+                    channel.line_id = normalized_line_id
+                    update_fields.append("line_id")
+        if normalized_source is not _UNSET and (created or not channel.source) and channel.source != normalized_source:
+            channel.source = normalized_source
+            update_fields.append("source")
+        if created and getattr(actor, "is_authenticated", False):
+            channel.created_by = actor
+            update_fields.append("created_by")
 
         if jira_key is not _UNSET and channel.jira_key != jira_key:
             channel.jira_key = jira_key
@@ -178,4 +237,37 @@ def upsert_drone_sop_user_sdwt_channel(
     return channel, 0
 
 
-__all__ = ["upsert_drone_sop_user_sdwt_channel"]
+def ensure_drone_sop_notification_target(
+    *,
+    line_id: str,
+    target_user_sdwt_prod: str,
+    actor: Any | None = None,
+    source: str = DroneSopUserSdwtChannel.Sources.CUSTOM,
+) -> tuple[DroneSopUserSdwtChannel, int]:
+    """라인별 Drone SOP 알림 target을 생성하거나 기존 target을 반환합니다.
+
+    입력:
+    - line_id: target 소유 라인
+    - target_user_sdwt_prod: 알림 target 식별자
+    - actor: 생성 요청 사용자
+    - source: affiliation/custom 중 생성 출처
+
+    반환:
+    - (DroneSopUserSdwtChannel, int): (target row, 변경 여부)
+
+    부작용:
+    - target이 없으면 DroneSopUserSdwtChannel row를 생성합니다.
+
+    오류:
+    - ValueError: line/target/source가 유효하지 않거나 target이 다른 line에 속할 때
+    """
+
+    return upsert_drone_sop_user_sdwt_channel(
+        target_user_sdwt_prod=target_user_sdwt_prod,
+        line_id=line_id,
+        source=source,
+        actor=actor,
+    )
+
+
+__all__ = ["ensure_drone_sop_notification_target", "upsert_drone_sop_user_sdwt_channel"]

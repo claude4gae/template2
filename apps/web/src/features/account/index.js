@@ -1,4 +1,5 @@
 export { accountRoutes } from "./routes"
 export { AccessListCard } from "./components/AccessListCard"
 export { MailboxAccessCard } from "./components/MailboxAccessCard"
+export { fetchAccountUserPool } from "./api/accountApi"
 export { useAccountOverview } from "./hooks/useAccountData"

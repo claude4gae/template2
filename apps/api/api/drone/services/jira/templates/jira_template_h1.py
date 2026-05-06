@@ -107,8 +107,10 @@ DESCRIPTION_TEMPLATE = """<div>
   <div style="margin:4px 0;">
     <div style="font-size:14px; margin-top:12px;">
       💿 Defect URL :
-      {% if defect_url %}
-        <a href="{{ defect_url }}" target="_blank" rel="noopener noreferrer" style="font-size:14px;">{{ lot_id|default:"-" }}</a>
+      {% if defect_urls %}
+        {% for item in defect_urls %}
+          <a href="{{ item.map_url }}" target="_blank" rel="noopener noreferrer" style="font-size:14px;">{{ item.label }}</a>{% if not forloop.last %},{% endif %}
+        {% endfor %}
       {% else %}
         <span style="font-size:14px; color:#999;">-</span>
       {% endif %}

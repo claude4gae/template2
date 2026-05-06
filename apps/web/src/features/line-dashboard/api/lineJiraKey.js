@@ -1,5 +1,5 @@
 // 파일 경로: src/features/line-dashboard/api/lineJiraKey.js
-// user_sdwt_prod 기반 Jira project key 조회/저장 API 래퍼
+// 알림 target 기반 Jira project key 조회/저장 API 래퍼
 import { buildBackendUrl, safeParseJson } from "@/lib/api"
 
 import { buildApiError } from "./apiError"
@@ -9,7 +9,7 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
     return { jiraKey: "" }
   }
 
-  const endpoint = buildBackendUrl("/api/v1/line-dashboard/jira-keys", { userSdwtProd })
+  const endpoint = buildBackendUrl("/api/v1/line-dashboard/jira-keys", { targetUserSdwtProd: userSdwtProd })
   const response = await fetch(endpoint, {
     cache: "no-store",
     credentials: "include",
@@ -27,13 +27,15 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
   return { jiraKey: typeof payload?.jiraKey === "string" ? payload.jiraKey : "" }
 }
 
-export async function updateUserSdwtJiraKey({ userSdwtProd, jiraKey }) {
+export async function updateUserSdwtJiraKey({ lineId, userSdwtProd, jiraKey }) {
   const endpoint = buildBackendUrl("/api/v1/line-dashboard/jira-keys")
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({
+      lineId,
+      targetUserSdwtProd: userSdwtProd,
       userSdwtProd,
       jiraKey: typeof jiraKey === "string" ? jiraKey : "",
     }),

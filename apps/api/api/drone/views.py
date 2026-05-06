@@ -198,6 +198,35 @@ def _parse_positive_int_or_error(
     return parsed, None
 
 
+def _parse_user_id_list(value: Any) -> tuple[list[int], JsonResponse | None]:
+    """userIds 값을 양의 정수 리스트로 파싱합니다."""
+
+    if not isinstance(value, list):
+        return [], _json_error("userIds must be a list", status=400)
+
+    user_ids: list[int] = []
+    seen: set[int] = set()
+    for item in value:
+        if isinstance(item, bool):
+            return [], _json_error("userIds must contain only integers", status=400)
+        if isinstance(item, int):
+            user_id = item
+        elif isinstance(item, str):
+            try:
+                user_id = int(item.strip())
+            except ValueError:
+                return [], _json_error("userIds must contain only integers", status=400)
+        else:
+            return [], _json_error("userIds must contain only integers", status=400)
+        if user_id <= 0:
+            return [], _json_error("userIds must contain only positive integers", status=400)
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        user_ids.append(user_id)
+    return user_ids, None
+
+
 def _resolve_knox_id(request: HttpRequest) -> str | None:
     """요청 사용자에서 knox_id를 추출합니다.
 
@@ -890,25 +919,153 @@ class DroneEarlyInformView(DroneAuthenticatedView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class DroneNotificationTargetView(DroneAuthenticatedView):
+    """라인별 Drone SOP 알림 target 조회/생성 엔드포인트입니다."""
+
+    @staticmethod
+    def _normalize_line_id(raw_value: Any) -> str:
+        """lineId 값을 공백 제거 기준으로 정규화합니다."""
+
+        return raw_value.strip() if isinstance(raw_value, str) else ""
+
+    @staticmethod
+    def _normalize_target(raw_value: Any) -> str:
+        """targetUserSdwtProd 값을 공백 제거 기준으로 정규화합니다."""
+
+        return raw_value.strip() if isinstance(raw_value, str) else ""
+
+    @staticmethod
+    def _serialize_target(target: Any, *, fallback_line_id: str) -> dict[str, object]:
+        """DroneSopUserSdwtChannel row를 API 응답 형태로 변환합니다."""
+
+        return {
+            "lineId": getattr(target, "line_id", None) or fallback_line_id,
+            "targetUserSdwtProd": getattr(target, "target_user_sdwt_prod", None) or "",
+            "source": getattr(target, "source", None) or "custom",
+            "isConfigured": True,
+            "jiraKey": getattr(target, "jira_key", None) or None,
+        }
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """라인별 알림 target 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: target 목록
+
+        부작용:
+        - 없음(읽기 전용)
+
+        오류:
+        - 400: lineId 누락
+        - 401: 미인증
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/line-dashboard/notification-targets?lineId=L1
+
+        snake/camel 호환:
+        - 요청 쿼리는 lineId(camelCase)만 지원합니다.
+        """
+
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+
+        line_id = self._normalize_line_id(request.GET.get("lineId"))
+        if not line_id:
+            return JsonResponse({"error": "lineId is required"}, status=400)
+
+        targets = selectors.list_drone_sop_notification_targets_for_line(line_id=line_id)
+        return JsonResponse(
+            {
+                "lineId": line_id,
+                "targets": targets,
+                "targetUserSdwtProds": [row["targetUserSdwtProd"] for row in targets],
+            }
+        )
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """라인별 알림 target을 생성합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 생성/조회된 target
+
+        부작용:
+        - DroneSopUserSdwtChannel target row 생성 또는 재활성화
+
+        오류:
+        - 400: 입력 오류
+        - 401: 미인증
+        - 403: 권한 없음
+
+        예시 요청:
+        - 예시 요청: POST /api/v1/line-dashboard/notification-targets
+          요청 바디 예시: {"lineId":"L1","targetUserSdwtProd":"L1_NIGHT_SHIFT"}
+
+        snake/camel 호환:
+        - 요청 본문은 lineId/targetUserSdwtProd(camelCase)만 지원합니다.
+        """
+
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+        if not selectors.user_can_manage_drone_sop_recipients(user=request.user):
+            return JsonResponse({"error": "forbidden"}, status=403)
+
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        line_id = self._normalize_line_id(payload.get("lineId"))
+        if not line_id:
+            return JsonResponse({"error": "lineId is required"}, status=400)
+        target_user_sdwt_prod = self._normalize_target(payload.get("targetUserSdwtProd"))
+        if not target_user_sdwt_prod:
+            return JsonResponse({"error": "targetUserSdwtProd is required"}, status=400)
+
+        try:
+            target, updated = services.ensure_drone_sop_notification_target(
+                line_id=line_id,
+                target_user_sdwt_prod=target_user_sdwt_prod,
+                actor=request.user,
+            )
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        return JsonResponse(
+            {
+                "lineId": line_id,
+                "target": self._serialize_target(target, fallback_line_id=line_id),
+                "updated": updated,
+            }
+        )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class DroneJiraKeyView(DroneAuthenticatedView):
-    """user_sdwt_prod 단위 Jira 템플릿/프로젝트 키 조회/갱신 엔드포인트입니다."""
+    """target_user_sdwt_prod 단위 Jira 템플릿/프로젝트 키 조회/갱신 엔드포인트입니다."""
 
     MAX_PROJECT_KEY_LENGTH = 64
     MAX_TEMPLATE_KEY_LENGTH = 50
 
     @staticmethod
     def _ensure_valid_target_user_sdwt_prod(target_user_sdwt_prod: str) -> JsonResponse | None:
-        """target_user_sdwt_prod 유효성(필수/존재)을 확인합니다."""
+        """target_user_sdwt_prod 필수 여부를 확인합니다."""
 
         if not target_user_sdwt_prod:
             return JsonResponse({"error": "userSdwtProd is required"}, status=400)
-        if not selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=target_user_sdwt_prod):
-            return JsonResponse({"error": "userSdwtProd not found"}, status=404)
         return None
 
     @staticmethod
     def _normalize_user_sdwt_prod(raw_value: Any) -> str:
-        """userSdwtProd 값을 공백 제거 기준으로 정규화합니다."""
+        """targetUserSdwtProd/userSdwtProd 값을 공백 제거 기준으로 정규화합니다."""
 
         if isinstance(raw_value, str):
             return raw_value.strip()
@@ -988,10 +1145,10 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             return auth_response
 
         # -----------------------------------------------------------------------------
-        # 2) userSdwtProd 검증
+        # 2) targetUserSdwtProd 검증
         # -----------------------------------------------------------------------------
         target_user_sdwt_prod, target_user_sdwt_error = self._resolve_and_validate_target_user_sdwt_prod(
-            request.GET.get("userSdwtProd")
+            request.GET.get("targetUserSdwtProd") or request.GET.get("userSdwtProd")
         )
         if target_user_sdwt_error is not None:
             return target_user_sdwt_error
@@ -1007,6 +1164,8 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         return JsonResponse(
             {
                 "userSdwtProd": target_user_sdwt_prod,
+                "targetUserSdwtProd": target_user_sdwt_prod,
+                "lineId": entry.line_id if entry else "",
                 "jiraKey": jira_key,
                 "templateKey": template_key,
             }
@@ -1028,6 +1187,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         오류:
         - 400: 입력 오류
         - 401: 미인증
+        - 403: 권한 없음
         - 403: 권한 없음
         - 404: userSdwtProd 없음
 
@@ -1055,13 +1215,14 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             return error_response
 
         # -----------------------------------------------------------------------------
-        # 3) userSdwtProd 추출 및 검증
+        # 3) targetUserSdwtProd 추출 및 검증
         # -----------------------------------------------------------------------------
         target_user_sdwt_prod, target_user_sdwt_error = self._resolve_and_validate_target_user_sdwt_prod(
-            payload.get("userSdwtProd")
+            payload.get("targetUserSdwtProd") or payload.get("userSdwtProd")
         )
         if target_user_sdwt_error is not None:
             return target_user_sdwt_error
+        line_id = DroneNotificationTargetView._normalize_line_id(payload.get("lineId"))
 
         # -----------------------------------------------------------------------------
         # 5) jiraKey/templateKey 추출 및 길이 검증
@@ -1089,15 +1250,23 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         # 6) 서비스 호출 및 응답 반환
         # -----------------------------------------------------------------------------
         payload_kwargs: dict[str, object] = {"target_user_sdwt_prod": target_user_sdwt_prod}
+        if line_id:
+            payload_kwargs["line_id"] = line_id
+            payload_kwargs["actor"] = request.user
         if jira_key_provided:
             payload_kwargs["jira_key"] = jira_key
         if template_key_provided:
             payload_kwargs["jira_template_key"] = template_key
 
-        template, updated = services.upsert_drone_sop_user_sdwt_channel(**payload_kwargs)
+        try:
+            template, updated = services.upsert_drone_sop_user_sdwt_channel(**payload_kwargs)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
         return JsonResponse(
             {
                 "userSdwtProd": target_user_sdwt_prod,
+                "targetUserSdwtProd": target_user_sdwt_prod,
+                "lineId": template.line_id or line_id,
                 "jiraKey": template.jira_key,
                 "templateKey": template.jira_template_key,
                 "updated": updated,
@@ -1149,6 +1318,259 @@ class JiraUserSdwtProdListView(DroneAuthenticatedView):
                 log_message="Failed to load Jira user SDWT prods",
                 error_message="Failed to load Jira user SDWT prods",
             )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DroneNotificationRecipientView(DroneAuthenticatedView):
+    """Drone SOP 채널별 수신인 조회/교체 엔드포인트입니다.
+
+    커스텀 targetUserSdwtProd를 허용하므로 lineId/targetUserSdwtProd 조합을
+    account_affiliation에 강제로 매칭하지 않습니다.
+    """
+
+    @staticmethod
+    def _normalize_line_id(raw_value: Any) -> str:
+        """lineId 값을 공백 제거 기준으로 정규화합니다."""
+
+        return raw_value.strip() if isinstance(raw_value, str) else ""
+
+    @classmethod
+    def _validate_line_id(cls, raw_value: Any) -> tuple[str, JsonResponse | None]:
+        """lineId 필수 여부를 검증합니다."""
+
+        line_id = cls._normalize_line_id(raw_value)
+        if not line_id:
+            return "", JsonResponse({"error": "lineId is required"}, status=400)
+        return line_id, None
+
+    @staticmethod
+    def _normalize_target(raw_value: Any) -> str:
+        """targetUserSdwtProd 값을 공백 제거 기준으로 정규화합니다."""
+
+        return raw_value.strip() if isinstance(raw_value, str) else ""
+
+    @classmethod
+    def _validate_target(cls, raw_value: Any) -> tuple[str, JsonResponse | None]:
+        """targetUserSdwtProd 필수 여부를 검증합니다."""
+
+        target_user_sdwt_prod = cls._normalize_target(raw_value)
+        if not target_user_sdwt_prod:
+            return "", JsonResponse({"error": "targetUserSdwtProd is required"}, status=400)
+        return target_user_sdwt_prod, None
+
+    @staticmethod
+    def _validate_channel(raw_value: Any) -> tuple[str, JsonResponse | None]:
+        """채널 값을 mail/messenger 중 하나로 검증합니다."""
+
+        try:
+            channel = services.normalize_recipient_channel(raw_value)
+        except ValueError as exc:
+            return "", JsonResponse({"error": str(exc)}, status=400)
+        return channel, None
+
+    @staticmethod
+    def _can_update_recipients(*, user: Any) -> bool:
+        """수신인 설정 변경 권한을 확인합니다."""
+
+        return selectors.user_can_manage_drone_sop_recipients(user=user)
+
+    @staticmethod
+    def _validate_target_line_context(*, line_id: str, target_user_sdwt_prod: str) -> JsonResponse | None:
+        """target이 이미 다른 line에 소속되어 있으면 요청을 거부합니다."""
+
+        target = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(
+            target_user_sdwt_prod=target_user_sdwt_prod
+        )
+        target_line_id = getattr(target, "line_id", "") if target else ""
+        if target_line_id and target_line_id.casefold() != line_id.casefold():
+            return JsonResponse({"error": "targetUserSdwtProd already belongs to another line"}, status=400)
+        return None
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """target/channel 수신인 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 수신인 목록
+
+        부작용:
+        - 없음(읽기 전용)
+
+        오류:
+        - 400: 입력 오류
+        - 401: 미인증
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/line-dashboard/notification-recipients?lineId=L1&targetUserSdwtProd=ETCH_A&channel=mail
+
+        snake/camel 호환:
+        - 요청 쿼리는 lineId/targetUserSdwtProd/channel(camelCase)만 지원합니다.
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) line/target/channel 검증
+        # -----------------------------------------------------------------------------
+        line_id, line_error = self._validate_line_id(request.GET.get("lineId"))
+        if line_error is not None:
+            return line_error
+        target_user_sdwt_prod, target_error = self._validate_target(request.GET.get("targetUserSdwtProd"))
+        if target_error is not None:
+            return target_error
+        channel, channel_error = self._validate_channel(request.GET.get("channel") or "mail")
+        if channel_error is not None:
+            return channel_error
+        target_line_error = self._validate_target_line_context(
+            line_id=line_id,
+            target_user_sdwt_prod=target_user_sdwt_prod,
+        )
+        if target_line_error is not None:
+            return target_line_error
+
+        if not self._can_update_recipients(user=request.user):
+            return JsonResponse({"error": "forbidden"}, status=403)
+
+        # -----------------------------------------------------------------------------
+        # 3) 수신인 조회 및 응답 반환
+        # -----------------------------------------------------------------------------
+        recipients = selectors.list_drone_sop_channel_recipients(
+            line_id=line_id,
+            target_user_sdwt_prod=target_user_sdwt_prod,
+            channel=channel,
+        )
+        return JsonResponse(
+            {
+                "lineId": line_id,
+                "targetUserSdwtProd": target_user_sdwt_prod,
+                "channel": channel,
+                "recipients": recipients,
+            }
+        )
+
+    def put(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """target/channel 수신인 목록을 최종 userIds 스냅샷으로 교체합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 갱신된 수신인 목록
+
+        부작용:
+        - 수신인 생성/재활성화/비활성화
+
+        오류:
+        - 400: 입력 오류
+        - 401: 미인증
+        - 403: 권한 없음
+
+        예시 요청:
+        - 예시 요청: PUT /api/v1/line-dashboard/notification-recipients
+          요청 바디 예시: {"lineId":"L1","targetUserSdwtProd":"ETCH_A","channel":"mail","userIds":[1,2,3]}
+
+        snake/camel 호환:
+        - 요청 본문은 lineId/targetUserSdwtProd/channel/userIds(camelCase)만 지원합니다.
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 인증 및 JSON 파싱
+        # -----------------------------------------------------------------------------
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        # -----------------------------------------------------------------------------
+        # 2) line/target/channel/userIds 검증
+        # -----------------------------------------------------------------------------
+        line_id, line_error = self._validate_line_id(payload.get("lineId"))
+        if line_error is not None:
+            return line_error
+        target_user_sdwt_prod, target_error = self._validate_target(payload.get("targetUserSdwtProd"))
+        if target_error is not None:
+            return target_error
+        channel, channel_error = self._validate_channel(payload.get("channel") or "mail")
+        if channel_error is not None:
+            return channel_error
+        target_line_error = self._validate_target_line_context(
+            line_id=line_id,
+            target_user_sdwt_prod=target_user_sdwt_prod,
+        )
+        if target_line_error is not None:
+            return target_line_error
+        user_ids, user_ids_error = _parse_user_id_list(payload.get("userIds"))
+        if user_ids_error is not None:
+            return user_ids_error
+
+        if not self._can_update_recipients(user=request.user):
+            return JsonResponse({"error": "forbidden"}, status=403)
+
+        # -----------------------------------------------------------------------------
+        # 3) 서비스 호출 및 응답 반환
+        # -----------------------------------------------------------------------------
+        try:
+            result = services.replace_drone_sop_channel_recipients(
+                line_id=line_id,
+                target_user_sdwt_prod=target_user_sdwt_prod,
+                channel=channel,
+                user_ids=user_ids,
+                actor=request.user,
+            )
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        return JsonResponse(result)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DroneNotificationRecipientPermissionView(DroneAuthenticatedView):
+    """Drone SOP 수신인 설정 권한 컨텍스트 조회 엔드포인트입니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """현재 사용자의 Drone SOP 수신인 설정 권한을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 운영자 여부와 관리 가능한 User SDWT 목록
+
+        부작용:
+        - 없음
+
+        오류:
+        - 401: 미인증
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/line-dashboard/notification-recipient-permissions
+
+        snake/camel 호환:
+        - 요청 바디 없음
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) Drone 앱 권한 컨텍스트 반환
+        # -----------------------------------------------------------------------------
+        return JsonResponse(selectors.get_drone_sop_permission_context(user=request.user))
 
 
 class LineHistoryView(APIView):

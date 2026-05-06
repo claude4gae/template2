@@ -3,11 +3,15 @@
 import * as React from "react"
 
 import {
+  createNotificationTarget,
   createLineSetting,
   deleteLineSetting,
+  fetchNotificationRecipients,
+  fetchNotificationTargets,
   fetchUserSdwtJiraKey,
   fetchLineSettings,
   updateLineSetting,
+  updateNotificationRecipients,
   updateUserSdwtJiraKey,
 } from "../api"
 import { timeFormatter } from "../utils/formatters"
@@ -18,27 +22,54 @@ const EMPTY_TIMESTAMP = "-"
 const normalizeId = (value) => String(value ?? "")
 const nowLabel = () => timeFormatter.format(new Date())
 
-export function useLineSettings({ lineId, userSdwtProd }) {
+export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true }) {
   const [entries, setEntries] = React.useState([])
   const [userSdwtValues, setUserSdwtValues] = React.useState([])
+  const [notificationTargets, setNotificationTargets] = React.useState([])
   const [jiraKey, setJiraKey] = React.useState("")
+  const [mailRecipients, setMailRecipients] = React.useState([])
+  const [mailRecipientsTargetUserSdwtProd, setMailRecipientsTargetUserSdwtProd] = React.useState("")
+  const [messengerRecipients, setMessengerRecipients] = React.useState([])
+  const [messengerRecipientsTargetUserSdwtProd, setMessengerRecipientsTargetUserSdwtProd] = React.useState("")
   const [jiraKeyError, setJiraKeyError] = React.useState(null)
+  const [mailRecipientsError, setMailRecipientsError] = React.useState(null)
+  const [messengerRecipientsError, setMessengerRecipientsError] = React.useState(null)
   const [error, setError] = React.useState(null)
   const [isLoading, setIsLoading] = React.useState(false)
   const [isJiraKeyLoading, setIsJiraKeyLoading] = React.useState(false)
+  const [isMailRecipientsLoading, setIsMailRecipientsLoading] = React.useState(false)
+  const [isMessengerRecipientsLoading, setIsMessengerRecipientsLoading] = React.useState(false)
   const [hasLoadedOnce, setHasLoadedOnce] = React.useState(false)
   const [lastUpdatedLabel, setLastUpdatedLabel] = React.useState(EMPTY_TIMESTAMP)
 
   const hasLoadedRef = React.useRef(false)
+  const refreshRequestRef = React.useRef(0)
+  const contextRef = React.useRef({ lineId, userSdwtProd })
+  contextRef.current = { lineId, userSdwtProd }
+
+  const isCurrentContext = React.useCallback((requestLineId, requestUserSdwtProd) => {
+    const context = contextRef.current
+    return context.lineId === requestLineId && context.userSdwtProd === requestUserSdwtProd
+  }, [])
 
   const resetForLineChange = React.useCallback(() => {
+    refreshRequestRef.current += 1
     setEntries([])
     setUserSdwtValues([])
+    setNotificationTargets([])
     setJiraKey("")
+    setMailRecipients([])
+    setMailRecipientsTargetUserSdwtProd("")
+    setMessengerRecipients([])
+    setMessengerRecipientsTargetUserSdwtProd("")
     setJiraKeyError(null)
+    setMailRecipientsError(null)
+    setMessengerRecipientsError(null)
     setError(null)
     setIsLoading(false)
     setIsJiraKeyLoading(false)
+    setIsMailRecipientsLoading(false)
+    setIsMessengerRecipientsLoading(false)
     setLastUpdatedLabel(EMPTY_TIMESTAMP)
     setHasLoadedOnce(false)
     hasLoadedRef.current = false
@@ -48,7 +79,30 @@ export function useLineSettings({ lineId, userSdwtProd }) {
     resetForLineChange()
   }, [lineId, resetForLineChange])
 
+  React.useEffect(() => {
+    refreshRequestRef.current += 1
+    setJiraKey("")
+    setMailRecipients([])
+    setMailRecipientsTargetUserSdwtProd(userSdwtProd || "")
+    setMessengerRecipients([])
+    setMessengerRecipientsTargetUserSdwtProd(userSdwtProd || "")
+    setJiraKeyError(null)
+    setMailRecipientsError(null)
+    setMessengerRecipientsError(null)
+    setIsJiraKeyLoading(false)
+    setIsMailRecipientsLoading(false)
+    setIsMessengerRecipientsLoading(false)
+  }, [userSdwtProd])
+
   const refresh = React.useCallback(async () => {
+    const requestId = refreshRequestRef.current + 1
+    refreshRequestRef.current = requestId
+    const requestLineId = lineId
+    const requestUserSdwtProd = userSdwtProd
+    const isCurrentRefresh = () =>
+      refreshRequestRef.current === requestId &&
+      isCurrentContext(requestLineId, requestUserSdwtProd)
+
     // 라인을 선택하지 않은 경우: 네트워크 호출을 생략하고 초기 상태만 반환
     if (!lineId) {
       resetForLineChange()
@@ -59,25 +113,53 @@ export function useLineSettings({ lineId, userSdwtProd }) {
       return { ok: true }
     }
 
+    const shouldLoadRecipients = Boolean(loadRecipients && userSdwtProd)
     setIsLoading(true)
     setIsJiraKeyLoading(true)
+    setIsMailRecipientsLoading(shouldLoadRecipients)
+    setIsMessengerRecipientsLoading(shouldLoadRecipients)
     setError(null)
     setJiraKeyError(null)
+    setMailRecipientsError(null)
+    setMessengerRecipientsError(null)
     if (hasLoadedRef.current) {
       setLastUpdatedLabel("Updating…")
     }
 
     try {
-      const [settingsResult, jiraResult] = await Promise.allSettled([
+      const [
+        settingsResult,
+        targetsResult,
+        jiraResult,
+        mailRecipientsResult,
+        messengerRecipientsResult,
+      ] = await Promise.allSettled([
         fetchLineSettings(lineId),
+        fetchNotificationTargets({ lineId }),
         userSdwtProd ? fetchUserSdwtJiraKey(userSdwtProd) : Promise.resolve({ jiraKey: "" }),
+        shouldLoadRecipients
+          ? fetchNotificationRecipients({
+              lineId: requestLineId,
+              targetUserSdwtProd: userSdwtProd,
+              channel: "mail",
+            })
+          : Promise.resolve({ recipients: [] }),
+        shouldLoadRecipients
+          ? fetchNotificationRecipients({
+              lineId: requestLineId,
+              targetUserSdwtProd: userSdwtProd,
+              channel: "messenger",
+            })
+          : Promise.resolve({ recipients: [] }),
       ])
+      if (!isCurrentRefresh()) {
+        return { ok: false, stale: true }
+      }
 
       let ok = true
       if (settingsResult.status === "fulfilled") {
-        const { entries: loadedEntries, userSdwtValues: loadedUsers } = settingsResult.value
+        const { entries: loadedEntries } = settingsResult.value
         setEntries(sortEntries(loadedEntries || []))
-        setUserSdwtValues(loadedUsers || [])
         setLastUpdatedLabel(nowLabel())
       } else {
         const message =
@@ -85,10 +167,23 @@ export function useLineSettings({ lineId, userSdwtProd }) {
             ? settingsResult.reason.message
             : "Failed to load settings"
         setError(message)
-        setUserSdwtValues([])
         if (!hasLoadedRef.current) {
           setLastUpdatedLabel(EMPTY_TIMESTAMP)
         }
+        ok = false
+      }
+
+      if (targetsResult.status === "fulfilled") {
+        setNotificationTargets(targetsResult.value?.targets || [])
+        setUserSdwtValues(targetsResult.value?.targetUserSdwtProds || [])
+      } else {
+        const message =
+          targetsResult.reason instanceof Error
+            ? targetsResult.reason.message
+            : "Failed to load notification targets"
+        setError(message)
+        setNotificationTargets([])
+        setUserSdwtValues([])
         ok = false
       }
 
@@ -104,16 +199,48 @@ export function useLineSettings({ lineId, userSdwtProd }) {
         ok = false
       }
 
+      if (mailRecipientsResult.status === "fulfilled") {
+        setMailRecipients(mailRecipientsResult.value?.recipients || [])
+        setMailRecipientsTargetUserSdwtProd(requestUserSdwtProd || "")
+      } else {
+        const message =
+          mailRecipientsResult.reason instanceof Error
+            ? mailRecipientsResult.reason.message
+            : "Failed to load mail recipients"
+        setMailRecipientsError(message)
+        setMailRecipients([])
+        setMailRecipientsTargetUserSdwtProd(requestUserSdwtProd || "")
+        ok = false
+      }
+
+      if (messengerRecipientsResult.status === "fulfilled") {
+        setMessengerRecipients(messengerRecipientsResult.value?.recipients || [])
+        setMessengerRecipientsTargetUserSdwtProd(requestUserSdwtProd || "")
+      } else {
+        const message =
+          messengerRecipientsResult.reason instanceof Error
+            ? messengerRecipientsResult.reason.message
+            : "Failed to load messenger recipients"
+        setMessengerRecipientsError(message)
+        setMessengerRecipients([])
+        setMessengerRecipientsTargetUserSdwtProd(requestUserSdwtProd || "")
+        ok = false
+      }
+
       return { ok }
     } finally {
-      setIsLoading(false)
-      setIsJiraKeyLoading(false)
-      if (!hasLoadedRef.current) {
-        hasLoadedRef.current = true
-        setHasLoadedOnce(true)
+      if (isCurrentRefresh()) {
+        setIsLoading(false)
+        setIsJiraKeyLoading(false)
+        setIsMailRecipientsLoading(false)
+        setIsMessengerRecipientsLoading(false)
+        if (!hasLoadedRef.current) {
+          hasLoadedRef.current = true
+          setHasLoadedOnce(true)
+        }
       }
     }
-  }, [lineId, resetForLineChange, userSdwtProd])
+  }, [isCurrentContext, lineId, loadRecipients, resetForLineChange, userSdwtProd])
 
   React.useEffect(() => {
     refresh()
@@ -158,28 +285,110 @@ export function useLineSettings({ lineId, userSdwtProd }) {
   const updateJiraKey = React.useCallback(
     async ({ jiraKey: nextJiraKey }) => {
       if (!userSdwtProd) {
-        throw new Error("Select a user SDWT to update Jira key")
+        throw new Error("Select a notification target to update Jira key")
       }
+      const requestLineId = lineId
+      const requestUserSdwtProd = userSdwtProd
       const { jiraKey: savedKey } = await updateUserSdwtJiraKey({
+        lineId: requestLineId,
         userSdwtProd,
         jiraKey: nextJiraKey,
       })
-      setJiraKey(savedKey || "")
-      setJiraKeyError(null)
-      setLastUpdatedLabel(nowLabel())
+      if (isCurrentContext(requestLineId, requestUserSdwtProd)) {
+        setJiraKey(savedKey || "")
+        setJiraKeyError(null)
+        setLastUpdatedLabel(nowLabel())
+      }
       return savedKey
     },
-    [userSdwtProd],
+    [isCurrentContext, lineId, userSdwtProd],
+  )
+
+  const updateRecipients = React.useCallback(
+    async ({ channel, userIds }) => {
+      if (!lineId) {
+        throw new Error("Select a line to update recipients")
+      }
+      if (!userSdwtProd) {
+        throw new Error("Select a notification target to update recipients")
+      }
+      const requestLineId = lineId
+      const requestUserSdwtProd = userSdwtProd
+      const { recipients } = await updateNotificationRecipients({
+        lineId: requestLineId,
+        targetUserSdwtProd: userSdwtProd,
+        channel,
+        userIds,
+      })
+      const isCurrent = isCurrentContext(requestLineId, requestUserSdwtProd)
+      if (isCurrent) {
+        if (channel === "messenger") {
+          setMessengerRecipients(recipients || [])
+          setMessengerRecipientsTargetUserSdwtProd(requestUserSdwtProd || "")
+          setMessengerRecipientsError(null)
+        } else {
+          setMailRecipients(recipients || [])
+          setMailRecipientsTargetUserSdwtProd(requestUserSdwtProd || "")
+          setMailRecipientsError(null)
+        }
+        setLastUpdatedLabel(nowLabel())
+      }
+      return { recipients: recipients || [], stale: !isCurrent }
+    },
+    [isCurrentContext, lineId, userSdwtProd],
+  )
+
+  const updateMailRecipients = React.useCallback(
+    ({ userIds }) => updateRecipients({ channel: "mail", userIds }),
+    [updateRecipients],
+  )
+
+  const createTarget = React.useCallback(
+    async ({ targetUserSdwtProd }) => {
+      if (!lineId) {
+        throw new Error("Select a line to create target")
+      }
+      const { target } = await createNotificationTarget({ lineId, targetUserSdwtProd })
+      if (target) {
+        setNotificationTargets((prev) => {
+          const key = target.targetUserSdwtProd.toLowerCase()
+          return [
+            target,
+            ...prev.filter((item) => item.targetUserSdwtProd.toLowerCase() !== key),
+          ].sort((left, right) => left.targetUserSdwtProd.localeCompare(right.targetUserSdwtProd))
+        })
+        setUserSdwtValues((prev) => {
+          const values = Array.from(new Set([target.targetUserSdwtProd, ...prev]))
+          return values.sort()
+        })
+      }
+      return target
+    },
+    [lineId],
+  )
+
+  const updateMessengerRecipients = React.useCallback(
+    ({ userIds }) => updateRecipients({ channel: "messenger", userIds }),
+    [updateRecipients],
   )
 
   return {
     entries,
     userSdwtValues,
+    notificationTargets,
     jiraKey,
+    mailRecipients,
+    mailRecipientsTargetUserSdwtProd,
+    messengerRecipients,
+    messengerRecipientsTargetUserSdwtProd,
     jiraKeyError,
+    mailRecipientsError,
+    messengerRecipientsError,
     error,
     isLoading,
     isJiraKeyLoading,
+    isMailRecipientsLoading,
+    isMessengerRecipientsLoading,
     hasLoadedOnce,
     lastUpdatedLabel,
     refresh,
@@ -187,5 +396,8 @@ export function useLineSettings({ lineId, userSdwtProd }) {
     updateEntry,
     deleteEntry,
     updateJiraKey,
+    createTarget,
+    updateMailRecipients,
+    updateMessengerRecipients,
   }
 }
