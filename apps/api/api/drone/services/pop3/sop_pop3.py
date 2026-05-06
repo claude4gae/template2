@@ -595,7 +595,6 @@ def _build_drone_sop_row(
         "user_sdwt_prod": user_sdwt_prod,
         "comment": normalized.get("comment"),
         "defect_url": defect_url,
-        "defect_png_url": None,
         "instant_inform": 0,
     }
     # -------------------------------------------------------------------------
@@ -760,7 +759,6 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
         "target_user_sdwt_prod",
         "comment",
         "defect_url",
-        "defect_png_url",
         "instant_inform",
         "needtosend",
         "custom_end_step",
@@ -777,7 +775,7 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     for col in insert_cols:
         if col in exclude_update_cols:
             continue
-        if col in {"target_user_sdwt_prod", "defect_url", "defect_png_url"}:
+        if col in {"target_user_sdwt_prod", "defect_url"}:
             update_parts.append(f'"{col}" = EXCLUDED."{col}"')
             continue
         update_parts.append(

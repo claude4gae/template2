@@ -134,7 +134,7 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["needtosend"], 0)
         self.assertEqual(row["status"], "COMPLETE")
         self.assertIsNone(row["defect_url"])
-        self.assertIsNone(row["defect_png_url"])
+        self.assertNotIn("defect_png_url", row)
         self.assertEqual(row["custom_end_step"], "ST002")
         self.assertEqual(row["target_user_sdwt_prod"], "dummy-target")
 
@@ -323,7 +323,7 @@ class DroneSopUpsertTests(TestCase):
             needtosend=0,
             status="IN_PROGRESS",
             metro_current_step="ST001",
-            defect_png_url="https://example.com/old.png",
+            defect_url="https://example.com/old",
             target_user_sdwt_prod="old-target",
         )
 
@@ -339,7 +339,7 @@ class DroneSopUpsertTests(TestCase):
                     "needtosend": 1,
                     "status": "COMPLETE",
                     "metro_current_step": "ST002",
-                    "defect_png_url": "https://example.com/new.png",
+                    "defect_url": "https://example.com/new",
                     "target_user_sdwt_prod": "new-target",
                 }
             ]
@@ -350,7 +350,7 @@ class DroneSopUpsertTests(TestCase):
         self.assertEqual(refreshed.needtosend, 0)
         self.assertEqual(refreshed.status, "COMPLETE")
         self.assertEqual(refreshed.metro_current_step, "ST002")
-        self.assertEqual(refreshed.defect_png_url, "https://example.com/new.png")
+        self.assertEqual(refreshed.defect_url, "https://example.com/new")
         self.assertEqual(refreshed.target_user_sdwt_prod, "new-target")
 
     def test_upsert_overwrites_target_user_sdwt_prod_with_null(self) -> None:

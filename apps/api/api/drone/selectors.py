@@ -63,7 +63,6 @@ _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "target_user_sdwt_prod",
     "comment",
     "defect_url",
-    "defect_png_url",
     "needtosend",
     "instant_inform",
     "custom_end_step",
