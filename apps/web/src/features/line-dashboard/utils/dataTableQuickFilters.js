@@ -2,6 +2,17 @@
 // 퀵 필터 섹션을 생성하고 적용하는 로직입니다.
 import { STATUS_LABELS, STATUS_SEQUENCE } from "./statusLabels"
 import { deriveFlagState } from "./dataTableFlagState"
+import {
+  buildMainStepOptionLabel,
+  buildMainStepToken,
+  compareMainStepOptions,
+  extractMainStepPrefix,
+  extractMainStepSuffix,
+  normalizeMainStep,
+  parseMainStepToken,
+  sanitizeMainStepFilters,
+  toMainStepFilterValue,
+} from "./dataTableMainStepFilters"
 
 const STATUS_ORDER = STATUS_SEQUENCE
 const STATUS_ORDER_INDEX = new Map(STATUS_ORDER.map((status, index) => [status, index]))
@@ -52,6 +63,33 @@ function normalizeFlagState(value) {
   return state
 }
 
+const DELIVERY_FLAG_ORDER = { on: 0, off: 1, error: 2 }
+
+function formatDeliveryFlagValue(value) {
+  if (value === "on") return "Y"
+  if (value === "off") return "N"
+  if (value === "error") return "Error"
+  return String(value)
+}
+
+function compareDeliveryFlagOptions(a, b) {
+  const orderA = DELIVERY_FLAG_ORDER[a.value] ?? 99
+  const orderB = DELIVERY_FLAG_ORDER[b.value] ?? 99
+  if (orderA !== orderB) return orderA - orderB
+  return String(a.value).localeCompare(String(b.value))
+}
+
+function createDeliveryQuickFilterDefinition({ key, label, column }) {
+  return {
+    key,
+    label,
+    resolveColumn: (columns) => findMatchingColumn(columns, column),
+    normalizeValue: normalizeFlagState,
+    formatValue: formatDeliveryFlagValue,
+    compareOptions: compareDeliveryFlagOptions,
+  }
+}
+
 function normalizeEmailId(value) {
   if (value == null) return ""
   const trimmed = String(value).trim()
@@ -65,138 +103,6 @@ function normalizeEmailId(value) {
 function deriveUserIdFromEmail(email) {
   const normalized = normalizeEmailId(email)
   return normalized || null
-}
-
-function normalizeMainStep(value) {
-  if (value == null) return null
-  const trimmed = String(value).trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-function extractMainStepSuffix(value) {
-  const normalized = normalizeMainStep(value)
-  if (!normalized) return null
-  const match = normalized.match(/(\d+)\s*$/)
-  return match ? match[1] : null
-}
-
-function extractMainStepPrefix(value) {
-  const normalized = normalizeMainStep(value)
-  if (!normalized) return ""
-  const match = normalized.match(/^([A-Za-z]+)/)
-  return match ? match[1] : ""
-}
-
-function toMainStepFilterValue(value) {
-  const normalized = normalizeMainStep(value)
-  if (!normalized) return null
-  return extractMainStepSuffix(normalized) ?? normalized
-}
-
-function buildMainStepToken(suffix, prefix = "*") {
-  const normalizedSuffix = toMainStepFilterValue(suffix)
-  if (!normalizedSuffix) return null
-  const normalizedPrefix =
-    prefix === null || prefix === undefined || prefix === "" ? "*" : String(prefix).trim()
-  return `${normalizedSuffix}|${normalizedPrefix || "*"}`
-}
-
-function parseMainStepToken(token) {
-  if (token === null || token === undefined) return null
-
-  if (typeof token === "object" && "suffix" in token) {
-    const suffix = toMainStepFilterValue(token.suffix)
-    if (!suffix) return null
-    const prefix =
-      token.prefix === undefined || token.prefix === null || token.prefix === ""
-        ? "*"
-        : String(token.prefix).trim()
-    return { suffix, prefix }
-  }
-
-  const raw = typeof token === "string" ? token.trim() : String(token)
-  if (!raw) return null
-
-  const [maybeSuffix, maybePrefix] = raw.split("|")
-  const suffix = toMainStepFilterValue(maybeSuffix)
-  if (!suffix) return null
-
-  const prefix =
-    maybePrefix === undefined || maybePrefix === null || maybePrefix === ""
-      ? "*"
-      : maybePrefix === "*"
-        ? "*"
-        : String(maybePrefix).trim()
-
-  return { suffix, prefix }
-}
-
-function parseMainStepParts(value) {
-  const normalized = normalizeMainStep(value) ?? ""
-  const suffix = extractMainStepSuffix(normalized)
-  const prefix = suffix ? normalized.slice(0, normalized.length - suffix.length) : ""
-  const numericSource = suffix ?? normalized
-  const number = Number.parseInt(numericSource, 10)
-  return {
-    prefix: prefix || "",
-    number: Number.isFinite(number) ? number : Number.POSITIVE_INFINITY,
-    raw: normalized,
-    suffix,
-  }
-}
-
-function compareMainStepOptions(a, b) {
-  const left = parseMainStepParts(a.value)
-  const right = parseMainStepParts(b.value)
-
-  if (left.number !== right.number) {
-    return left.number - right.number
-  }
-
-  const prefixCompare = left.prefix.localeCompare(right.prefix, undefined, { sensitivity: "base" })
-  if (prefixCompare !== 0) return prefixCompare
-
-  return a.label.localeCompare(b.label, undefined, { sensitivity: "base" })
-}
-
-function buildMainStepOptionLabel(value, _prefixes, _hasSuffix) {
-  return value
-}
-
-function sanitizeMainStepFilters(values, section, preserveMissing = false) {
-  const normalizedArray = Array.isArray(values)
-    ? values
-    : values === null || values === undefined
-      ? []
-      : [values]
-
-  const options = Array.isArray(section?.options) ? section.options : []
-  const optionValues = options.map((option) => option.value)
-  const optionSet = new Set(optionValues)
-  const availablePrefixes = new Map(
-    options.map((option) => [option.value, new Set(option.prefixes ?? [])])
-  )
-  const resolved = []
-
-  normalizedArray.forEach((value) => {
-    const parsed = parseMainStepToken(value)
-    if (!parsed?.suffix) return
-
-    const suffixAllowed = optionSet.size === 0 || optionSet.has(parsed.suffix) || preserveMissing
-    if (!suffixAllowed) return
-
-    const prefixSet = availablePrefixes.get(parsed.suffix) ?? new Set()
-    const hasPrefix = parsed.prefix && parsed.prefix !== "*"
-    const prefixAllowed =
-      !hasPrefix || prefixSet.size === 0 || prefixSet.has(parsed.prefix) || preserveMissing
-
-    if (prefixAllowed) {
-      const token = buildMainStepToken(parsed.suffix, hasPrefix ? parsed.prefix : "*")
-      if (token) resolved.push(token)
-    }
-  })
-
-  return Array.from(new Set(resolved))
 }
 
 function arraysShallowEqual(a, b) {
@@ -411,63 +317,21 @@ const QUICK_FILTER_DEFINITIONS = [
       return String(a.value).localeCompare(String(b.value))
     },
   },
-  {
-    key: "send_jira",
+  createDeliveryQuickFilterDefinition({
+    key: "delivery_jira",
     label: "Jira전송완료",
-    resolveColumn: (columns) => findMatchingColumn(columns, "send_jira"),
-    normalizeValue: normalizeFlagState,
-    formatValue: (value) => {
-      if (value === "on") return "Y"
-      if (value === "off") return "N"
-      if (value === "error") return "Error"
-      return String(value)
-    },
-    compareOptions: (a, b) => {
-      const order = { on: 0, off: 1, error: 2 }
-      const orderA = order[a.value] ?? 99
-      const orderB = order[b.value] ?? 99
-      if (orderA !== orderB) return orderA - orderB
-      return String(a.value).localeCompare(String(b.value))
-    },
-  },
-  {
-    key: "send_messenger",
+    column: "delivery_jira",
+  }),
+  createDeliveryQuickFilterDefinition({
+    key: "delivery_messenger",
     label: "메신저전송완료",
-    resolveColumn: (columns) => findMatchingColumn(columns, "send_messenger"),
-    normalizeValue: normalizeFlagState,
-    formatValue: (value) => {
-      if (value === "on") return "Y"
-      if (value === "off") return "N"
-      if (value === "error") return "Error"
-      return String(value)
-    },
-    compareOptions: (a, b) => {
-      const order = { on: 0, off: 1, error: 2 }
-      const orderA = order[a.value] ?? 99
-      const orderB = order[b.value] ?? 99
-      if (orderA !== orderB) return orderA - orderB
-      return String(a.value).localeCompare(String(b.value))
-    },
-  },
-  {
-    key: "send_mail",
+    column: "delivery_messenger",
+  }),
+  createDeliveryQuickFilterDefinition({
+    key: "delivery_mail",
     label: "메일전송완료",
-    resolveColumn: (columns) => findMatchingColumn(columns, "send_mail"),
-    normalizeValue: normalizeFlagState,
-    formatValue: (value) => {
-      if (value === "on") return "Y"
-      if (value === "off") return "N"
-      if (value === "error") return "Error"
-      return String(value)
-    },
-    compareOptions: (a, b) => {
-      const order = { on: 0, off: 1, error: 2 }
-      const orderA = order[a.value] ?? 99
-      const orderB = order[b.value] ?? 99
-      if (orderA !== orderB) return orderA - orderB
-      return String(a.value).localeCompare(String(b.value))
-    },
-  },
+    column: "delivery_mail",
+  }),
   {
     key: "sdwt_prod",
     label: "설비분임조",

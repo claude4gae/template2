@@ -10,10 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from django.db import transaction
-
 from ... import selectors
-from ...models import DroneSOP
 
 
 def _normalize_user_sdwt_value(value: Any) -> str | None:
@@ -61,9 +58,37 @@ def _normalize_user_sdwt_lookup_key(value: Any) -> str | None:
 class UserSdwtProdMapIndex:
     """사용자 소속 매핑 인덱스."""
 
-    pair_map: dict[tuple[str, str], str]
-    sdwt_only_map: dict[str, str]
-    user_only_map: dict[str, str]
+    pair_map: dict[tuple[str, str], list[str]]
+    sdwt_only_map: dict[str, list[str]]
+    user_only_map: dict[str, list[str]]
+
+
+def _append_unique_target(*, target_list: list[str], target: str) -> None:
+    """target 목록에 대소문자 비구분 중복 없이 값을 추가합니다."""
+
+    target_key = _normalize_user_sdwt_lookup_key(target)
+    if not target_key:
+        return
+    if any(_normalize_user_sdwt_lookup_key(existing) == target_key for existing in target_list):
+        return
+    target_list.append(target)
+
+
+def _append_index_target(*, index_map: dict[Any, list[str]], key: Any, target: str) -> None:
+    """매핑 인덱스에 target 값을 누적합니다."""
+
+    values = index_map.setdefault(key, [])
+    _append_unique_target(target_list=values, target=target)
+
+
+def _merge_unique_targets(*target_groups: list[str]) -> list[str]:
+    """여러 target 목록을 순서 유지 + 중복 제거 방식으로 병합합니다."""
+
+    merged: list[str] = []
+    for group in target_groups:
+        for target in group:
+            _append_unique_target(target_list=merged, target=target)
+    return merged
 
 
 def load_user_sdwt_prod_map_index() -> UserSdwtProdMapIndex:
@@ -80,9 +105,9 @@ def load_user_sdwt_prod_map_index() -> UserSdwtProdMapIndex:
     # 1) 매핑 규칙 로딩
     # -----------------------------------------------------------------------------
     rows = selectors.list_drone_sop_user_sdwt_maps()
-    pair_map: dict[tuple[str, str], str] = {}
-    sdwt_only_map: dict[str, str] = {}
-    user_only_map: dict[str, str] = {}
+    pair_map: dict[tuple[str, str], list[str]] = {}
+    sdwt_only_map: dict[str, list[str]] = {}
+    user_only_map: dict[str, list[str]] = {}
 
     # -----------------------------------------------------------------------------
     # 2) 규칙 정규화 및 인덱싱
@@ -98,13 +123,13 @@ def load_user_sdwt_prod_map_index() -> UserSdwtProdMapIndex:
         if sdwt and user:
             assert sdwt_lookup is not None
             assert user_lookup is not None
-            pair_map[(sdwt_lookup, user_lookup)] = target
+            _append_index_target(index_map=pair_map, key=(sdwt_lookup, user_lookup), target=target)
         elif sdwt and not user:
             assert sdwt_lookup is not None
-            sdwt_only_map[sdwt_lookup] = target
+            _append_index_target(index_map=sdwt_only_map, key=sdwt_lookup, target=target)
         elif user and not sdwt:
             assert user_lookup is not None
-            user_only_map[user_lookup] = target
+            _append_index_target(index_map=user_only_map, key=user_lookup, target=target)
 
     return UserSdwtProdMapIndex(
         pair_map=pair_map,
@@ -113,142 +138,51 @@ def load_user_sdwt_prod_map_index() -> UserSdwtProdMapIndex:
     )
 
 
-def resolve_target_user_sdwt_prod(
+def resolve_target_user_sdwt_prods(
     *,
     row: dict[str, Any],
     index: UserSdwtProdMapIndex,
-) -> str | None:
-    """단일 row에 대한 target_user_sdwt_prod를 해석합니다.
+) -> list[str]:
+    """단일 row에 대한 단일 target_user_sdwt_prod 목록을 해석합니다.
 
     인자:
         row: Drone SOP 행 dict.
         index: 매핑 인덱스.
 
     반환:
-        매핑된 target_user_sdwt_prod 또는 None(매핑 없음).
+        매핑된 target_user_sdwt_prod 단일 목록.
 
     부작용:
         없음. 순수 해석입니다.
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 이미 저장된 target 값 우선 사용
+    # 1) 입력 정규화
     # -----------------------------------------------------------------------------
     persisted_target = _normalize_user_sdwt_value(row.get("target_user_sdwt_prod"))
-    if persisted_target:
-        return persisted_target
-
-    # -----------------------------------------------------------------------------
-    # 2) 입력 정규화
-    # -----------------------------------------------------------------------------
     sdwt = _normalize_user_sdwt_lookup_key(row.get("sdwt_prod"))
     user = _normalize_user_sdwt_lookup_key(row.get("user_sdwt_prod"))
 
     # -----------------------------------------------------------------------------
-    # 3) 우선순위 매칭
+    # 2) 우선순위 매칭
     # -----------------------------------------------------------------------------
+    mapped_targets: list[str] = []
     if sdwt and user:
-        target = index.pair_map.get((sdwt, user))
-        if target:
-            return target
+        mapped_targets = _merge_unique_targets(index.pair_map.get((sdwt, user), []))
+        if mapped_targets:
+            return mapped_targets[:1]
     if sdwt:
-        target = index.sdwt_only_map.get(sdwt)
-        if target:
-            return target
+        mapped_targets = _merge_unique_targets(index.sdwt_only_map.get(sdwt, []))
+        if mapped_targets:
+            return mapped_targets[:1]
     if user:
-        target = index.user_only_map.get(user)
-        if target:
-            return target
+        mapped_targets = _merge_unique_targets(index.user_only_map.get(user, []))
+        if mapped_targets:
+            return mapped_targets[:1]
 
     # -----------------------------------------------------------------------------
-    # 4) 매핑 없음
+    # 3) 신규 매핑이 없으면 기존 저장 target을 호환값으로 사용
     # -----------------------------------------------------------------------------
-    return None
-
-
-def annotate_target_user_sdwt_prod(
-    *,
-    rows: list[dict[str, Any]],
-    index: UserSdwtProdMapIndex,
-) -> None:
-    """row 목록에 target_user_sdwt_prod 값을 주입합니다.
-
-    인자:
-        rows: Drone SOP 행 dict 목록.
-        index: 매핑 인덱스.
-
-    반환:
-        없음.
-
-    부작용:
-        row dict에 target_user_sdwt_prod 키가 추가됩니다.
-    """
-
-    for row in rows:
-        row["target_user_sdwt_prod"] = resolve_target_user_sdwt_prod(row=row, index=index)
-
-
-def resolve_target_user_sdwt_prod_values(
-    *,
-    rows: list[dict[str, Any]],
-    index: UserSdwtProdMapIndex | None = None,
-    persist: bool = False,
-) -> tuple[set[str], list[int]]:
-    """row 목록을 해석하고 target_user_sdwt_prod 목록을 반환합니다.
-
-    인자:
-        rows: Drone SOP 행 dict 목록.
-        index: 매핑 인덱스(옵션).
-        persist: True면 해석 결과를 drone_sop.target_user_sdwt_prod에 반영합니다.
-
-    반환:
-        (target_user_sdwt_prod 집합, target 누락 row id 리스트) 튜플.
-
-    부작용:
-        row dict에 target_user_sdwt_prod 키가 추가됩니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 매핑 인덱스 준비
-    # -----------------------------------------------------------------------------
-    if index is None:
-        index = load_user_sdwt_prod_map_index()
-
-    # -----------------------------------------------------------------------------
-    # 2) row별 target 해석 및 누락 집계
-    # -----------------------------------------------------------------------------
-    targets: set[str] = set()
-    missing_ids: list[int] = []
-    changed_target_by_id: dict[int, str | None] = {}
-    for row in rows:
-        persisted_target = _normalize_user_sdwt_value(row.get("target_user_sdwt_prod"))
-        target = resolve_target_user_sdwt_prod(row=row, index=index)
-        row["target_user_sdwt_prod"] = target
-
-        if isinstance(target, str) and target.strip():
-            targets.add(target.strip())
-        row_id = row.get("id")
-        if isinstance(row_id, int):
-            if persist and _normalize_user_sdwt_lookup_key(target) != _normalize_user_sdwt_lookup_key(
-                persisted_target
-            ):
-                changed_target_by_id[row_id] = target
-            if not isinstance(target, str) or not target.strip():
-                missing_ids.append(row_id)
-
-    if persist and changed_target_by_id:
-        _persist_target_user_sdwt_prod(target_by_id=changed_target_by_id)
-
-    return targets, missing_ids
-
-
-def _persist_target_user_sdwt_prod(*, target_by_id: dict[int, str | None]) -> None:
-    """해석된 target_user_sdwt_prod 값을 DroneSOP에 저장합니다."""
-
-    grouped_ids: dict[str | None, list[int]] = {}
-    for sop_id, target in target_by_id.items():
-        grouped_ids.setdefault(target, []).append(sop_id)
-
-    with transaction.atomic():
-        for target, sop_ids in grouped_ids.items():
-            DroneSOP.objects.filter(id__in=sop_ids).update(target_user_sdwt_prod=target)
+    if persisted_target:
+        return [persisted_target]
+    return []

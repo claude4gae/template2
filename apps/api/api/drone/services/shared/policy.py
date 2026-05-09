@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: Drone SOP 알림 정책
-# 주요 기능: 채널 전송 실패 마킹, target_user_sdwt_prod 누락 행의 실패 처리
-# 주요 가정: 누락된 대상은 파이프라인별 실패 사유로 마킹합니다.
+# 주요 기능: target_user_sdwt_prod 누락 행의 delivery 실패 처리
+# 주요 가정: 누락된 대상도 delivery row로 기록해 자동 재처리 후보에서 제외합니다.
 # =============================================================================
 """Drone SOP 알림 정책 유틸리티."""
 
@@ -10,14 +10,8 @@ from __future__ import annotations
 from typing import Sequence
 
 from django.db import transaction
-from django.db.models import Q
 
-from ...models import DroneSOP
-from .channels import REASON_FIELD_BY_SEND_FIELD
-
-# 허용 채널 필드(외부 입력 방어용)
-_ALLOWED_CHANNEL_FIELDS = frozenset(REASON_FIELD_BY_SEND_FIELD.keys())
-_REASON_FIELD_BY_CHANNEL = REASON_FIELD_BY_SEND_FIELD
+from ...models import DroneSopChannelDelivery, DroneSopTarget
 
 # 채널 상태 사유 코드
 REASON_DISABLED_BY_POLICY = "disabled_by_policy"
@@ -28,115 +22,27 @@ REASON_CHANNEL_CONFIG_INVALID = "channel_config_invalid"
 REASON_TEMPLATE_MISSING = "template_missing"
 REASON_RECEIVER_NOT_FOUND = "receiver_not_found"
 REASON_SEND_FAILED = "send_failed"
+TARGET_MISSING_DELIVERY_TARGET = "__target_missing__"
+
+_ALLOWED_CHANNELS = frozenset(
+    {
+        DroneSopChannelDelivery.Channels.JIRA,
+        DroneSopChannelDelivery.Channels.MESSENGER,
+        DroneSopChannelDelivery.Channels.MAIL,
+    }
+)
 
 
-def _normalize_channel_fields(channel_fields: Sequence[str]) -> list[str]:
-    """허용 채널 필드 목록만 정규화해서 반환합니다."""
+def _normalize_channels(channels: Sequence[str]) -> list[str]:
+    """허용 delivery 채널 목록만 중복 없이 정규화합니다."""
 
-    normalized_fields: list[str] = []
-    for field in channel_fields:
-        if field in _ALLOWED_CHANNEL_FIELDS and field not in normalized_fields:
-            normalized_fields.append(field)
-    return normalized_fields
-
-
-def _build_pending_filter(channel_field: str) -> Q:
-    """채널 필드의 미전송(0/NULL) 상태 필터를 생성합니다."""
-
-    return Q(**{channel_field: 0}) | Q(**{f"{channel_field}__isnull": True})
-
-
-def _normalize_pending_mark_fields(channel_fields: Sequence[str]) -> list[str]:
-    """미전송 상태 마킹에 사용할 채널 필드 목록을 정규화합니다."""
-
-    if not channel_fields:
+    if not channels:
         return []
-    return _normalize_channel_fields(channel_fields)
-
-
-def mark_pending_channels_as_failed(
-    *,
-    sop_ids: Sequence[int],
-    channel_fields: Sequence[str],
-    failure_reason: str | None = None,
-) -> None:
-    """미전송(0/NULL) 채널 상태를 실패(-1)로 갱신합니다.
-
-    인자:
-        sop_ids: DroneSOP ID 목록.
-        channel_fields: 실패 처리할 채널 필드 목록(send_jira/send_messenger/send_mail).
-        failure_reason: 사유 코드(옵션).
-
-    반환:
-        없음.
-
-    부작용:
-        send_* 필드를 업데이트합니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    if not sop_ids:
-        return
-
-    normalized_fields = _normalize_pending_mark_fields(channel_fields)
-    if not normalized_fields:
-        return
-
-    # -----------------------------------------------------------------------------
-    # 2) 채널별 실패 상태 갱신
-    # -----------------------------------------------------------------------------
-    with transaction.atomic():
-        for field in normalized_fields:
-            pending_filter = _build_pending_filter(field)
-            updates = {field: -1}
-            reason_field = _REASON_FIELD_BY_CHANNEL.get(field)
-            if reason_field and isinstance(failure_reason, str) and failure_reason:
-                updates[reason_field] = failure_reason
-            DroneSOP.objects.filter(id__in=sop_ids).filter(pending_filter).update(**updates)
-
-
-def mark_pending_channels_as_disabled(
-    *,
-    sop_ids: Sequence[int],
-    channel_fields: Sequence[str],
-    disable_reason: str = REASON_DISABLED_BY_POLICY,
-) -> None:
-    """미전송(0/NULL) 채널의 비활성화 사유를 기록합니다.
-
-    인자:
-        sop_ids: DroneSOP ID 목록.
-        channel_fields: 사유를 기록할 채널 필드 목록(send_jira/send_messenger/send_mail).
-        disable_reason: 비활성화 사유 코드.
-
-    반환:
-        없음.
-
-    부작용:
-        채널별 reason 필드를 업데이트합니다.
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    if not sop_ids:
-        return
-
-    normalized_fields = _normalize_pending_mark_fields(channel_fields)
-    if not normalized_fields:
-        return
-
-    # -----------------------------------------------------------------------------
-    # 2) 채널별 비활성화 사유 기록
-    # -----------------------------------------------------------------------------
-    with transaction.atomic():
-        for field in normalized_fields:
-            reason_field = _REASON_FIELD_BY_CHANNEL.get(field)
-            if not reason_field:
-                continue
-            pending_filter = _build_pending_filter(field)
-            DroneSOP.objects.filter(id__in=sop_ids).filter(pending_filter).update(**{reason_field: disable_reason})
+    normalized: list[str] = []
+    for channel in channels:
+        if channel in _ALLOWED_CHANNELS and channel not in normalized:
+            normalized.append(channel)
+    return normalized
 
 
 # =============================================================================
@@ -146,19 +52,19 @@ def mark_pending_channels_as_disabled(
 def mark_missing_target_as_failed(
     *,
     sop_ids: Sequence[int],
-    channel_fields: Sequence[str],
+    channels: Sequence[str],
 ) -> None:
-    """target_user_sdwt_prod 미확정 SOP를 파이프라인 실패로 처리합니다.
+    """target_user_sdwt_prod 미확정 SOP를 delivery 실패로 처리합니다.
 
     인자:
         sop_ids: DroneSOP ID 목록.
-        channel_fields: 실패 처리할 채널 필드 목록(send_jira/send_messenger/send_mail).
+        channels: 실패 처리할 delivery 채널 목록.
 
     반환:
         없음.
 
     부작용:
-        - 지정 채널(send_*)을 실패(-1)로 갱신
+        누락 대상용 delivery row를 실패 상태로 생성/갱신합니다.
     """
 
     # -----------------------------------------------------------------------------
@@ -167,14 +73,38 @@ def mark_missing_target_as_failed(
     if not sop_ids:
         return
 
+    normalized_channels = _normalize_channels(channels)
+    if not normalized_channels:
+        return
+
     # -----------------------------------------------------------------------------
-    # 2) 상태 실패 처리
+    # 2) 누락 대상 delivery row 생성/갱신
     # -----------------------------------------------------------------------------
-    mark_pending_channels_as_failed(
-        sop_ids=sop_ids,
-        channel_fields=channel_fields,
-        failure_reason=REASON_TARGET_MISSING,
-    )
+    with transaction.atomic():
+        missing_target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=TARGET_MISSING_DELIVERY_TARGET)
+        delivery_rows = [
+            DroneSopChannelDelivery(
+                sop_id=sop_id,
+                target=missing_target,
+                channel=channel,
+                status=DroneSopChannelDelivery.Statuses.FAILED,
+                reason=REASON_TARGET_MISSING,
+            )
+            for sop_id in sop_ids
+            if isinstance(sop_id, int) and sop_id > 0
+            for channel in normalized_channels
+        ]
+        if not delivery_rows:
+            return
+        DroneSopChannelDelivery.objects.bulk_create(delivery_rows, ignore_conflicts=True)
+        DroneSopChannelDelivery.objects.filter(
+            sop_id__in=[row.sop_id for row in delivery_rows],
+            target=missing_target,
+            channel__in=normalized_channels,
+        ).update(
+            status=DroneSopChannelDelivery.Statuses.FAILED,
+            reason=REASON_TARGET_MISSING,
+        )
 
 
 __all__ = [
@@ -186,7 +116,6 @@ __all__ = [
     "REASON_RECEIVER_NOT_FOUND",
     "REASON_SEND_FAILED",
     "REASON_TEMPLATE_MISSING",
+    "TARGET_MISSING_DELIVERY_TARGET",
     "mark_missing_target_as_failed",
-    "mark_pending_channels_as_disabled",
-    "mark_pending_channels_as_failed",
 ]

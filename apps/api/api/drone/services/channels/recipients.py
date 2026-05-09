@@ -16,7 +16,7 @@ from django.utils import timezone
 import api.account.selectors as account_selectors
 
 from ... import selectors
-from ...models import DroneSopChannelRecipient
+from ...models import DroneSopChannelRecipient, DroneSopTarget
 from .user_sdwt_channel import ensure_drone_sop_notification_target
 
 
@@ -103,18 +103,25 @@ def _normalize_user_ids(user_ids: Iterable[Any]) -> list[int]:
 def _get_or_create_recipient_row(
     *,
     line_id: str | None = None,
-    target_user_sdwt_prod: str,
+    target: DroneSopTarget | None = None,
+    target_user_sdwt_prod: str | None = None,
     channel: str,
     user_id: int,
     actor: Any | None,
 ) -> tuple[DroneSopChannelRecipient, bool]:
     """동시 생성 충돌을 흡수하며 수신인 row를 조회 또는 생성합니다."""
 
+    if target is None:
+        normalized_target = _normalize_target_user_sdwt_prod(target_user_sdwt_prod)
+        if not normalized_target:
+            raise ValueError("targetUserSdwtProd is required")
+        target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=normalized_target)
+
     created_by = actor if getattr(actor, "is_authenticated", False) else None
     try:
         with transaction.atomic():
             return DroneSopChannelRecipient.objects.create(
-                target_user_sdwt_prod=target_user_sdwt_prod,
+                target=target,
                 channel=channel,
                 user_id=user_id,
                 created_by=created_by,
@@ -123,7 +130,7 @@ def _get_or_create_recipient_row(
         existing = (
             DroneSopChannelRecipient.objects.select_for_update()
             .filter(
-                target_user_sdwt_prod__iexact=target_user_sdwt_prod,
+                target=target,
                 channel=channel,
                 user_id=user_id,
             )
@@ -192,7 +199,7 @@ def replace_drone_sop_channel_recipients(
             raise ValueError("mail recipients require email")
         raise ValueError("messenger recipients require knox_id")
 
-    ensure_drone_sop_notification_target(
+    target, _ = ensure_drone_sop_notification_target(
         line_id=normalized_line_id,
         target_user_sdwt_prod=normalized_target,
         actor=actor,
@@ -205,7 +212,7 @@ def replace_drone_sop_channel_recipients(
     with transaction.atomic():
         existing_rows = list(
             DroneSopChannelRecipient.objects.select_for_update().filter(
-                target_user_sdwt_prod__iexact=normalized_target,
+                target=target,
                 channel=normalized_channel,
             )
         )
@@ -230,6 +237,7 @@ def replace_drone_sop_channel_recipients(
             if existing is None:
                 existing, created = _get_or_create_recipient_row(
                     line_id=normalized_line_id,
+                    target=target,
                     target_user_sdwt_prod=normalized_target,
                     channel=normalized_channel,
                     user_id=user_id,

@@ -18,7 +18,8 @@ from api.account import services as account_services
 from api.drone.models import (
     DroneEarlyInform,
     DroneSOP,
-    DroneSopNeedToSendRule,
+    DroneSopChannelDelivery,
+    DroneSopTarget,
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
     build_sop_key,
@@ -51,17 +52,14 @@ def _purge_seeded_rows(*, prefix: str) -> dict[str, int]:
     deleted_channels, _ = DroneSopUserSdwtChannel.objects.filter(
         target_user_sdwt_prod__startswith=f"{prefix}_"
     ).delete()
-    deleted_rules, _ = DroneSopNeedToSendRule.objects.filter(
-        target_user_sdwt_prod__startswith=f"{prefix}_"
-    ).delete()
     deleted_maps, _ = DroneSopUserSdwtProdMap.objects.filter(
-        target_user_sdwt_prod__startswith=f"{prefix}_"
+        target__target_user_sdwt_prod__startswith=f"{prefix}_"
     ).delete()
     return {
         "drone_sop": int(deleted_sop),
         "early_inform": int(deleted_early),
         "channel": int(deleted_channels),
-        "rule": int(deleted_rules),
+        "rule": 0,
         "map": int(deleted_maps),
     }
 
@@ -75,6 +73,7 @@ def _seed_affiliations(*, prefix: str, targets: list[str]) -> int:
         ("DUMMY", f"{prefix}-L3", targets[2]),
         ("DUMMY", f"{prefix}-L4", targets[3]),
         ("DUMMY", f"{prefix}-L1", "USR-A"),
+        ("DUMMY", f"{prefix}-L1", "USR-M"),
         ("DUMMY", f"{prefix}-L2", "USR-B"),
         ("DUMMY", f"{prefix}-L3", "USR-C"),
         ("DUMMY", f"{prefix}-L4", "USR-D"),
@@ -93,6 +92,7 @@ def _seed_maps(*, prefix: str, targets: list[str]) -> dict[str, int]:
 
     specs = [
         {"sdwt_prod": "SDWT-A", "user_sdwt_prod": "USR-A", "target_user_sdwt_prod": targets[0], "is_active": True},
+        {"sdwt_prod": "SDWT-M", "user_sdwt_prod": "USR-M", "target_user_sdwt_prod": targets[0], "is_active": True},
         {"sdwt_prod": "SDWT-B", "user_sdwt_prod": None, "target_user_sdwt_prod": targets[1], "is_active": True},
         {"sdwt_prod": None, "user_sdwt_prod": "USR-C", "target_user_sdwt_prod": targets[2], "is_active": True},
         {
@@ -105,11 +105,12 @@ def _seed_maps(*, prefix: str, targets: list[str]) -> dict[str, int]:
     created = 0
     updated = 0
     for spec in specs:
+        target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=str(spec["target_user_sdwt_prod"]))
         _, was_created = DroneSopUserSdwtProdMap.objects.update_or_create(
             sdwt_prod=spec["sdwt_prod"],
             user_sdwt_prod=spec["user_sdwt_prod"],
+            target=target,
             defaults={
-                "target_user_sdwt_prod": spec["target_user_sdwt_prod"],
                 "is_active": spec["is_active"],
             },
         )
@@ -198,10 +199,13 @@ def _seed_rules(*, targets: list[str]) -> dict[str, int]:
     updated = 0
     for spec in specs:
         target = str(spec["target_user_sdwt_prod"])
-        defaults = {key: value for key, value in spec.items() if key != "target_user_sdwt_prod"}
-        _, was_created = DroneSopNeedToSendRule.objects.update_or_create(
+        _, was_created = DroneSopUserSdwtChannel.objects.update_or_create(
             target_user_sdwt_prod=target,
-            defaults=defaults,
+            defaults={
+                "needtosend_comment_last_at": spec["comment_last_at"],
+                "needtosend_ignore_sample_type": spec["ignore_sample_type"],
+                "needtosend_enabled": spec["is_active"],
+            },
         )
         created += int(was_created)
         updated += int(not was_created)
@@ -348,6 +352,24 @@ def _seed_sop_rows(*, prefix: str, targets: list[str]) -> dict[str, int]:
             "send_mail": 0,
         },
         {
+            "line_id": f"{prefix}-L1",
+            "sdwt_prod": "SDWT-M",
+            "sample_type": "NORMAL",
+            "eqp_id": "EQP-M1",
+            "chamber_ids": "1",
+            "lot_id": "LOT-M-001",
+            "main_step": "MS10",
+            "status": "COMPLETE",
+            "comment": "single-target@$AOK",
+            "user_sdwt_prod": "USR-M",
+            "target_user_sdwt_prod": targets[0],
+            "needtosend": 1,
+            "instant_inform": 0,
+            "send_jira": 0,
+            "send_messenger": 0,
+            "send_mail": 0,
+        },
+        {
             "line_id": f"{prefix}-L2",
             "sdwt_prod": "SDWT-B",
             "sample_type": "NORMAL",
@@ -427,6 +449,20 @@ def _seed_sop_rows(*, prefix: str, targets: list[str]) -> dict[str, int]:
     updated = 0
     for row in rows:
         row_defaults = dict(row)
+        target_user_sdwt_prod = row_defaults.pop("target_user_sdwt_prod", None)
+        send_values = {
+            "jira": row_defaults.pop("send_jira", 0),
+            "messenger": row_defaults.pop("send_messenger", 0),
+            "mail": row_defaults.pop("send_mail", 0),
+        }
+        reason_values = {
+            "jira": row_defaults.pop("jira_reason", None),
+            "messenger": row_defaults.pop("messenger_reason", None),
+            "mail": row_defaults.pop("mail_reason", None),
+        }
+        jira_key = row_defaults.pop("jira_key", None)
+        inform_step = row_defaults.pop("inform_step", None)
+        informed_at = row_defaults.pop("informed_at", None)
         row_defaults.setdefault("knox_id", "seed-user")
         row_defaults.setdefault("sample_group", "SEED")
         row_defaults.setdefault("proc_id", "PROC-1")
@@ -446,6 +482,37 @@ def _seed_sop_rows(*, prefix: str, targets: list[str]) -> dict[str, int]:
             sop_key=sop_key,
             defaults=row_defaults,
         )
+        sop = DroneSOP.objects.get(sop_key=sop_key)
+        if isinstance(target_user_sdwt_prod, str) and target_user_sdwt_prod.strip():
+            target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=target_user_sdwt_prod)
+            for channel, raw_status in send_values.items():
+                status_value = int(raw_status or 0)
+                status = DroneSopChannelDelivery.Statuses.PENDING
+                reason = None
+                external_key = None
+                sent_at = None
+                sent_step = None
+                if status_value > 0:
+                    status = DroneSopChannelDelivery.Statuses.SUCCESS
+                    sent_at = informed_at
+                    sent_step = inform_step
+                    if channel == DroneSopChannelDelivery.Channels.JIRA:
+                        external_key = jira_key
+                elif status_value < 0:
+                    status = DroneSopChannelDelivery.Statuses.FAILED
+                    reason = reason_values.get(channel) or "send_failed"
+                DroneSopChannelDelivery.objects.update_or_create(
+                    sop=sop,
+                    target=target,
+                    channel=channel,
+                    defaults={
+                        "status": status,
+                        "reason": reason,
+                        "external_key": external_key,
+                        "sent_step": sent_step,
+                        "sent_at": sent_at,
+                    },
+                )
         created += int(was_created)
         updated += int(not was_created)
     return {"created": created, "updated": updated}

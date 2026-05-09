@@ -25,7 +25,7 @@ export function LineDashboardEntryPage() {
 
   useEffect(() => {
     if (firstLineId) {
-      navigate(`/ESOP_Dashboard/${firstLineId}`, { replace: true })
+      navigate(`/ESOP_Dashboard/status/${firstLineId}`, { replace: true })
     }
   }, [firstLineId, navigate])
 

@@ -12,6 +12,8 @@ from typing import Any, Optional, Sequence
 
 from ..table_schema import build_date_range_filters
 
+_DRONE_SOP_TABLE = "drone_sop"
+
 
 def _to_int(value: Any) -> int:
     """값을 정수로 변환하고 실패 시 0을 반환합니다."""
@@ -85,11 +87,23 @@ def build_totals_query(
 ) -> str:
     """시간 단위 합계 쿼리를 생성합니다."""
 
-    bucket_expr = f"DATE_TRUNC('hour', {timestamp_column})"
+    use_delivery_jira_count = table_name == _DRONE_SOP_TABLE and not send_jira_column
+    table_expr = f"{table_name} base" if use_delivery_jira_count else table_name
+    timestamp_expr = f"base.{timestamp_column}" if use_delivery_jira_count else timestamp_column
+    bucket_expr = f"DATE_TRUNC('hour', {timestamp_expr})"
     totals_select = [f"{bucket_expr} AS bucket", "COUNT(*) AS row_count"]
     if send_jira_column:
         totals_select.append(
             "SUM(CASE WHEN {col} > 0 THEN 1 ELSE 0 END) AS send_jira_count".format(col=send_jira_column)
+        )
+    elif use_delivery_jira_count:
+        totals_select.append(
+            "SUM(CASE WHEN EXISTS ("
+            "SELECT 1 FROM drone_sop_delivery delivery "
+            "WHERE delivery.sop_id = base.id "
+            "AND delivery.channel = 'jira' "
+            "AND delivery.status = 'success'"
+            ") THEN 1 ELSE 0 END) AS send_jira_count"
         )
     else:
         totals_select.append("0 AS send_jira_count")
@@ -102,7 +116,7 @@ def build_totals_query(
         ORDER BY bucket ASC
     """.format(
         select_clause=", ".join(totals_select),
-        table=table_name,
+        table=table_expr,
         where_clause=where_clause,
     )
 
@@ -117,16 +131,29 @@ def build_breakdown_query(
 ) -> str:
     """시간 단위 분해(차원별) 쿼리를 생성합니다."""
 
-    bucket_expr = f"DATE_TRUNC('hour', {timestamp_column})"
+    use_delivery_jira_count = table_name == _DRONE_SOP_TABLE and not send_jira_column
+    table_expr = f"{table_name} base" if use_delivery_jira_count else table_name
+    timestamp_expr = f"base.{timestamp_column}" if use_delivery_jira_count else timestamp_column
+    dimension_expr = f"base.{dimension_column}" if use_delivery_jira_count else dimension_column
+    bucket_expr = f"DATE_TRUNC('hour', {timestamp_expr})"
     select_parts = [
         f"{bucket_expr} AS bucket",
-        f"COALESCE(CAST({dimension_column} AS TEXT), 'Unspecified') AS category",
+        f"COALESCE(CAST({dimension_expr} AS TEXT), 'Unspecified') AS category",
         "COUNT(*) AS row_count",
     ]
 
     if send_jira_column:
         select_parts.append(
             "SUM(CASE WHEN {col} > 0 THEN 1 ELSE 0 END) AS send_jira_count".format(col=send_jira_column)
+        )
+    elif use_delivery_jira_count:
+        select_parts.append(
+            "SUM(CASE WHEN EXISTS ("
+            "SELECT 1 FROM drone_sop_delivery delivery "
+            "WHERE delivery.sop_id = base.id "
+            "AND delivery.channel = 'jira' "
+            "AND delivery.status = 'success'"
+            ") THEN 1 ELSE 0 END) AS send_jira_count"
         )
     else:
         select_parts.append("0 AS send_jira_count")
@@ -139,7 +166,7 @@ def build_breakdown_query(
         ORDER BY bucket ASC, category ASC
     """.format(
         select_clause=", ".join(select_parts),
-        table=table_name,
+        table=table_expr,
         where_clause=where_clause,
     )
 

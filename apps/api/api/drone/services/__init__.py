@@ -43,7 +43,12 @@ from .jira.sop_jira import (
     run_drone_sop_jira_create_from_env,
 )
 from .channels.recipients import normalize_recipient_channel, replace_drone_sop_channel_recipients
-from .channels.user_sdwt_channel import ensure_drone_sop_notification_target, upsert_drone_sop_user_sdwt_channel
+from .channels.user_sdwt_channel import (
+    DroneSopTargetMappingDuplicateError,
+    create_drone_sop_target_mapping,
+    ensure_drone_sop_notification_target,
+    upsert_drone_sop_user_sdwt_channel,
+)
 from .pop3.config import DroneSopPop3Config, DroneSopPop3IngestResult, NeedToSendRule
 from .pop3.sop_pop3 import run_drone_sop_pop3_ingest_from_env
 from .table_ops import (
@@ -63,6 +68,7 @@ __all__ = [
     "DroneSopInformResult",
     "DroneSopJiraCreateResult",
     "DroneSopRetryChannelResult",
+    "DroneSopTargetMappingDuplicateError",
     "DroneSopPop3Config",
     "DroneSopPop3IngestResult",
     "TableNotFoundError",
@@ -70,6 +76,7 @@ __all__ = [
     "TableUpdateResult",
     "NeedToSendRule",
     "create_early_inform_entry",
+    "create_drone_sop_target_mapping",
     "delete_early_inform_entry",
     "ensure_drone_sop_notification_target",
     "enqueue_drone_sop_jira_instant_inform",

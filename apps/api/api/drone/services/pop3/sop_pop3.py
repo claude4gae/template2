@@ -27,10 +27,11 @@ from django.utils import timezone
 
 from ... import selectors
 from ...models import DroneSOP, build_sop_key
+from ..shared.delivery_state import ensure_channel_delivery_snapshots_for_rows
 from ..shared.notify_resolver import (
     UserSdwtProdMapIndex,
     load_user_sdwt_prod_map_index,
-    resolve_target_user_sdwt_prod,
+    resolve_target_user_sdwt_prods,
 )
 from ..shared.utils import _advisory_lock
 from .config import (
@@ -392,8 +393,8 @@ def _get_needtosend_rule_for_target(
         return None
 
     rule = NeedToSendRule(
-        comment_last_at=str(rule_model.comment_last_at or "").strip(),
-        ignore_sample_type=bool(rule_model.ignore_sample_type),
+        comment_last_at=str(rule_model.needtosend_comment_last_at or "").strip(),
+        ignore_sample_type=bool(rule_model.needtosend_ignore_sample_type),
     )
     cache[lookup_key] = rule
     return rule
@@ -629,12 +630,20 @@ def _build_drone_sop_row(
     if needtosend_rule_cache is None:
         needtosend_rule_cache = {}
 
-    target_user_sdwt_prod = resolve_target_user_sdwt_prod(row=row, index=user_sdwt_map_index)
+    target_user_sdwt_prods = resolve_target_user_sdwt_prods(row=row, index=user_sdwt_map_index)
+    target_user_sdwt_prod = target_user_sdwt_prods[0] if target_user_sdwt_prods else None
+    row["target_user_sdwt_prods"] = target_user_sdwt_prods
     row["target_user_sdwt_prod"] = target_user_sdwt_prod
-    row["needtosend"] = _compute_needtosend_by_target(
-        row=row,
-        target_user_sdwt_prod=target_user_sdwt_prod,
-        rule_cache=needtosend_rule_cache,
+    row["needtosend"] = int(
+        any(
+            _compute_needtosend_by_target(
+                row=row,
+                target_user_sdwt_prod=target,
+                rule_cache=needtosend_rule_cache,
+            )
+            == 1
+            for target in target_user_sdwt_prods
+        )
     )
     return row
 
@@ -716,6 +725,35 @@ def _delete_dummy_mail_messages(*, url: str, mail_ids: Sequence[int], timeout: i
     return deleted
 
 
+def _ensure_snapshots_for_upserted_rows(*, source_by_sop_key: dict[str, dict[str, Any]]) -> None:
+    """upsert 완료된 SOP에 delivery snapshot을 생성합니다."""
+
+    if not source_by_sop_key:
+        return
+
+    db_rows = DroneSOP.objects.filter(sop_key__in=list(source_by_sop_key.keys())).values(
+        "id",
+        "sop_key",
+        "sdwt_prod",
+        "user_sdwt_prod",
+        "status",
+        "needtosend",
+        "instant_inform",
+    )
+    snapshot_rows: list[dict[str, Any]] = []
+    for db_row in db_rows:
+        sop_key = str(db_row.get("sop_key") or "").strip()
+        source_row = source_by_sop_key.get(sop_key) or {}
+        snapshot_row = dict(db_row)
+        if isinstance(source_row.get("target_user_sdwt_prods"), list):
+            snapshot_row["target_user_sdwt_prods"] = source_row["target_user_sdwt_prods"]
+        elif source_row.get("target_user_sdwt_prod") is not None:
+            snapshot_row["target_user_sdwt_prod"] = source_row.get("target_user_sdwt_prod")
+        snapshot_rows.append(snapshot_row)
+
+    ensure_channel_delivery_snapshots_for_rows(rows=snapshot_rows)
+
+
 def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     """Drone SOP row를 upsert 합니다.
 
@@ -756,7 +794,6 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
         "status",
         "knox_id",
         "user_sdwt_prod",
-        "target_user_sdwt_prod",
         "comment",
         "defect_url",
         "instant_inform",
@@ -775,7 +812,7 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     for col in insert_cols:
         if col in exclude_update_cols:
             continue
-        if col in {"target_user_sdwt_prod", "defect_url"}:
+        if col == "defect_url":
             update_parts.append(f'"{col}" = EXCLUDED."{col}"')
             continue
         update_parts.append(
@@ -794,6 +831,8 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     # 3) 바인드 파라미터 구성
     # -------------------------------------------------------------------------
     args = []
+    source_by_sop_key: dict[str, dict[str, Any]] = {}
+    user_sdwt_map_index: UserSdwtProdMapIndex | None = None
     for row in rows:
         values: list[Any] = []
         if not row.get("sop_key"):
@@ -804,6 +843,16 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
                 lot_id=row.get("lot_id"),
                 main_step=row.get("main_step"),
             )
+        if not row.get("target_user_sdwt_prod"):
+            if user_sdwt_map_index is None:
+                user_sdwt_map_index = load_user_sdwt_prod_map_index()
+            target_user_sdwt_prods = resolve_target_user_sdwt_prods(row=row, index=user_sdwt_map_index)
+            target_user_sdwt_prod = target_user_sdwt_prods[0] if target_user_sdwt_prods else None
+            row["target_user_sdwt_prods"] = target_user_sdwt_prods
+            row["target_user_sdwt_prod"] = target_user_sdwt_prod
+        sop_key = str(row.get("sop_key") or "").strip()
+        if sop_key:
+            source_by_sop_key[sop_key] = dict(row)
         for col in insert_cols:
             value = row.get(col)
             if value is None and col == "instant_inform":
@@ -816,6 +865,7 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.executemany(sql, args)
+        _ensure_snapshots_for_upserted_rows(source_by_sop_key=source_by_sop_key)
 
     return len(rows)
 

@@ -15,6 +15,7 @@ export {
 } from "./lineSettings"
 export { fetchUserSdwtJiraKey, updateUserSdwtJiraKey } from "./lineJiraKey"
 export {
+  createNotificationTargetMapping,
   createNotificationTarget,
   fetchAccountUserPool,
   fetchNotificationRecipientPermissions,

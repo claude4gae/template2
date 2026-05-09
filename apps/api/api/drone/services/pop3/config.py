@@ -52,10 +52,12 @@ class NeedToSendRule:
         """
 
         # ---------------------------------------------------------------------
-        # 1) 댓글/마지막 태그 추출
+        # 1) 댓글/포함 키워드 추출
         # ---------------------------------------------------------------------
         comment = str(row.get("comment") or "").strip()
-        last_at = comment.split("@")[-1] if comment else ""
+        keyword = str(self.comment_last_at or "").strip()
+        if not comment or not keyword:
+            return 0
         # ---------------------------------------------------------------------
         # 2) 샘플 타입 조건 처리
         # ---------------------------------------------------------------------
@@ -64,9 +66,9 @@ class NeedToSendRule:
             if sample_type == "ENGR_PRODUCTION":
                 return 0
         # ---------------------------------------------------------------------
-        # 3) 규칙 비교 결과 반환
+        # 3) 키워드 포함 결과 반환
         # ---------------------------------------------------------------------
-        return _as_int_bool(last_at == self.comment_last_at)
+        return _as_int_bool(keyword in comment)
 
 
 def _load_include_subjects(raw: Any) -> tuple[str, ...]:

@@ -4,6 +4,7 @@ import * as React from "react"
 
 import {
   createNotificationTarget,
+  createNotificationTargetMapping,
   createLineSetting,
   deleteLineSetting,
   fetchNotificationRecipients,
@@ -18,6 +19,9 @@ import { timeFormatter } from "../utils/formatters"
 import { sortEntries } from "../utils/lineSettings"
 
 const EMPTY_TIMESTAMP = "-"
+const EMPTY_MAPPING_OPTIONS = { userSdwtProds: [], sdwtProds: [] }
+const DEFAULT_CHANNEL_ENABLED = { jira: true, messenger: true, mail: true }
+const DEFAULT_NEED_TO_SEND_RULE = { commentKeyword: "", enabled: false, ignoreSampleType: false }
 
 const normalizeId = (value) => String(value ?? "")
 const nowLabel = () => timeFormatter.format(new Date())
@@ -25,8 +29,11 @@ const nowLabel = () => timeFormatter.format(new Date())
 export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true }) {
   const [entries, setEntries] = React.useState([])
   const [userSdwtValues, setUserSdwtValues] = React.useState([])
+  const [mappingOptions, setMappingOptions] = React.useState(EMPTY_MAPPING_OPTIONS)
   const [notificationTargets, setNotificationTargets] = React.useState([])
   const [jiraKey, setJiraKey] = React.useState("")
+  const [channelEnabled, setChannelEnabled] = React.useState(DEFAULT_CHANNEL_ENABLED)
+  const [needToSendRule, setNeedToSendRule] = React.useState(DEFAULT_NEED_TO_SEND_RULE)
   const [mailRecipients, setMailRecipients] = React.useState([])
   const [mailRecipientsTargetUserSdwtProd, setMailRecipientsTargetUserSdwtProd] = React.useState("")
   const [messengerRecipients, setMessengerRecipients] = React.useState([])
@@ -56,8 +63,11 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     refreshRequestRef.current += 1
     setEntries([])
     setUserSdwtValues([])
+    setMappingOptions(EMPTY_MAPPING_OPTIONS)
     setNotificationTargets([])
     setJiraKey("")
+    setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
+    setNeedToSendRule(DEFAULT_NEED_TO_SEND_RULE)
     setMailRecipients([])
     setMailRecipientsTargetUserSdwtProd("")
     setMessengerRecipients([])
@@ -82,6 +92,8 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
   React.useEffect(() => {
     refreshRequestRef.current += 1
     setJiraKey("")
+    setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
+    setNeedToSendRule(DEFAULT_NEED_TO_SEND_RULE)
     setMailRecipients([])
     setMailRecipientsTargetUserSdwtProd(userSdwtProd || "")
     setMessengerRecipients([])
@@ -176,6 +188,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
       if (targetsResult.status === "fulfilled") {
         setNotificationTargets(targetsResult.value?.targets || [])
         setUserSdwtValues(targetsResult.value?.targetUserSdwtProds || [])
+        setMappingOptions(targetsResult.value?.mappingOptions || EMPTY_MAPPING_OPTIONS)
       } else {
         const message =
           targetsResult.reason instanceof Error
@@ -184,11 +197,14 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         setError(message)
         setNotificationTargets([])
         setUserSdwtValues([])
+        setMappingOptions(EMPTY_MAPPING_OPTIONS)
         ok = false
       }
 
       if (jiraResult.status === "fulfilled") {
         setJiraKey(jiraResult.value?.jiraKey || "")
+        setChannelEnabled(jiraResult.value?.channelEnabled || DEFAULT_CHANNEL_ENABLED)
+        setNeedToSendRule(jiraResult.value?.needToSendRule || DEFAULT_NEED_TO_SEND_RULE)
       } else {
         const message =
           jiraResult.reason instanceof Error
@@ -196,6 +212,8 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
             : "Failed to load Jira key"
         setJiraKeyError(message)
         setJiraKey("")
+        setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
+        setNeedToSendRule(DEFAULT_NEED_TO_SEND_RULE)
         ok = false
       }
 
@@ -283,25 +301,68 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
   }, [])
 
   const updateJiraKey = React.useCallback(
-    async ({ jiraKey: nextJiraKey }) => {
+    async ({ jiraKey: nextJiraKey, channelEnabled: nextChannelEnabled }) => {
       if (!userSdwtProd) {
         throw new Error("Select a notification target to update Jira key")
       }
       const requestLineId = lineId
       const requestUserSdwtProd = userSdwtProd
-      const { jiraKey: savedKey } = await updateUserSdwtJiraKey({
+      const {
+        jiraKey: savedKey,
+        channelEnabled: savedChannelEnabled,
+        needToSendRule: savedNeedToSendRule,
+      } = await updateUserSdwtJiraKey({
         lineId: requestLineId,
         userSdwtProd,
         jiraKey: nextJiraKey,
+        channelEnabled: nextChannelEnabled || channelEnabled,
       })
       if (isCurrentContext(requestLineId, requestUserSdwtProd)) {
         setJiraKey(savedKey || "")
+        setChannelEnabled(savedChannelEnabled || DEFAULT_CHANNEL_ENABLED)
+        setNeedToSendRule(savedNeedToSendRule || DEFAULT_NEED_TO_SEND_RULE)
         setJiraKeyError(null)
         setLastUpdatedLabel(nowLabel())
       }
-      return savedKey
+      return {
+        jiraKey: savedKey,
+        channelEnabled: savedChannelEnabled || DEFAULT_CHANNEL_ENABLED,
+        needToSendRule: savedNeedToSendRule || DEFAULT_NEED_TO_SEND_RULE,
+      }
     },
-    [isCurrentContext, lineId, userSdwtProd],
+    [channelEnabled, isCurrentContext, lineId, userSdwtProd],
+  )
+
+  const updateNeedToSendRule = React.useCallback(
+    async ({ needToSendRule: nextNeedToSendRule }) => {
+      if (!userSdwtProd) {
+        throw new Error("Select a notification target to update needtosend rule")
+      }
+      const requestLineId = lineId
+      const requestUserSdwtProd = userSdwtProd
+      const {
+        jiraKey: savedKey,
+        channelEnabled: savedChannelEnabled,
+        needToSendRule: savedNeedToSendRule,
+      } = await updateUserSdwtJiraKey({
+        lineId: requestLineId,
+        userSdwtProd,
+        needToSendRule: nextNeedToSendRule || needToSendRule,
+      })
+      if (isCurrentContext(requestLineId, requestUserSdwtProd)) {
+        setJiraKey(savedKey || "")
+        setChannelEnabled(savedChannelEnabled || DEFAULT_CHANNEL_ENABLED)
+        setNeedToSendRule(savedNeedToSendRule || DEFAULT_NEED_TO_SEND_RULE)
+        setJiraKeyError(null)
+        setLastUpdatedLabel(nowLabel())
+      }
+      return {
+        jiraKey: savedKey,
+        channelEnabled: savedChannelEnabled || DEFAULT_CHANNEL_ENABLED,
+        needToSendRule: savedNeedToSendRule || DEFAULT_NEED_TO_SEND_RULE,
+      }
+    },
+    [isCurrentContext, lineId, needToSendRule, userSdwtProd],
   )
 
   const updateRecipients = React.useCallback(
@@ -367,6 +428,39 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     [lineId],
   )
 
+  const createTargetMapping = React.useCallback(
+    async ({ targetUserSdwtProd, sdwtProd, userSdwtProd: sourceUserSdwtProd }) => {
+      if (!lineId) {
+        throw new Error("Select a line to create target mapping")
+      }
+      if (!targetUserSdwtProd) {
+        throw new Error("Select a notification target to create mapping")
+      }
+      const { target } = await createNotificationTargetMapping({
+        lineId,
+        targetUserSdwtProd,
+        sdwtProd,
+        userSdwtProd: sourceUserSdwtProd,
+      })
+      if (target) {
+        setNotificationTargets((prev) => {
+          const key = target.targetUserSdwtProd.toLowerCase()
+          return [
+            target,
+            ...prev.filter((item) => item.targetUserSdwtProd.toLowerCase() !== key),
+          ].sort((left, right) => left.targetUserSdwtProd.localeCompare(right.targetUserSdwtProd))
+        })
+        setUserSdwtValues((prev) => {
+          const values = Array.from(new Set([target.targetUserSdwtProd, ...prev]))
+          return values.sort()
+        })
+        setLastUpdatedLabel(nowLabel())
+      }
+      return target
+    },
+    [lineId],
+  )
+
   const updateMessengerRecipients = React.useCallback(
     ({ userIds }) => updateRecipients({ channel: "messenger", userIds }),
     [updateRecipients],
@@ -375,8 +469,11 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
   return {
     entries,
     userSdwtValues,
+    mappingOptions,
     notificationTargets,
     jiraKey,
+    channelEnabled,
+    needToSendRule,
     mailRecipients,
     mailRecipientsTargetUserSdwtProd,
     messengerRecipients,
@@ -396,7 +493,9 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     updateEntry,
     deleteEntry,
     updateJiraKey,
+    updateNeedToSendRule,
     createTarget,
+    createTargetMapping,
     updateMailRecipients,
     updateMessengerRecipients,
   }

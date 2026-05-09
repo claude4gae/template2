@@ -3,8 +3,9 @@
 import {
   LineDashboardEntryPage,
   LineDashboardHistoryPage,
-  LineDashboardLandingPage,
+  LineDashboardNotificationSettingsPage,
   LineDashboardOverviewPage,
+  LineDashboardRecipientSettingsPage,
   LineDashboardSettingsPage,
   LineDashboardStatusPage,
 } from "./pages"
@@ -21,11 +22,6 @@ export const lineDashboardRoutes = [
         element: <LineDashboardEntryPage />,
       },
       {
-        path: ":lineId",
-        caseSensitive: false,
-        element: <LineDashboardLandingPage />,
-      },
-      {
         path: "status/:lineId",
         caseSensitive: false,
         element: <LineDashboardStatusPage />,
@@ -34,6 +30,16 @@ export const lineDashboardRoutes = [
         path: "history/:lineId",
         caseSensitive: false,
         element: <LineDashboardHistoryPage />,
+      },
+      {
+        path: "settings/notification/:lineId",
+        caseSensitive: false,
+        element: <LineDashboardNotificationSettingsPage />,
+      },
+      {
+        path: "settings/recipients/:lineId",
+        caseSensitive: false,
+        element: <LineDashboardRecipientSettingsPage />,
       },
       {
         path: "settings/:lineId",

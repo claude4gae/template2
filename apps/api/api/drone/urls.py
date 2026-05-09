@@ -12,6 +12,7 @@ from .views import (
     DroneJiraKeyView,
     DroneNotificationRecipientPermissionView,
     DroneNotificationRecipientView,
+    DroneNotificationTargetMappingView,
     DroneNotificationTargetView,
     DroneSopInstantInformView,
     DroneSopPop3IngestTriggerView,
@@ -34,6 +35,11 @@ urlpatterns = [
         "notification-targets",
         DroneNotificationTargetView.as_view(),
         name="line-dashboard-notification-targets",
+    ),
+    path(
+        "notification-target-mappings",
+        DroneNotificationTargetMappingView.as_view(),
+        name="line-dashboard-notification-target-mappings",
     ),
     path(
         "jira-user-sdwt-prods",

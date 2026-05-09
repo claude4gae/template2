@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 from django.db import connection
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.db.models.functions import Lower
 
 import api.account.selectors as account_selectors
@@ -18,8 +18,8 @@ from api.common.services.db import run_query
 from .models import (
     DroneEarlyInform,
     DroneSOP,
+    DroneSopChannelDelivery,
     DroneSopChannelRecipient,
-    DroneSopNeedToSendRule,
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
 )
@@ -60,20 +60,14 @@ _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "status",
     "knox_id",
     "user_sdwt_prod",
-    "target_user_sdwt_prod",
     "comment",
     "defect_url",
     "needtosend",
     "instant_inform",
     "custom_end_step",
 )
-_DRONE_SOP_JIRA_CANDIDATE_FIELDS = (*_DRONE_SOP_COMMON_CANDIDATE_FIELDS, "send_jira")
-_DRONE_SOP_PIPELINE_CANDIDATE_FIELDS = (
-    *_DRONE_SOP_COMMON_CANDIDATE_FIELDS,
-    "send_jira",
-    "send_messenger",
-    "send_mail",
-)
+_DRONE_SOP_JIRA_CANDIDATE_FIELDS = _DRONE_SOP_COMMON_CANDIDATE_FIELDS
+_DRONE_SOP_PIPELINE_CANDIDATE_FIELDS = _DRONE_SOP_COMMON_CANDIDATE_FIELDS
 
 _DIMENSION_CANDIDATES = [
     "sdwt_prod",
@@ -111,6 +105,15 @@ def _normalize_str(value: Any, *, allow_non_str: bool = False) -> str | None:
         value = str(value)
     trimmed = value.strip()
     return trimmed if trimmed else None
+
+
+def _display_delivery_target(value: Any) -> str | None:
+    """내부 marker target을 화면용 target 라벨로 변환합니다."""
+
+    target = _normalize_str(value)
+    if target and target.startswith("__"):
+        return "Target 미지정"
+    return target
 
 
 def _normalize_str_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
@@ -280,23 +283,30 @@ def list_drone_sop_user_sdwt_maps() -> list[dict[str, Any]]:
     # -----------------------------------------------------------------------------
     rows = (
         DroneSopUserSdwtProdMap.objects.filter(is_active=True)
-        .values("sdwt_prod", "user_sdwt_prod", "target_user_sdwt_prod")
+        .values("sdwt_prod", "user_sdwt_prod", "target__target_user_sdwt_prod")
         .order_by("id")
     )
-    return list(rows)
+    return [
+        {
+            "sdwt_prod": row.get("sdwt_prod"),
+            "user_sdwt_prod": row.get("user_sdwt_prod"),
+            "target_user_sdwt_prod": row.get("target__target_user_sdwt_prod"),
+        }
+        for row in rows
+    ]
 
 
 def get_drone_sop_needtosend_rule_by_target(
     *,
     target_user_sdwt_prod: str,
-) -> DroneSopNeedToSendRule | None:
-    """target_user_sdwt_prod 기준 needtosend 규칙을 조회합니다.
+) -> DroneSopUserSdwtChannel | None:
+    """target_user_sdwt_prod 기준 needtosend 채널 설정을 조회합니다.
 
     인자:
         target_user_sdwt_prod: 대상 소속 문자열.
 
     반환:
-        DroneSopNeedToSendRule 인스턴스 또는 None.
+        needtosend 설정이 활성화된 DroneSopUserSdwtChannel 또는 None.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -310,13 +320,16 @@ def get_drone_sop_needtosend_rule_by_target(
         return None
 
     # -----------------------------------------------------------------------------
-    # 2) 활성 규칙 조회
+    # 2) 활성 채널 설정의 needtosend 규칙 조회
     # -----------------------------------------------------------------------------
     return (
-        DroneSopNeedToSendRule.objects.filter(
+        DroneSopUserSdwtChannel.objects.filter(
             target_user_sdwt_prod__iexact=normalized,
             is_active=True,
+            needtosend_enabled=True,
         )
+        .exclude(needtosend_comment_last_at__isnull=True)
+        .exclude(needtosend_comment_last_at__exact="")
         .order_by("id")
         .first()
     )
@@ -475,36 +488,41 @@ def _drone_sop_jira_candidates_queryset() -> QuerySet[DroneSOP]:
         없음. 읽기 전용 조회 조건만 생성합니다.
     """
 
-    return DroneSOP.objects.filter(send_jira=0).filter(_drone_sop_eligible_filter())
-
-
-def _build_drone_sop_pending_filter() -> Q:
-    """고정 3채널 기준 미전송(send=0/NULL) 필터를 구성합니다."""
-
-    return (
-        Q(send_jira=0)
-        | Q(send_jira__isnull=True)
-        | Q(send_messenger=0)
-        | Q(send_messenger__isnull=True)
-        | Q(send_mail=0)
-        | Q(send_mail__isnull=True)
+    pending_delivery = DroneSopChannelDelivery.objects.filter(
+        sop_id=OuterRef("pk"),
+        channel=DroneSopChannelDelivery.Channels.JIRA,
+        status=DroneSopChannelDelivery.Statuses.PENDING,
     )
-
-
-def _build_drone_sop_any_informed_filter() -> Q:
-    """고정 3채널 중 하나라도 전송 완료(send=1)인 필터를 구성합니다."""
-
-    return Q(send_jira=1) | Q(send_messenger=1) | Q(send_mail=1)
+    existing_delivery = DroneSopChannelDelivery.objects.filter(
+        sop_id=OuterRef("pk"),
+        channel=DroneSopChannelDelivery.Channels.JIRA,
+    )
+    needs_snapshot = ~Q(has_delivery=True)
+    return (
+        DroneSOP.objects.annotate(
+            has_pending_delivery=Exists(pending_delivery),
+            has_delivery=Exists(existing_delivery),
+        )
+        .filter(Q(has_pending_delivery=True) | needs_snapshot)
+        .filter(_drone_sop_eligible_filter())
+    )
 
 
 def _drone_sop_pipeline_candidates_queryset() -> QuerySet[DroneSOP]:
     """고정 3채널 기준 DroneSOP 후보 QuerySet을 구성합니다."""
 
-    send_pending = _build_drone_sop_pending_filter()
-    already_informed = _build_drone_sop_any_informed_filter()
+    pending_delivery = DroneSopChannelDelivery.objects.filter(
+        sop_id=OuterRef("pk"),
+        status=DroneSopChannelDelivery.Statuses.PENDING,
+    )
+    existing_delivery = DroneSopChannelDelivery.objects.filter(sop_id=OuterRef("pk"))
+    needs_snapshot = ~Q(has_delivery=True)
     return (
-        DroneSOP.objects.filter(send_pending)
-        .exclude(already_informed)
+        DroneSOP.objects.annotate(
+            has_pending_delivery=Exists(pending_delivery),
+            has_delivery=Exists(existing_delivery),
+        )
+        .filter(Q(has_pending_delivery=True) | needs_snapshot)
         .filter(_drone_sop_eligible_filter())
     )
 
@@ -527,7 +545,7 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
     """Jira 전송 대상 DroneSOP 로우를 조회합니다.
 
     조건:
-        - send_jira = 0 (미전송)
+        - Jira delivery pending 또는 delivery snapshot 미생성 row
         - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
 
     인자:
@@ -571,11 +589,91 @@ def list_drone_sop_pipeline_candidates(
     )
 
 
+def list_drone_sop_channel_delivery_rows_by_sop_ids(*, sop_ids: Sequence[int]) -> dict[int, list[dict[str, Any]]]:
+    """SOP ID별 채널 delivery row 목록을 조회합니다.
+
+    인자:
+        sop_ids: DroneSOP ID 목록.
+
+    반환:
+        {sop_id: [delivery row dict, ...]} 형태의 dict.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 ID 정규화
+    # -----------------------------------------------------------------------------
+    normalized_ids: list[int] = []
+    seen: set[int] = set()
+    for raw_id in sop_ids:
+        if not isinstance(raw_id, int) or raw_id <= 0 or raw_id in seen:
+            continue
+        seen.add(raw_id)
+        normalized_ids.append(raw_id)
+    if not normalized_ids:
+        return {}
+
+    # -----------------------------------------------------------------------------
+    # 2) SOP별 최초 target의 delivery row만 조회합니다.
+    # -----------------------------------------------------------------------------
+    rows = (
+        DroneSopChannelDelivery.objects.filter(sop_id__in=normalized_ids)
+        .select_related("target")
+        .order_by("sop_id", "id")
+        .values(
+            "id",
+            "sop_id",
+            "target__target_user_sdwt_prod",
+            "channel",
+            "status",
+            "reason",
+            "external_key",
+            "sent_step",
+            "sent_at",
+            "updated_at",
+        )
+    )
+
+    # -----------------------------------------------------------------------------
+    # 3) API row에 붙이기 쉬운 camelCase payload로 변환
+    # -----------------------------------------------------------------------------
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    primary_target_by_sop_id: dict[int, str] = {}
+    for row in rows:
+        sop_id = row.get("sop_id")
+        if not isinstance(sop_id, int):
+            continue
+        target_user_sdwt_prod = _display_delivery_target(row.get("target__target_user_sdwt_prod"))
+        if not target_user_sdwt_prod:
+            continue
+        target_key = target_user_sdwt_prod.casefold()
+        primary_target_key = primary_target_by_sop_id.setdefault(sop_id, target_key)
+        if target_key != primary_target_key:
+            continue
+        grouped.setdefault(sop_id, []).append(
+            {
+                "id": row.get("id"),
+                "sopId": sop_id,
+                "targetUserSdwtProd": target_user_sdwt_prod,
+                "channel": row.get("channel"),
+                "status": row.get("status"),
+                "reason": row.get("reason"),
+                "externalKey": row.get("external_key"),
+                "sentStep": row.get("sent_step"),
+                "sentAt": row.get("sent_at"),
+                "updatedAt": row.get("updated_at"),
+            }
+        )
+    return grouped
+
+
 def has_drone_sop_jira_candidates() -> bool:
     """Jira 전송 대상 DroneSOP가 존재하는지 확인합니다.
 
     조건:
-        - send_jira = 0 (미전송)
+        - Jira delivery pending 또는 delivery snapshot 미생성 row
         - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
 
     반환:
@@ -824,6 +922,9 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
             "source": row.source or DroneSopUserSdwtChannel.Sources.CUSTOM,
             "isConfigured": True,
             "jiraKey": row.jira_key or None,
+            "jiraEnabled": bool(row.jira_enabled),
+            "messengerEnabled": bool(row.messenger_enabled),
+            "mailEnabled": bool(row.mail_enabled),
         }
 
     for target_value in list_user_sdwt_prod_values_for_line(line_id=normalized_line_id):
@@ -838,8 +939,34 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
                 "source": DroneSopUserSdwtChannel.Sources.AFFILIATION,
                 "isConfigured": False,
                 "jiraKey": None,
+                "jiraEnabled": True,
+                "messengerEnabled": True,
+                "mailEnabled": True,
             },
         )
+
+    for mapping in (
+        DroneSopUserSdwtProdMap.objects.filter(is_active=True)
+        .select_related("target")
+        .exclude(target__target_user_sdwt_prod__isnull=True)
+        .exclude(target__target_user_sdwt_prod__exact="")
+        .order_by("sdwt_prod", "user_sdwt_prod", "id")
+    ):
+        target_value = _normalize_str(mapping.target_user_sdwt_prod)
+        target = targets_by_key.get(target_value.casefold())
+        if target is None:
+            continue
+        mappings = target.setdefault("mappings", [])
+        if isinstance(mappings, list):
+            mappings.append(
+                {
+                    "sdwtProd": _normalize_str(mapping.sdwt_prod),
+                    "userSdwtProd": _normalize_str(mapping.user_sdwt_prod),
+                }
+            )
+
+    for target in targets_by_key.values():
+        target.setdefault("mappings", [])
 
     return sorted(
         targets_by_key.values(),
@@ -878,6 +1005,43 @@ def _collapse_display_values(values: Sequence[Any]) -> list[str]:
     return sorted(display_by_key.values())
 
 
+def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, list[str]]:
+    """라인별 Drone SOP 지정 조합 드롭다운 옵션을 조회합니다.
+
+    인자:
+        line_id: 라인 ID.
+
+    반환:
+        {"userSdwtProds": [...], "sdwtProds": [...]} 형태의 옵션 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    normalized_line_id = _normalize_str(line_id)
+    if not normalized_line_id:
+        return {"userSdwtProds": [], "sdwtProds": []}
+
+    base_queryset = DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
+    user_sdwt_values = (
+        base_queryset.exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .order_by("id")
+    )
+    sdwt_values = (
+        base_queryset.exclude(sdwt_prod__isnull=True)
+        .exclude(sdwt_prod__exact="")
+        .values_list("sdwt_prod", flat=True)
+        .order_by("id")
+    )
+
+    return {
+        "userSdwtProds": _collapse_display_values(user_sdwt_values),
+        "sdwtProds": _collapse_display_values(sdwt_values),
+    }
+
+
 def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
     """Drone SOP 설정 대상 user_sdwt_prod 목록을 조회합니다.
 
@@ -901,9 +1065,9 @@ def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
         .distinct()
     )
     values.extend(
-        DroneSopUserSdwtProdMap.objects.exclude(target_user_sdwt_prod__isnull=True)
-        .exclude(target_user_sdwt_prod="")
-        .values_list("target_user_sdwt_prod", flat=True)
+        DroneSopUserSdwtProdMap.objects.exclude(target__target_user_sdwt_prod__isnull=True)
+        .exclude(target__target_user_sdwt_prod="")
+        .values_list("target__target_user_sdwt_prod", flat=True)
         .distinct()
     )
     return _collapse_display_values(values)
@@ -1006,7 +1170,7 @@ def _list_active_recipient_contact_values(
 
     rows = (
         DroneSopChannelRecipient.objects.filter(
-            target_user_sdwt_prod__iexact=normalized,
+            target__target_user_sdwt_prod__iexact=normalized,
             channel=channel,
             is_active=True,
             user__is_active=True,
@@ -1060,12 +1224,12 @@ def list_drone_sop_channel_recipients(
 
     rows = list(
         DroneSopChannelRecipient.objects.filter(
-            target_user_sdwt_prod__iexact=normalized,
+            target__target_user_sdwt_prod__iexact=normalized,
             channel=channel,
             is_active=True,
             user__is_active=True,
         )
-        .select_related("user")
+        .select_related("target", "user")
         .order_by(
             "user__username",
             "user_id",

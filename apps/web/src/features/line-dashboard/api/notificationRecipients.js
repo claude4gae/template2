@@ -9,6 +9,7 @@ export { fetchAccountUserPool } from "@/features/account"
 const RECIPIENTS_PATH = "/api/v1/line-dashboard/notification-recipients"
 const RECIPIENT_PERMISSIONS_PATH = "/api/v1/line-dashboard/notification-recipient-permissions"
 const NOTIFICATION_TARGETS_PATH = "/api/v1/line-dashboard/notification-targets"
+const NOTIFICATION_TARGET_MAPPINGS_PATH = "/api/v1/line-dashboard/notification-target-mappings"
 
 function normalizeUser(rawUser) {
   if (!rawUser || typeof rawUser !== "object") return null
@@ -39,6 +40,26 @@ function normalizeTextValues(values) {
     : []
 }
 
+function normalizeMappingOptions(rawOptions) {
+  const options = rawOptions && typeof rawOptions === "object" ? rawOptions : {}
+  return {
+    userSdwtProds: normalizeTextValues(options.userSdwtProds),
+    sdwtProds: normalizeTextValues(options.sdwtProds),
+  }
+}
+
+function normalizeTargetMappings(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((mapping) => {
+      if (!mapping || typeof mapping !== "object") return null
+      const sdwtProd = typeof mapping.sdwtProd === "string" ? mapping.sdwtProd.trim() : ""
+      const userSdwtProd = typeof mapping.userSdwtProd === "string" ? mapping.userSdwtProd.trim() : ""
+      if (!sdwtProd && !userSdwtProd) return null
+      return { sdwtProd, userSdwtProd }
+    })
+    .filter(Boolean)
+}
+
 function normalizeTarget(rawTarget, fallbackLineId = "") {
   if (!rawTarget || typeof rawTarget !== "object") return null
   const targetUserSdwtProd =
@@ -51,6 +72,12 @@ function normalizeTarget(rawTarget, fallbackLineId = "") {
     source: typeof rawTarget.source === "string" ? rawTarget.source : "custom",
     isConfigured: Boolean(rawTarget.isConfigured),
     jiraKey: typeof rawTarget.jiraKey === "string" ? rawTarget.jiraKey : "",
+    channelEnabled: {
+      jira: typeof rawTarget.jiraEnabled === "boolean" ? rawTarget.jiraEnabled : true,
+      messenger: typeof rawTarget.messengerEnabled === "boolean" ? rawTarget.messengerEnabled : true,
+      mail: typeof rawTarget.mailEnabled === "boolean" ? rawTarget.mailEnabled : true,
+    },
+    mappings: normalizeTargetMappings(rawTarget.mappings),
   }
 }
 
@@ -62,7 +89,12 @@ function normalizeTargets(values, fallbackLineId = "") {
 
 export async function fetchNotificationTargets({ lineId }) {
   if (!lineId) {
-    return { lineId: "", targets: [], targetUserSdwtProds: [] }
+    return {
+      lineId: "",
+      targets: [],
+      targetUserSdwtProds: [],
+      mappingOptions: { userSdwtProds: [], sdwtProds: [] },
+    }
   }
 
   const response = await fetch(buildBackendUrl(NOTIFICATION_TARGETS_PATH, { lineId }), {
@@ -84,6 +116,7 @@ export async function fetchNotificationTargets({ lineId }) {
     lineId: payload?.lineId || lineId,
     targets,
     targetUserSdwtProds: targets.map((target) => target.targetUserSdwtProd),
+    mappingOptions: normalizeMappingOptions(payload?.mappingOptions),
   }
 }
 
@@ -108,6 +141,35 @@ export async function createNotificationTarget({ lineId, targetUserSdwtProd }) {
     lineId: payload?.lineId || lineId,
     target: normalizeTarget(payload?.target, payload?.lineId || lineId),
     updated: Number(payload?.updated || 0),
+  }
+}
+
+export async function createNotificationTargetMapping({
+  lineId,
+  targetUserSdwtProd,
+  sdwtProd,
+  userSdwtProd,
+}) {
+  const response = await fetch(buildBackendUrl(NOTIFICATION_TARGET_MAPPINGS_PATH), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ lineId, targetUserSdwtProd, sdwtProd, userSdwtProd }),
+  })
+  const payload = await safeParseJson(response)
+
+  if (!response.ok) {
+    throw buildApiError(
+      response,
+      payload,
+      `Failed to create target mapping (status ${response.status})`,
+    )
+  }
+
+  return {
+    lineId: payload?.lineId || lineId,
+    target: normalizeTarget(payload?.target, payload?.lineId || lineId),
+    mapping: normalizeTargetMappings([payload?.mapping])[0] || null,
   }
 }
 

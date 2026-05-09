@@ -340,9 +340,9 @@ function MetroStepFlowCell({ rowData }) {
   const customEndStep = normalizeStepValue(rowData.custom_end_step)
   const metroEndStep = normalizeStepValue(rowData.metro_end_step)
   const needToSend = toBooleanFlag(rowData.needtosend)                 // 예약(보낼 예정)
-  const sendJira = toBooleanFlag(rowData.send_jira)
-  const sendMessenger = toBooleanFlag(rowData.send_messenger)
-  const sendMail = toBooleanFlag(rowData.send_mail)
+  const sendJira = toBooleanFlag(rowData.delivery_jira)
+  const sendMessenger = toBooleanFlag(rowData.delivery_messenger)
+  const sendMail = toBooleanFlag(rowData.delivery_mail)
   const isAnyInformed = sendJira || sendMessenger || sendMail          // 채널 중 하나라도 전송 완료
 
   // END 표시 후보: custom_end_step 우선 → metro_end_step

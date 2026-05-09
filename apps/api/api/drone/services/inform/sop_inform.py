@@ -9,28 +9,25 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Sequence
-
-from django.db import transaction
-from django.db.models import Case, DateTimeField, F, Value, When
-from django.utils import timezone
+from typing import Any, Callable, Sequence
 
 import api.common.services as messenger_services
 
 from ... import selectors
-from ...models import DroneSOP
+from ...models import DroneSopChannelDelivery, DroneSopChannelRecipient
 from ..channels.user_sdwt_channel import upsert_drone_sop_user_sdwt_channel
 from ..jira.config import DroneCtttmConfig
 from ..jira.delivery import _enrich_rows_with_ctttm_urls
 from ..jira.sop_jira import run_drone_sop_jira_create_from_rows
 from ..mail.mail_sender import DroneMailConfig, send_drone_sop_mail
 from ..messenger.messenger_api import DroneMessengerConfig, send_drone_sop_messenger_message
-from ..shared.channels import (
-    REASON_FIELD_BY_SEND_FIELD,
-    SEND_FIELD_BY_CHANNEL,
+from ..shared.delivery_state import (
+    ensure_channel_delivery_snapshots_for_rows,
+    filter_delivery_ids_for_config_failure as _filter_delivery_ids_for_config_failure,
+    get_or_prepare_channel_delivery as _get_or_prepare_delivery,
+    mark_channel_delivery_status as _mark_delivery_status,
+    normalize_positive_ids as _normalize_positive_ids,
 )
-from ..shared.utils import _advisory_lock, _parse_int
-from ..shared.notify_resolver import resolve_target_user_sdwt_prod_values
 from ..shared.policy import (
     REASON_CHANNEL_CONFIG_INVALID,
     REASON_CHANNEL_CONFIG_MISSING,
@@ -40,34 +37,33 @@ from ..shared.policy import (
     REASON_SEND_FAILED,
     REASON_TEMPLATE_MISSING,
     mark_missing_target_as_failed,
-    mark_pending_channels_as_disabled,
-    mark_pending_channels_as_failed,
 )
+from ..shared.utils import _advisory_lock, _parse_int
 
 logger = logging.getLogger(__name__)
 
 ChannelConfig = dict[str, str | bool | int | None]
-PendingChannelRow = tuple[dict[str, Any], int, ChannelConfig]
-_PIPELINE_CHANNEL_FIELDS: tuple[str, ...] = (
-    SEND_FIELD_BY_CHANNEL["jira"],
-    SEND_FIELD_BY_CHANNEL["messenger"],
-    SEND_FIELD_BY_CHANNEL["mail"],
+_PIPELINE_CHANNELS: tuple[str, ...] = (
+    DroneSopChannelDelivery.Channels.JIRA,
+    DroneSopChannelDelivery.Channels.MESSENGER,
+    DroneSopChannelDelivery.Channels.MAIL,
 )
 
 
-def _normalize_positive_ids(values: Sequence[int]) -> list[int]:
-    """양의 정수 ID 목록을 중복 없이 정규화합니다."""
+@dataclass(frozen=True)
+class PendingChannelDelivery:
+    """채널 전송 직전까지 해석된 SOP row와 delivery 상태를 묶습니다."""
 
-    normalized: list[int] = []
-    seen: set[int] = set()
-    for value in values:
-        if not isinstance(value, int) or value <= 0:
-            continue
-        if value in seen:
-            continue
-        seen.add(value)
-        normalized.append(value)
-    return normalized
+    row: dict[str, Any]
+    sop_id: int
+    target_user_sdwt_prod: str
+    delivery_id: int
+    config: ChannelConfig
+
+    def as_delivery_row(self) -> dict[str, Any]:
+        """템플릿/발송 함수가 기대하는 target 포함 row를 반환합니다."""
+
+        return {**self.row, "target_user_sdwt_prod": self.target_user_sdwt_prod}
 
 
 def _extract_row_id(row: dict[str, Any]) -> int | None:
@@ -79,125 +75,92 @@ def _extract_row_id(row: dict[str, Any]) -> int | None:
     return None
 
 
-def _collect_pending_channel_rows(
+def _extract_row_targets(row: dict[str, Any]) -> list[str]:
+    """row에서 단일 발송 대상 target 목록을 추출합니다."""
+
+    raw_targets = row.get("target_user_sdwt_prods")
+    candidates: list[Any]
+    if isinstance(raw_targets, list):
+        candidates = raw_targets
+    else:
+        candidates = [row.get("target_user_sdwt_prod")]
+
+    targets: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        target = _normalize_string_value(candidate)
+        target_key = _normalize_target_lookup_key(target)
+        if not target or not target_key or target_key in seen:
+            continue
+        seen.add(target_key)
+        targets.append(target)
+        break
+    return targets
+
+
+def _collect_pending_channel_deliveries(
     *,
     rows: list[dict[str, Any]],
     channel_by_target: dict[str, ChannelConfig],
-    send_field: str,
     enabled_field: str,
-) -> tuple[list[PendingChannelRow], list[int], list[int]]:
-    """채널 전송 대기 행을 분류합니다.
+    channel: str,
+) -> tuple[list[PendingChannelDelivery], list[int]]:
+    """채널 전송 대기 delivery를 분류합니다.
 
     반환:
-        - ready_rows: (row, sop_id, config_row) 목록
-        - disabled_ids: 채널 비활성화로 스킵할 SOP ID 목록
-        - missing_config_ids: 채널 설정이 없는 SOP ID 목록
+        - ready_deliveries: (row, sop_id, target, delivery_id, config_row) 목록
+        - delivery_ids: 이번 실행에서 확인한 delivery ID 목록
     """
 
-    ready_rows: list[PendingChannelRow] = []
-    disabled_ids: list[int] = []
-    missing_config_ids: list[int] = []
+    ready_deliveries: list[PendingChannelDelivery] = []
+    delivery_ids: list[int] = []
 
     for row in rows:
         row_id = _extract_row_id(row)
         if row_id is None:
             continue
-        if _normalize_int_flag(row.get(send_field)) != 0:
-            continue
 
-        config_row = _resolve_channel_config(row=row, channel_by_target=channel_by_target)
-        if not config_row:
-            missing_config_ids.append(row_id)
-            continue
-        if not bool(config_row.get(enabled_field, True)):
-            disabled_ids.append(row_id)
-            continue
+        for target in _extract_row_targets(row):
+            delivery = _get_or_prepare_delivery(
+                sop_id=row_id,
+                target_user_sdwt_prod=target,
+                channel=channel,
+            )
+            delivery_ids.append(delivery.id)
+            if delivery.status in {
+                DroneSopChannelDelivery.Statuses.SUCCESS,
+                DroneSopChannelDelivery.Statuses.FAILED,
+                DroneSopChannelDelivery.Statuses.DISABLED,
+            }:
+                continue
 
-        ready_rows.append((row, row_id, config_row))
+            config_row = channel_by_target.get(_normalize_target_lookup_key(target) or "")
+            if not config_row:
+                _mark_delivery_status(
+                    delivery_ids=[delivery.id],
+                    status=DroneSopChannelDelivery.Statuses.FAILED,
+                    reason=REASON_CHANNEL_CONFIG_MISSING,
+                )
+                continue
+            if not bool(config_row.get(enabled_field, True)):
+                _mark_delivery_status(
+                    delivery_ids=[delivery.id],
+                    status=DroneSopChannelDelivery.Statuses.DISABLED,
+                    reason=REASON_DISABLED_BY_POLICY,
+                )
+                continue
 
-    return (
-        ready_rows,
-        _normalize_positive_ids(disabled_ids),
-        _normalize_positive_ids(missing_config_ids),
-    )
+            ready_deliveries.append(
+                PendingChannelDelivery(
+                    row=row,
+                    sop_id=row_id,
+                    target_user_sdwt_prod=target,
+                    delivery_id=delivery.id,
+                    config=config_row,
+                )
+            )
 
-
-def _mark_pending_disabled(
-    *,
-    sop_ids: Sequence[int],
-    channel_fields: Sequence[str],
-) -> None:
-    """대기 상태 채널을 비활성화 사유로 기록합니다."""
-
-    normalized_ids = _normalize_positive_ids(sop_ids)
-    if not normalized_ids:
-        return
-    mark_pending_channels_as_disabled(
-        sop_ids=normalized_ids,
-        channel_fields=channel_fields,
-        disable_reason=REASON_DISABLED_BY_POLICY,
-    )
-
-
-def _mark_pending_failed(
-    *,
-    sop_ids: Sequence[int],
-    channel_fields: Sequence[str],
-    failure_reason: str,
-) -> None:
-    """대기 상태 채널을 실패 사유로 기록합니다."""
-
-    normalized_ids = _normalize_positive_ids(sop_ids)
-    if not normalized_ids:
-        return
-    mark_pending_channels_as_failed(
-        sop_ids=normalized_ids,
-        channel_fields=channel_fields,
-        failure_reason=failure_reason,
-    )
-
-
-def _mark_reason_group_failures(
-    *,
-    reason_groups: dict[str, list[int]],
-    channel_fields: Sequence[str],
-) -> None:
-    """사유별 실패 그룹을 일괄 반영합니다."""
-
-    for reason, ids in reason_groups.items():
-        _mark_pending_failed(
-            sop_ids=ids,
-            channel_fields=channel_fields,
-            failure_reason=reason,
-        )
-
-
-def _mark_channel_success(
-    *,
-    sop_ids: Sequence[int],
-    send_field: str,
-) -> None:
-    """채널 전송 성공 상태를 저장합니다."""
-
-    normalized_ids = _normalize_positive_ids(sop_ids)
-    if not normalized_ids:
-        return
-
-    now = timezone.now()
-    updates: dict[str, Any] = {
-        send_field: 1,
-        "informed_at": Case(
-            When(informed_at__isnull=True, then=Value(now)),
-            default=F("informed_at"),
-            output_field=DateTimeField(),
-        ),
-    }
-    reason_field = REASON_FIELD_BY_SEND_FIELD.get(send_field)
-    if reason_field:
-        updates[reason_field] = None
-
-    with transaction.atomic():
-        DroneSOP.objects.filter(id__in=normalized_ids).update(**updates)
+    return ready_deliveries, _normalize_positive_ids(delivery_ids)
 
 
 @dataclass(frozen=True)
@@ -211,28 +174,6 @@ class DroneSopInformResult:
     mail_sent: int = 0
     skipped: bool = False
     skip_reason: str | None = None
-
-
-def _normalize_int_flag(value: Any) -> int:
-    """상태 플래그를 정수로 정규화합니다."""
-
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _resolve_channel_config(
-    *,
-    row: dict[str, Any],
-    channel_by_target: dict[str, ChannelConfig],
-) -> ChannelConfig | None:
-    """row 기준 채널 설정을 조회합니다."""
-
-    target = _normalize_target_lookup_key(row.get("target_user_sdwt_prod"))
-    if not target:
-        return None
-    return channel_by_target.get(target)
 
 
 def _normalize_string_value(value: Any) -> str | None:
@@ -362,7 +303,9 @@ def _get_or_create_chatroom_id(
     # ready_rows가 기존 config_row 참조를 들고 있으므로, 같은 target 재처리 시
     # 즉시 재사용되도록 in-place 갱신합니다.
     config_row["chatroom_id"] = chatroom_id
-    channel_by_target[target] = config_row
+    target_lookup = _normalize_target_lookup_key(target)
+    if target_lookup:
+        channel_by_target[target_lookup] = config_row
     return chatroom_id, None
 
 
@@ -379,6 +322,35 @@ def _filter_rows_by_excluded_ids(*, rows: list[dict[str, Any]], excluded_ids: Se
     ]
 
 
+def _mark_delivery_failed(*, delivery_id: int, reason: str) -> None:
+    """단일 delivery 실패 상태 기록을 한 곳에서 수행합니다."""
+
+    _mark_delivery_status(
+        delivery_ids=[delivery_id],
+        status=DroneSopChannelDelivery.Statuses.FAILED,
+        reason=reason,
+    )
+
+
+def _mark_successful_deliveries(*, delivery_ids: Sequence[int]) -> None:
+    """성공 delivery ID 목록을 한 번에 성공 상태로 기록합니다."""
+
+    _mark_delivery_status(
+        delivery_ids=delivery_ids,
+        status=DroneSopChannelDelivery.Statuses.SUCCESS,
+    )
+
+
+def _run_count_channel_safely(*, channel_label: str, runner: Callable[[], int]) -> int:
+    """채널별 예외를 격리하고 실패 시 0건 처리로 이어갑니다."""
+
+    try:
+        return int(runner() or 0)
+    except Exception:
+        logger.exception("Drone SOP %s pipeline failed during pipeline run", channel_label)
+        return 0
+
+
 def _run_jira_inform(
     *,
     rows: list[dict[str, Any]],
@@ -390,13 +362,12 @@ def _run_jira_inform(
     - Jira 채널 예외가 발생해도 메신저/메일 채널은 계속 진행할 수 있도록 격리합니다.
     """
 
-    jira_rows = [row for row in rows if _normalize_int_flag(row.get("send_jira")) == 0]
-    if not jira_rows:
+    if not rows:
         return 0, 0
 
     try:
         result = run_drone_sop_jira_create_from_rows(
-            rows=jira_rows,
+            rows=rows,
             pre_resolved_targets=pre_resolved_targets,
         )
     except Exception:
@@ -415,72 +386,68 @@ def _run_messenger_inform(
     """메신저 채널 전송을 처리합니다."""
 
     messenger_config = DroneMessengerConfig.from_settings()
-    ready_rows, disabled_ids, missing_config_ids = _collect_pending_channel_rows(
+    ready_deliveries, delivery_ids = _collect_pending_channel_deliveries(
         rows=rows,
         channel_by_target=channel_by_target,
-        send_field="send_messenger",
         enabled_field="messenger_enabled",
+        channel=DroneSopChannelRecipient.Channels.MESSENGER,
     )
 
     if not messenger_config.is_ready():
-        _mark_pending_disabled(sop_ids=disabled_ids, channel_fields=["send_messenger"])
-        _mark_pending_failed(
-            sop_ids=[*missing_config_ids, *[row_id for _, row_id, _ in ready_rows]],
-            channel_fields=["send_messenger"],
-            failure_reason=REASON_CONFIG_MISSING,
+        _mark_delivery_status(
+            delivery_ids=_filter_delivery_ids_for_config_failure(delivery_ids=delivery_ids),
+            status=DroneSopChannelDelivery.Statuses.FAILED,
+            reason=REASON_CONFIG_MISSING,
         )
         logger.info("Skip messenger send: KNOX_MESSENGER_API_BASE_URL/AUTHORIZATION/SYSTEM_ID 미설정")
         return 0
 
-    success_ids: list[int] = []
-    failed_reason_groups: dict[str, list[int]] = {}
-    if missing_config_ids:
-        failed_reason_groups[REASON_CHANNEL_CONFIG_MISSING] = [*missing_config_ids]
-
-    for row, row_id, config_row in ready_rows:
-        messenger_template_key = _normalize_string_value(config_row.get("messenger_template_key"))
+    success_delivery_ids: list[int] = []
+    sent_count = 0
+    for delivery in ready_deliveries:
+        messenger_template_key = _normalize_string_value(delivery.config.get("messenger_template_key"))
         if not messenger_template_key:
-            failed_reason_groups.setdefault(REASON_TEMPLATE_MISSING, []).append(row_id)
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_TEMPLATE_MISSING)
             continue
 
-        chatroom_id = _normalize_chatroom_id(config_row.get("chatroom_id"))
+        delivery_row = delivery.as_delivery_row()
+        chatroom_id = _normalize_chatroom_id(delivery.config.get("chatroom_id"))
         create_reason: str | None = None
         if not chatroom_id:
             try:
                 chatroom_id, create_reason = _get_or_create_chatroom_id(
-                    row=row,
-                    config_row=config_row,
+                    row=delivery_row,
+                    config_row=delivery.config,
                     channel_by_target=channel_by_target,
                     messenger_config=messenger_config,
                 )
             except Exception:
-                logger.exception("Messenger room create failed (sop_id=%s)", row_id)
+                logger.exception("Messenger room create failed (sop_id=%s)", delivery.sop_id)
                 chatroom_id = None
                 create_reason = REASON_SEND_FAILED
 
         if not chatroom_id:
-            failed_reason_groups.setdefault(create_reason or REASON_CHANNEL_CONFIG_INVALID, []).append(row_id)
+            _mark_delivery_failed(
+                delivery_id=delivery.delivery_id,
+                reason=create_reason or REASON_CHANNEL_CONFIG_INVALID,
+            )
             continue
 
         try:
             send_drone_sop_messenger_message(
-                row=row,
+                row=delivery_row,
                 chatroom_id=chatroom_id,
                 messenger_template_key=messenger_template_key,
                 config=messenger_config,
             )
-            success_ids.append(row_id)
+            success_delivery_ids.append(delivery.delivery_id)
+            sent_count += 1
         except Exception:
-            logger.exception("Messenger send failed (sop_id=%s)", row_id)
-            failed_reason_groups.setdefault(REASON_SEND_FAILED, []).append(row_id)
+            logger.exception("Messenger send failed (sop_id=%s)", delivery.sop_id)
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_SEND_FAILED)
 
-    _mark_channel_success(sop_ids=success_ids, send_field="send_messenger")
-    _mark_pending_disabled(sop_ids=disabled_ids, channel_fields=["send_messenger"])
-    _mark_reason_group_failures(
-        reason_groups=failed_reason_groups,
-        channel_fields=["send_messenger"],
-    )
-    return len(_normalize_positive_ids(success_ids))
+    _mark_successful_deliveries(delivery_ids=success_delivery_ids)
+    return sent_count
 
 
 def _run_mail_inform(
@@ -491,63 +458,55 @@ def _run_mail_inform(
     """메일 채널 전송을 처리합니다."""
 
     mail_config = DroneMailConfig.from_settings()
-    ready_rows, disabled_ids, missing_config_ids = _collect_pending_channel_rows(
+    ready_deliveries, delivery_ids = _collect_pending_channel_deliveries(
         rows=rows,
         channel_by_target=channel_by_target,
-        send_field="send_mail",
         enabled_field="mail_enabled",
+        channel=DroneSopChannelRecipient.Channels.MAIL,
     )
 
     if not mail_config.sender_email:
-        _mark_pending_disabled(sop_ids=disabled_ids, channel_fields=["send_mail"])
-        _mark_pending_failed(
-            sop_ids=[*missing_config_ids, *[row_id for _, row_id, _ in ready_rows]],
-            channel_fields=["send_mail"],
-            failure_reason=REASON_CONFIG_MISSING,
+        _mark_delivery_status(
+            delivery_ids=_filter_delivery_ids_for_config_failure(delivery_ids=delivery_ids),
+            status=DroneSopChannelDelivery.Statuses.FAILED,
+            reason=REASON_CONFIG_MISSING,
         )
         logger.info("Skip mail send: DRONE_MAIL_SENDER 미설정")
         return 0
 
-    success_ids: list[int] = []
-    failed_reason_groups: dict[str, list[int]] = {}
-    if missing_config_ids:
-        failed_reason_groups[REASON_CHANNEL_CONFIG_MISSING] = [*missing_config_ids]
-
-    for row, row_id, config_row in ready_rows:
-        template_key = _normalize_string_value(config_row.get("mail_template_key"))
+    success_delivery_ids: list[int] = []
+    sent_count = 0
+    for delivery in ready_deliveries:
+        template_key = _normalize_string_value(delivery.config.get("mail_template_key"))
         if not template_key:
-            failed_reason_groups.setdefault(REASON_TEMPLATE_MISSING, []).append(row_id)
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_TEMPLATE_MISSING)
             continue
 
-        target_user_sdwt_prod = _normalize_string_value(row.get("target_user_sdwt_prod")) or ""
-        line_id = _normalize_string_value(row.get("line_id")) or ""
+        line_id = _normalize_string_value(delivery.row.get("line_id")) or ""
         receiver_emails = selectors.list_mail_receiver_emails_for_user_sdwt_prod(
             line_id=line_id,
-            user_sdwt_prod=target_user_sdwt_prod,
+            user_sdwt_prod=delivery.target_user_sdwt_prod,
         )
         if not receiver_emails:
-            failed_reason_groups.setdefault(REASON_RECEIVER_NOT_FOUND, []).append(row_id)
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_RECEIVER_NOT_FOUND)
             continue
 
+        delivery_row = delivery.as_delivery_row()
         try:
             send_drone_sop_mail(
-                row=row,
+                row=delivery_row,
                 template_key=template_key,
                 receiver_emails=receiver_emails,
                 config=mail_config,
             )
-            success_ids.append(row_id)
+            success_delivery_ids.append(delivery.delivery_id)
+            sent_count += 1
         except Exception:
-            logger.exception("Mail send failed (sop_id=%s)", row_id)
-            failed_reason_groups.setdefault(REASON_SEND_FAILED, []).append(row_id)
+            logger.exception("Mail send failed (sop_id=%s)", delivery.sop_id)
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_SEND_FAILED)
 
-    _mark_channel_success(sop_ids=success_ids, send_field="send_mail")
-    _mark_pending_disabled(sop_ids=disabled_ids, channel_fields=["send_mail"])
-    _mark_reason_group_failures(
-        reason_groups=failed_reason_groups,
-        channel_fields=["send_mail"],
-    )
-    return len(_normalize_positive_ids(success_ids))
+    _mark_successful_deliveries(delivery_ids=success_delivery_ids)
+    return sent_count
 
 
 def has_drone_sop_pipeline_candidates() -> bool:
@@ -562,7 +521,7 @@ def run_drone_sop_pipeline_from_env(
 ) -> DroneSopInformResult:
     """Jira/메신저/메일 고정 채널로 Drone SOP 파이프라인을 실행합니다."""
 
-    channel_fields = _PIPELINE_CHANNEL_FIELDS
+    channels = _PIPELINE_CHANNELS
 
     # -------------------------------------------------------------------------
     # 1) 락 확보
@@ -581,15 +540,15 @@ def run_drone_sop_pipeline_from_env(
         candidate_count = len(rows)
 
         # ---------------------------------------------------------------------
-        # 3) target_user_sdwt_prod 해석/저장 및 누락 처리
+        # 3) delivery snapshot 준비 및 target 누락 처리
         # ---------------------------------------------------------------------
-        targets, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows, persist=True)
-        if missing_ids:
+        snapshot = ensure_channel_delivery_snapshots_for_rows(rows=rows)
+        if snapshot.missing_sop_ids:
             mark_missing_target_as_failed(
-                sop_ids=missing_ids,
-                channel_fields=channel_fields,
+                sop_ids=snapshot.missing_sop_ids,
+                channels=channels,
             )
-            rows = _filter_rows_by_excluded_ids(rows=rows, excluded_ids=missing_ids)
+            rows = _filter_rows_by_excluded_ids(rows=rows, excluded_ids=snapshot.missing_sop_ids)
         if not rows:
             return DroneSopInformResult(
                 candidates=candidate_count,
@@ -602,37 +561,35 @@ def run_drone_sop_pipeline_from_env(
         # ---------------------------------------------------------------------
         jira_created, jira_updated_rows = _run_jira_inform(
             rows=rows,
-            pre_resolved_targets=(targets, []),
+            pre_resolved_targets=(snapshot.target_user_sdwt_prods, []),
         )
 
         # ---------------------------------------------------------------------
         # 5) 메신저/메일 공통 컨텍스트 처리
         # ---------------------------------------------------------------------
         channel_by_target = selectors.list_drone_sop_user_sdwt_channels_by_targets(
-            target_user_sdwt_prod_values=targets,
+            target_user_sdwt_prod_values=snapshot.target_user_sdwt_prods,
         )
         _enrich_rows_with_ctttm_urls(rows=rows, config=DroneCtttmConfig.from_settings())
 
         # ---------------------------------------------------------------------
         # 6) 메신저/메일 채널 처리(예외 격리)
         # ---------------------------------------------------------------------
-        messenger_sent = 0
-        try:
-            messenger_sent = _run_messenger_inform(
+        messenger_sent = _run_count_channel_safely(
+            channel_label="messenger",
+            runner=lambda: _run_messenger_inform(
                 rows=rows,
                 channel_by_target=channel_by_target,
-            )
-        except Exception:
-            logger.exception("Drone SOP messenger pipeline failed during pipeline run")
+            ),
+        )
 
-        mail_sent = 0
-        try:
-            mail_sent = _run_mail_inform(
+        mail_sent = _run_count_channel_safely(
+            channel_label="mail",
+            runner=lambda: _run_mail_inform(
                 rows=rows,
                 channel_by_target=channel_by_target,
-            )
-        except Exception:
-            logger.exception("Drone SOP mail pipeline failed during pipeline run")
+            ),
+        )
 
         # ---------------------------------------------------------------------
         # 7) 결과 반환

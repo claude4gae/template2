@@ -257,7 +257,9 @@ def _collect_valid_jira_issue_payloads(
 
     payloads: list[ValidJiraIssuePayload] = []
     for row in rows:
-        rid = row.get("id")
+        rid = row.get("delivery_id")
+        if not isinstance(rid, int):
+            rid = row.get("id")
         if not isinstance(rid, int):
             continue
 

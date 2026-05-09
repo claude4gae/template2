@@ -120,3 +120,59 @@ export function isDuplicateMessage(message) {
     lower.includes("main step")
   )
 }
+
+export function getRecipientPrimaryText(user) {
+  return user?.displayName || user?.username || user?.knoxId || user?.sabun || `User ${user?.userId || user?.id}`
+}
+
+export function getRecipientUserId(user) {
+  const userId = Number.parseInt(user?.userId ?? user?.id, 10)
+  return Number.isFinite(userId) && userId > 0 ? userId : null
+}
+
+export function getRecipientSecondaryText(user) {
+  const parts = [user?.userSdwtProd, user?.email, user?.knoxId].filter(Boolean)
+  return parts.length ? parts.join(" · ") : "연락처 정보 없음"
+}
+
+export function getRecipientListText(user) {
+  const name =
+    user?.displayName ||
+    user?.username ||
+    user?.sabun ||
+    user?.knoxId ||
+    `User ${user?.userId || user?.id}`
+  const knoxId = user?.knoxId || ""
+  const userSdwtProd = user?.userSdwtProd || ""
+  const nameWithKnox = knoxId && name !== knoxId ? `${name}(${knoxId})` : name
+  return userSdwtProd ? `${nameWithKnox}-${userSdwtProd}` : nameWithKnox
+}
+
+export function mergeRecipientUsers(currentUsers, nextUsers) {
+  const byId = new Map()
+  for (const user of currentUsers || []) {
+    const userId = getRecipientUserId(user)
+    if (userId) {
+      byId.set(userId, { ...user, userId, id: userId })
+    }
+  }
+  for (const user of nextUsers || []) {
+    const userId = getRecipientUserId(user)
+    if (userId) {
+      byId.set(userId, { ...user, userId, id: userId })
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) =>
+    `${a.userSdwtProd || ""}${getRecipientPrimaryText(a)}`.localeCompare(
+      `${b.userSdwtProd || ""}${getRecipientPrimaryText(b)}`,
+    ),
+  )
+}
+
+export function sameUserSdwtProd(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase()
+}
+
+export function getRecipientPickerUsers(results) {
+  return mergeRecipientUsers(results?.group || [], results?.search || [])
+}

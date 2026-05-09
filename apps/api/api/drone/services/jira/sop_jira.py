@@ -12,27 +12,26 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from django.db import transaction
-from django.db.models import Case, CharField, DateTimeField, F, Value, When
 from django.utils import timezone
 
 from ... import selectors
-from ...models import DroneSOP
-from ..shared.notify_resolver import (
-    load_user_sdwt_prod_map_index,
-    resolve_target_user_sdwt_prod,
-    resolve_target_user_sdwt_prod_values,
+from ...models import DroneSOP, DroneSopChannelDelivery, DroneSopTarget
+from ..shared.delivery_state import (
+    ensure_channel_delivery_snapshots_for_rows,
+    filter_delivery_ids_for_config_failure,
+    get_or_prepare_channel_delivery,
+    mark_channel_delivery_status,
+    normalize_positive_ids,
 )
 from ..shared.policy import (
     REASON_CHANNEL_CONFIG_INVALID,
     REASON_CHANNEL_CONFIG_MISSING,
     REASON_CONFIG_MISSING,
     REASON_DISABLED_BY_POLICY,
+    REASON_SEND_FAILED,
     mark_missing_target_as_failed,
-    mark_pending_channels_as_disabled,
-    mark_pending_channels_as_failed,
 )
 from ..shared.utils import _advisory_lock
-from .channel import resolve_jira_channel_plan
 from .client import _jira_session
 from .config import DroneCtttmConfig, DroneJiraConfig
 from .delivery import (
@@ -56,6 +55,47 @@ def _normalize_target_lookup_key(value: Any) -> str | None:
     return cleaned.casefold()
 
 
+def _normalize_string_value(value: Any) -> str | None:
+    """문자열 값을 공백 제거 기준으로 정규화합니다."""
+
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned if cleaned else None
+
+
+def _extract_row_id(row: dict[str, Any]) -> int | None:
+    """row에서 양의 정수 id를 추출합니다."""
+
+    row_id = row.get("id")
+    if isinstance(row_id, int) and row_id > 0:
+        return row_id
+    return None
+
+
+def _extract_row_targets(row: dict[str, Any]) -> list[str]:
+    """row에서 단일 target_user_sdwt_prod 목록을 추출합니다."""
+
+    raw_targets = row.get("target_user_sdwt_prods")
+    candidates: list[Any]
+    if isinstance(raw_targets, list):
+        candidates = raw_targets
+    else:
+        candidates = [row.get("target_user_sdwt_prod")]
+
+    targets: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        target = _normalize_string_value(candidate)
+        target_key = _normalize_target_lookup_key(target)
+        if not target or not target_key or target_key in seen:
+            continue
+        seen.add(target_key)
+        targets.append(target)
+        break
+    return targets
+
+
 @dataclass(frozen=True)
 class DroneSopJiraCreateResult:
     """Drone SOP Jira 생성 실행 결과."""
@@ -77,71 +117,157 @@ class DroneSopInstantInformResult:
     updated_fields: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class JiraPreparedDeliveries:
+    """Jira 전송용 delivery 준비 결과."""
+
+    rows_to_send: list[dict[str, Any]]
+    delivery_ids: list[int]
+    project_key_by_delivery_id: dict[int, str]
+    template_key_by_delivery_id: dict[int, str]
+    sop_id_by_delivery_id: dict[int, int]
+    step_by_delivery_id: dict[int, str]
+
+
+def _update_drone_sop_jira_summary(
+    *,
+    delivery_ids: Sequence[int],
+    key_by_delivery_id: dict[int, str] | None = None,
+    step_by_delivery_id: dict[int, str] | None = None,
+) -> int:
+    """Jira delivery 성공 메타데이터를 delivery row에 반영합니다."""
+
+    # -------------------------------------------------------------------------
+    # 1) delivery → SOP 매핑 확인
+    # -------------------------------------------------------------------------
+    normalized_delivery_ids = normalize_positive_ids(delivery_ids)
+    if not normalized_delivery_ids:
+        return 0
+
+    delivery_rows = list(
+        DroneSopChannelDelivery.objects.filter(id__in=normalized_delivery_ids).values("id", "sop_id")
+    )
+    if not delivery_rows:
+        return 0
+
+    # -------------------------------------------------------------------------
+    # 2) 단계/키 매핑 구성
+    # -------------------------------------------------------------------------
+    step_source = step_by_delivery_id or {}
+    sop_ids: list[int] = []
+    step_by_id: dict[int, str] = {}
+    for row in delivery_rows:
+        delivery_id = row.get("id")
+        sop_id = row.get("sop_id")
+        if not isinstance(delivery_id, int) or not isinstance(sop_id, int):
+            continue
+        if sop_id not in sop_ids:
+            sop_ids.append(sop_id)
+        step = step_source.get(delivery_id)
+        if isinstance(step, str) and step.strip():
+            step_by_id[delivery_id] = step.strip()
+    if not sop_ids:
+        return 0
+
+    # -------------------------------------------------------------------------
+    # 3) delivery별 step snapshot 보정
+    # -------------------------------------------------------------------------
+    with transaction.atomic():
+        for delivery_id, sent_step in step_by_id.items():
+            DroneSopChannelDelivery.objects.filter(id=delivery_id).update(
+                sent_step=sent_step,
+                updated_at=timezone.now(),
+            )
+    return len(sop_ids)
+
+
 def _update_drone_sop_jira_status(
     *,
     done_ids: Sequence[int],
     rows: Sequence[dict[str, Any]],
     key_by_id: dict[int, str],
 ) -> int:
-    """Jira 생성 완료된 DroneSOP 상태를 업데이트합니다.
+    """Jira 생성 완료된 SOP의 Jira delivery를 성공으로 표시합니다."""
 
-    인자:
-        done_ids: Jira 생성 성공 SOP ID 목록.
-        rows: 원본 row 목록.
-        key_by_id: sop_id → jira_key 매핑.
-
-    반환:
-        업데이트된 row 수.
-
-    부작용:
-        drone_sop 테이블 업데이트가 발생합니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 업데이트 대상 확인
-    # -------------------------------------------------------------------------
-    if not done_ids:
+    normalized_done_ids = normalize_positive_ids(list(done_ids))
+    if not normalized_done_ids:
         return 0
 
-    # -------------------------------------------------------------------------
-    # 2) 단계/키 매핑 구성
-    # -------------------------------------------------------------------------
-    step_by_id: dict[int, str] = {}
-    for row in rows:
-        rid = row.get("id")
-        if not isinstance(rid, int) or rid not in done_ids:
-            continue
-        step = row.get("metro_current_step")
-        if isinstance(step, str) and step.strip():
-            step_by_id[rid] = step.strip()
+    candidate_rows = [row for row in rows if isinstance(row.get("id"), int) and int(row["id"]) in normalized_done_ids]
+    if not candidate_rows:
+        return 0
 
-    now = timezone.now()
-    step_whens = [When(id=rid, then=Value(step)) for rid, step in sorted(step_by_id.items())]
-    key_whens = [When(id=rid, then=Value(key)) for rid, key in sorted(key_by_id.items())]
+    ensure_channel_delivery_snapshots_for_rows(
+        rows=list(candidate_rows),
+        channels=[DroneSopChannelDelivery.Channels.JIRA],
+    )
+    pending_delivery_rows = list(
+        DroneSopChannelDelivery.objects.filter(
+            sop_id__in=normalized_done_ids,
+            channel=DroneSopChannelDelivery.Channels.JIRA,
+        )
+        .exclude(status=DroneSopChannelDelivery.Statuses.SUCCESS)
+        .order_by("sop_id", "id")
+        .values("id", "sop_id")
+    )
+    if not pending_delivery_rows:
+        legacy_target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod="__legacy_target__")
+        DroneSopChannelDelivery.objects.bulk_create(
+            [
+                DroneSopChannelDelivery(
+                    sop_id=sop_id,
+                    target=legacy_target,
+                    channel=DroneSopChannelDelivery.Channels.JIRA,
+                    status=DroneSopChannelDelivery.Statuses.PENDING,
+                )
+                for sop_id in normalized_done_ids
+            ],
+            ignore_conflicts=True,
+        )
+        pending_delivery_rows = list(
+            DroneSopChannelDelivery.objects.filter(
+                sop_id__in=normalized_done_ids,
+                channel=DroneSopChannelDelivery.Channels.JIRA,
+            )
+            .exclude(status=DroneSopChannelDelivery.Statuses.SUCCESS)
+            .order_by("sop_id", "id")
+            .values("id", "sop_id")
+        )
+    if not pending_delivery_rows:
+        return 0
 
-    # -------------------------------------------------------------------------
-    # 3) 업데이트 절 구성
-    # -------------------------------------------------------------------------
-    updates: dict[str, Any] = {
-        "send_jira": 1,
-        "jira_reason": None,
-        "informed_at": Case(
-            When(informed_at__isnull=True, then=Value(now)),
-            default=F("informed_at"),
-            output_field=DateTimeField(),
-        ),
+    delivery_ids = [int(row["id"]) for row in pending_delivery_rows if isinstance(row.get("id"), int)]
+    key_by_delivery_id = {
+        int(row["id"]): key_by_id[int(row["sop_id"])]
+        for row in pending_delivery_rows
+        if isinstance(row.get("id"), int)
+        and isinstance(row.get("sop_id"), int)
+        and isinstance(key_by_id.get(int(row["sop_id"])), str)
     }
-    if step_whens:
-        updates["inform_step"] = Case(*step_whens, default=F("inform_step"), output_field=CharField())
-    if key_whens:
-        updates["jira_key"] = Case(*key_whens, default=F("jira_key"), output_field=CharField())
+    step_by_sop_id: dict[int, str] = {}
+    for row in candidate_rows:
+        sop_id = int(row["id"])
+        step = _normalize_string_value(row.get("metro_current_step"))
+        if step:
+            step_by_sop_id[sop_id] = step
+    step_by_delivery_id = {
+        int(row["id"]): step_by_sop_id[int(row["sop_id"])]
+        for row in pending_delivery_rows
+        if isinstance(row.get("id"), int)
+        and isinstance(row.get("sop_id"), int)
+        and int(row["sop_id"]) in step_by_sop_id
+    }
 
-    # -------------------------------------------------------------------------
-    # 4) 데이터베이스 업데이트 실행
-    # -------------------------------------------------------------------------
-    with transaction.atomic():
-        updated = DroneSOP.objects.filter(id__in=list(done_ids)).update(**updates)
-    return int(updated or 0)
+    mark_channel_delivery_status(
+        delivery_ids=delivery_ids,
+        status=DroneSopChannelDelivery.Statuses.SUCCESS,
+        external_key_by_id=key_by_delivery_id,
+    )
+    return _update_drone_sop_jira_summary(
+        delivery_ids=delivery_ids,
+        key_by_delivery_id=key_by_delivery_id,
+        step_by_delivery_id=step_by_delivery_id,
+    )
 
 
 def update_drone_sop_jira_status(
@@ -159,25 +285,83 @@ def update_drone_sop_jira_status(
     )
 
 
-def _collect_rows_to_send(
+def _collect_jira_delivery_rows(
     *,
     rows: Sequence[dict[str, Any]],
-    project_key_by_id: dict[int, str],
-    template_key_by_id: dict[int, str],
-) -> list[dict[str, Any]]:
-    """채널 매핑이 유효한 Jira 전송 대상 row만 반환합니다."""
+    channel_by_target: dict[str, dict[str, str | bool | int | None]],
+) -> JiraPreparedDeliveries:
+    """target별 Jira delivery를 생성하고 전송 가능 행을 수집합니다."""
 
     rows_to_send: list[dict[str, Any]] = []
+    delivery_ids: list[int] = []
+    project_key_by_delivery_id: dict[int, str] = {}
+    template_key_by_delivery_id: dict[int, str] = {}
+    sop_id_by_delivery_id: dict[int, int] = {}
+    step_by_delivery_id: dict[int, str] = {}
+
     for row in rows:
-        row_id = row.get("id")
-        if not isinstance(row_id, int):
+        row_id = _extract_row_id(row)
+        if row_id is None:
             continue
-        if row_id not in project_key_by_id:
-            continue
-        if row_id not in template_key_by_id:
-            continue
-        rows_to_send.append(row)
-    return rows_to_send
+
+        for target in _extract_row_targets(row):
+            delivery = get_or_prepare_channel_delivery(
+                sop_id=row_id,
+                target_user_sdwt_prod=target,
+                channel=DroneSopChannelDelivery.Channels.JIRA,
+            )
+            delivery_ids.append(delivery.id)
+            sop_id_by_delivery_id[delivery.id] = row_id
+
+            step = _normalize_string_value(row.get("metro_current_step"))
+            if step:
+                step_by_delivery_id[delivery.id] = step
+
+            if delivery.status in {
+                DroneSopChannelDelivery.Statuses.SUCCESS,
+                DroneSopChannelDelivery.Statuses.FAILED,
+                DroneSopChannelDelivery.Statuses.DISABLED,
+            }:
+                continue
+
+            config_row = channel_by_target.get(_normalize_target_lookup_key(target) or "")
+            if not config_row:
+                mark_channel_delivery_status(
+                    delivery_ids=[delivery.id],
+                    status=DroneSopChannelDelivery.Statuses.FAILED,
+                    reason=REASON_CHANNEL_CONFIG_MISSING,
+                )
+                continue
+            if not bool(config_row.get("jira_enabled", True)):
+                mark_channel_delivery_status(
+                    delivery_ids=[delivery.id],
+                    status=DroneSopChannelDelivery.Statuses.DISABLED,
+                    reason=REASON_DISABLED_BY_POLICY,
+                )
+                continue
+
+            jira_key = _normalize_string_value(config_row.get("jira_key"))
+            template_key = _normalize_string_value(config_row.get("jira_template_key"))
+            if not jira_key or not template_key or template_key not in TEMPLATE_SOURCES:
+                mark_channel_delivery_status(
+                    delivery_ids=[delivery.id],
+                    status=DroneSopChannelDelivery.Statuses.FAILED,
+                    reason=REASON_CHANNEL_CONFIG_INVALID,
+                )
+                continue
+
+            rows_to_send.append({**row, "target_user_sdwt_prod": target, "delivery_id": delivery.id})
+            project_key_by_delivery_id[delivery.id] = jira_key
+            template_key_by_delivery_id[delivery.id] = template_key
+
+    return JiraPreparedDeliveries(
+        rows_to_send=rows_to_send,
+        delivery_ids=normalize_positive_ids(delivery_ids),
+        project_key_by_delivery_id=project_key_by_delivery_id,
+        template_key_by_delivery_id=template_key_by_delivery_id,
+        sop_id_by_delivery_id=sop_id_by_delivery_id,
+        step_by_delivery_id=step_by_delivery_id,
+    )
 
 
 def _run_jira_create_api(
@@ -208,41 +392,6 @@ def _run_jira_create_api(
         )
     finally:
         session.close()
-
-
-def _mark_pending_jira_when_disabled(
-    *,
-    rows: Sequence[dict[str, Any]],
-    channel_by_target: dict[str, dict[str, str | bool | int | None]],
-) -> None:
-    """Jira 설정 미구성 상태에서 대기 행을 비활성/실패로 마킹합니다."""
-
-    disabled_ids: list[int] = []
-    failed_ids: list[int] = []
-
-    for row in rows:
-        row_id = row.get("id")
-        if not isinstance(row_id, int):
-            continue
-        target_lookup_key = _normalize_target_lookup_key(row.get("target_user_sdwt_prod"))
-        config_row = channel_by_target.get(target_lookup_key) if target_lookup_key else None
-        if config_row and not bool(config_row.get("jira_enabled", True)):
-            disabled_ids.append(row_id)
-            continue
-        failed_ids.append(row_id)
-
-    if disabled_ids:
-        mark_pending_channels_as_disabled(
-            sop_ids=disabled_ids,
-            channel_fields=["send_jira"],
-            disable_reason=REASON_DISABLED_BY_POLICY,
-        )
-    if failed_ids:
-        mark_pending_channels_as_failed(
-            sop_ids=failed_ids,
-            channel_fields=["send_jira"],
-            failure_reason=REASON_CONFIG_MISSING,
-        )
 
 
 def enqueue_drone_sop_jira_instant_inform(
@@ -283,29 +432,17 @@ def enqueue_drone_sop_jira_instant_inform(
             raise ValueError("DroneSOP not found")
 
         update_fields: list[str] = []
-        raw_target = sop.target_user_sdwt_prod
-        current_target = raw_target.strip() if isinstance(raw_target, str) else ""
-        if not current_target:
-            resolved_target = resolve_target_user_sdwt_prod(
-                row={
-                    "target_user_sdwt_prod": sop.target_user_sdwt_prod,
-                    "sdwt_prod": sop.sdwt_prod,
-                    "user_sdwt_prod": sop.user_sdwt_prod,
-                },
-                index=load_user_sdwt_prod_map_index(),
-            )
-            if isinstance(resolved_target, str) and resolved_target.strip():
-                sop.target_user_sdwt_prod = resolved_target
-                updated_fields["target_user_sdwt_prod"] = resolved_target
-                update_fields.append("target_user_sdwt_prod")
 
         if comment is not None:
             sop.comment = comment
             updated_fields["comment"] = sop.comment
             update_fields.append("comment")
 
-        send_jira_value = int(sop.send_jira or 0)
-        if send_jira_value > 0:
+        success_delivery = sop.channel_deliveries.filter(
+            channel=DroneSopChannelDelivery.Channels.JIRA,
+            status=DroneSopChannelDelivery.Statuses.SUCCESS,
+        ).order_by("id").first()
+        if success_delivery is not None:
             if sop.instant_inform is None or int(sop.instant_inform) != 1:
                 sop.instant_inform = 1
                 updated_fields["instant_inform"] = 1
@@ -315,13 +452,14 @@ def enqueue_drone_sop_jira_instant_inform(
 
             if update_fields:
                 sop.save(update_fields=[*update_fields, "updated_at"])
-            updated_fields["send_jira"] = sop.send_jira
-            updated_fields["jira_key"] = sop.jira_key
-            updated_fields["inform_step"] = sop.inform_step
-            updated_fields["informed_at"] = sop.informed_at.isoformat() if sop.informed_at else None
+            jira_key = success_delivery.external_key
+            updated_fields["jira_key"] = jira_key
+            updated_fields["inform_step"] = success_delivery.sent_step
+            informed_at = success_delivery.sent_at
+            updated_fields["informed_at"] = informed_at.isoformat() if informed_at else None
             return DroneSopInstantInformResult(
                 already_informed=True,
-                jira_key=sop.jira_key,
+                jira_key=jira_key,
                 updated_fields=updated_fields,
             )
 
@@ -333,21 +471,23 @@ def enqueue_drone_sop_jira_instant_inform(
         if update_fields:
             sop.save(update_fields=[*update_fields, "updated_at"])
 
+        ensure_channel_delivery_snapshots_for_rows(
+            rows=[
+                {
+                    "id": int(sop.id),
+                    "sdwt_prod": sop.sdwt_prod,
+                    "user_sdwt_prod": sop.user_sdwt_prod,
+                    "status": sop.status,
+                    "needtosend": sop.needtosend,
+                    "instant_inform": sop.instant_inform,
+                }
+            ]
+        )
+
     return DroneSopInstantInformResult(
         queued=True,
         updated_fields=updated_fields,
     )
-
-
-def _is_pending_send_jira(value: Any) -> bool:
-    """send_jira가 미전송(0/NULL) 상태인지 확인합니다."""
-
-    if value is None:
-        return True
-    try:
-        return int(value) == 0
-    except (TypeError, ValueError):
-        return False
 
 
 def _run_drone_sop_jira_create_with_rows(
@@ -372,17 +512,18 @@ def _run_drone_sop_jira_create_with_rows(
     candidate_count = len(rows)
 
     # ---------------------------------------------------------------------
-    # 2) target_user_sdwt_prod 해석 및 채널 설정 조회
+    # 2) delivery snapshot 준비 및 채널 설정 조회
     # ---------------------------------------------------------------------
+    snapshot = ensure_channel_delivery_snapshots_for_rows(rows=rows)
     if pre_resolved_targets is None:
-        target_values, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows)
+        target_values, missing_ids = snapshot.target_user_sdwt_prods, snapshot.missing_sop_ids
     else:
         target_values, missing_ids = pre_resolved_targets
 
     if missing_ids:
         mark_missing_target_as_failed(
             sop_ids=missing_ids,
-            channel_fields=["send_jira"],
+            channels=[DroneSopChannelDelivery.Channels.JIRA],
         )
         missing_id_set = set(missing_ids)
         rows = [
@@ -404,12 +545,21 @@ def _run_drone_sop_jira_create_with_rows(
     )
 
     # ---------------------------------------------------------------------
-    # 3) Jira 설정 미구성 상태 처리
+    # 3) target/channel delivery 준비
+    # ---------------------------------------------------------------------
+    prepared = _collect_jira_delivery_rows(
+        rows=rows,
+        channel_by_target=channel_by_target,
+    )
+
+    # ---------------------------------------------------------------------
+    # 4) Jira 설정 미구성 상태 처리
     # ---------------------------------------------------------------------
     if not config.base_url:
-        _mark_pending_jira_when_disabled(
-            rows=rows,
-            channel_by_target=channel_by_target,
+        mark_channel_delivery_status(
+            delivery_ids=filter_delivery_ids_for_config_failure(delivery_ids=prepared.delivery_ids),
+            status=DroneSopChannelDelivery.Statuses.FAILED,
+            reason=REASON_CONFIG_MISSING,
         )
         return DroneSopJiraCreateResult(
             candidates=candidate_count,
@@ -419,65 +569,54 @@ def _run_drone_sop_jira_create_with_rows(
             skip_reason="jira_disabled",
         )
 
-    # ---------------------------------------------------------------------
-    # 4) 채널 계획 해석 및 유효 대상 필터링
-    # ---------------------------------------------------------------------
-    plan = resolve_jira_channel_plan(
-        rows=rows,
-        channel_by_target=channel_by_target,
-        template_sources=TEMPLATE_SOURCES,
-    )
-    if plan.skip_ids:
-        logger.info("Mark Jira rows without channel config as failed: %s", len(plan.skip_ids))
-    mark_pending_channels_as_failed(
-        sop_ids=plan.skip_ids,
-        channel_fields=["send_jira"],
-        failure_reason=REASON_CHANNEL_CONFIG_MISSING,
-    )
-    if plan.invalid_ids:
-        logger.warning("Invalid Jira config for %s drone_sop rows", len(plan.invalid_ids))
-    mark_pending_channels_as_failed(
-        sop_ids=plan.invalid_ids,
-        channel_fields=["send_jira"],
-        failure_reason=REASON_CHANNEL_CONFIG_INVALID,
-    )
-    mark_pending_channels_as_disabled(
-        sop_ids=plan.disabled_ids,
-        channel_fields=["send_jira"],
-        disable_reason=REASON_DISABLED_BY_POLICY,
-    )
-
-    rows_to_send = _collect_rows_to_send(
-        rows=rows,
-        project_key_by_id=plan.project_key_by_id,
-        template_key_by_id=plan.template_key_by_id,
-    )
-    if not rows_to_send:
+    if not prepared.rows_to_send:
         return DroneSopJiraCreateResult(candidates=candidate_count, created=0, updated_rows=0)
 
-    _enrich_rows_with_ctttm_urls(rows=rows_to_send, config=DroneCtttmConfig.from_settings())
+    _enrich_rows_with_ctttm_urls(rows=prepared.rows_to_send, config=DroneCtttmConfig.from_settings())
 
     # ---------------------------------------------------------------------
     # 5) Jira API 호출
     # ---------------------------------------------------------------------
-    done_ids, key_by_id = _run_jira_create_api(
-        rows=rows_to_send,
+    done_delivery_ids, key_by_delivery_id = _run_jira_create_api(
+        rows=prepared.rows_to_send,
         config=config,
-        project_key_by_id=plan.project_key_by_id,
-        template_key_by_id=plan.template_key_by_id,
+        project_key_by_id=prepared.project_key_by_delivery_id,
+        template_key_by_id=prepared.template_key_by_delivery_id,
+    )
+    normalized_done_delivery_ids = normalize_positive_ids(done_delivery_ids)
+    attempted_delivery_ids = normalize_positive_ids(
+        [int(row["delivery_id"]) for row in prepared.rows_to_send if isinstance(row.get("delivery_id"), int)]
+    )
+    failed_delivery_ids = [delivery_id for delivery_id in attempted_delivery_ids if delivery_id not in normalized_done_delivery_ids]
+    mark_channel_delivery_status(
+        delivery_ids=failed_delivery_ids,
+        status=DroneSopChannelDelivery.Statuses.FAILED,
+        reason=REASON_SEND_FAILED,
+    )
+    mark_channel_delivery_status(
+        delivery_ids=normalized_done_delivery_ids,
+        status=DroneSopChannelDelivery.Statuses.SUCCESS,
+        external_key_by_id=key_by_delivery_id,
     )
 
     # ---------------------------------------------------------------------
     # 6) 상태 업데이트 및 결과 반환
     # ---------------------------------------------------------------------
-    updated_rows = update_drone_sop_jira_status(
-        done_ids=done_ids,
-        rows=rows_to_send,
-        key_by_id=key_by_id,
+    _update_drone_sop_jira_summary(
+        delivery_ids=normalized_done_delivery_ids,
+        key_by_delivery_id=key_by_delivery_id,
+        step_by_delivery_id=prepared.step_by_delivery_id,
+    )
+    updated_rows = len(
+        {
+            prepared.sop_id_by_delivery_id[delivery_id]
+            for delivery_id in normalized_done_delivery_ids
+            if delivery_id in prepared.sop_id_by_delivery_id
+        }
     )
     return DroneSopJiraCreateResult(
         candidates=candidate_count,
-        created=len(done_ids),
+        created=len(normalized_done_delivery_ids),
         updated_rows=updated_rows,
     )
 
@@ -490,7 +629,7 @@ def run_drone_sop_jira_create_from_rows(
     """전달받은 row 목록으로 Jira 생성 파이프라인을 실행합니다.
 
     인자:
-        rows: Jira 후보 row 목록(미전송 상태만 처리).
+        rows: Jira 후보 row 목록(delivery pending 기준).
         pre_resolved_targets: 상위 레이어에서 계산한
             (target_user_sdwt_prod 집합, 누락 sop_id 목록) 튜플(옵션).
 
@@ -499,17 +638,13 @@ def run_drone_sop_jira_create_from_rows(
 
     부작용:
         - advisory lock 획득
-        - Jira API 호출 및 drone_sop 상태 업데이트
+        - Jira API 호출 및 delivery/legacy 요약 상태 업데이트
     """
 
     # ---------------------------------------------------------------------
-    # 1) 미전송 Jira 후보만 선별
+    # 1) 전달된 후보 row 정규화
     # ---------------------------------------------------------------------
-    pending_rows = [
-        row
-        for row in rows
-        if isinstance(row, dict) and _is_pending_send_jira(row.get("send_jira"))
-    ]
+    pending_rows = [row for row in rows if isinstance(row, dict)]
     if not pending_rows:
         return DroneSopJiraCreateResult(
             candidates=0,
@@ -523,9 +658,6 @@ def run_drone_sop_jira_create_from_rows(
     # 2) 공통 락으로 실행
     # ---------------------------------------------------------------------
     config = DroneJiraConfig.from_settings()
-    if pre_resolved_targets is None:
-        pre_resolved_targets = resolve_target_user_sdwt_prod_values(rows=pending_rows)
-
     with _advisory_lock("drone_sop_jira_create") as acquired:
         if not acquired:
             return DroneSopJiraCreateResult(skipped=True, skip_reason="already_running")
@@ -537,7 +669,7 @@ def run_drone_sop_jira_create_from_rows(
 
 
 def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJiraCreateResult:
-    """send_jira=0 이면서 (needtosend=1 & status=COMPLETE 또는 instant_inform=1)인 대상 Jira 이슈를 생성합니다.
+    """Jira delivery pending 또는 snapshot 미생성 대상 이슈를 생성합니다.
 
     인자:
         limit: 최대 처리 건수(옵션).
@@ -547,7 +679,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
 
     부작용:
         - Jira API 호출
-        - drone_sop 상태 컬럼(send_jira/inform_step/jira_key/informed_at) 업데이트
+        - delivery 상태 및 표시용 Jira 요약 컬럼 업데이트
 
     오류:
         - Jira API 호출 실패 등 예외가 발생할 수 있습니다.
@@ -564,12 +696,9 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         # ---------------------------------------------------------------------
         # 2) 대상 행 조회 후 공통 실행 로직 호출
         # ---------------------------------------------------------------------
-        rows = selectors.list_drone_sop_jira_candidates(limit=limit)
-        pre_resolved_targets = resolve_target_user_sdwt_prod_values(rows=rows, persist=True)
         return _run_drone_sop_jira_create_with_rows(
-            rows=rows,
+            rows=selectors.list_drone_sop_jira_candidates(limit=limit),
             config=config,
-            pre_resolved_targets=pre_resolved_targets,
         )
 
 

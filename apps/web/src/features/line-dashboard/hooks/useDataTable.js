@@ -280,7 +280,7 @@ export function useDataTableState({ lineId }) {
 
   /* ────────────────────────────────────────────────────────────────────────
    * handleRetryChannel: 단건 채널 재시도 요청
-   *  - 실패 채널(send_*=-1)을 대기(0)로 되돌리고, 다음 배치 처리 대상에 포함합니다.
+   *  - 실패 delivery 채널을 pending으로 되돌리고, 다음 배치 처리 대상에 포함합니다.
    * ──────────────────────────────────────────────────────────────────────── */
   const handleRetryChannel = React.useCallback(
     async (recordId, { channelKey }) => {
@@ -289,9 +289,9 @@ export function useDataTableState({ lineId }) {
       }
 
       const channelByField = {
-        send_jira: "jira",
-        send_messenger: "messenger",
-        send_mail: "mail",
+        delivery_jira: "jira",
+        delivery_messenger: "messenger",
+        delivery_mail: "mail",
       }
       const normalizedChannelKey = typeof channelKey === "string" ? channelKey.trim() : ""
       const channel = channelByField[normalizedChannelKey]
@@ -328,7 +328,20 @@ export function useDataTableState({ lineId }) {
         setRows((previousRows) =>
           previousRows.map((row) => {
             const rowId = String(row?.id ?? "")
-            return rowId === recordId ? { ...row, ...nextUpdates } : row
+            if (rowId !== recordId) return row
+            const nextRow = { ...row, ...nextUpdates }
+            if (payload?.status === "queued" && Array.isArray(row?.deliveryRows)) {
+              nextRow.deliveryRows = row.deliveryRows.map((delivery) => {
+                if (delivery?.channel !== channel || delivery?.status !== "failed") return delivery
+                return {
+                  ...delivery,
+                  status: "pending",
+                  reason: null,
+                  sentAt: null,
+                }
+              })
+            }
+            return nextRow
           })
         )
 

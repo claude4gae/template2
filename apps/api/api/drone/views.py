@@ -944,6 +944,9 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
             "source": getattr(target, "source", None) or "custom",
             "isConfigured": True,
             "jiraKey": getattr(target, "jira_key", None) or None,
+            "jiraEnabled": bool(getattr(target, "jira_enabled", True)),
+            "messengerEnabled": bool(getattr(target, "messenger_enabled", True)),
+            "mailEnabled": bool(getattr(target, "mail_enabled", True)),
         }
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
@@ -979,11 +982,13 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
             return JsonResponse({"error": "lineId is required"}, status=400)
 
         targets = selectors.list_drone_sop_notification_targets_for_line(line_id=line_id)
+        mapping_options = selectors.list_drone_sop_mapping_option_values_for_line(line_id=line_id)
         return JsonResponse(
             {
                 "lineId": line_id,
                 "targets": targets,
                 "targetUserSdwtProds": [row["targetUserSdwtProd"] for row in targets],
+                "mappingOptions": mapping_options,
             }
         )
 
@@ -1029,6 +1034,12 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
         target_user_sdwt_prod = self._normalize_target(payload.get("targetUserSdwtProd"))
         if not target_user_sdwt_prod:
             return JsonResponse({"error": "targetUserSdwtProd is required"}, status=400)
+        existing_targets = selectors.list_drone_sop_notification_targets_for_line(line_id=line_id)
+        if any(
+            str(row.get("targetUserSdwtProd") or "").casefold() == target_user_sdwt_prod.casefold()
+            for row in existing_targets
+        ):
+            return JsonResponse({"error": "notification target already exists"}, status=409)
 
         try:
             target, updated = services.ensure_drone_sop_notification_target(
@@ -1049,11 +1060,97 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class DroneNotificationTargetMappingView(DroneAuthenticatedView):
+    """라인별 Drone SOP 알림 target 지정 조합 생성 엔드포인트입니다."""
+
+    @staticmethod
+    def _find_response_target(*, line_id: str, target_user_sdwt_prod: str) -> dict[str, object]:
+        """갱신 후 target 목록에서 응답 대상 target을 찾습니다."""
+
+        targets = selectors.list_drone_sop_notification_targets_for_line(line_id=line_id)
+        normalized_target = target_user_sdwt_prod.casefold()
+        for target in targets:
+            if str(target.get("targetUserSdwtProd") or "").casefold() == normalized_target:
+                return target
+        return {
+            "lineId": line_id,
+            "targetUserSdwtProd": target_user_sdwt_prod,
+            "source": "custom",
+            "isConfigured": True,
+            "jiraKey": None,
+            "jiraEnabled": True,
+            "messengerEnabled": True,
+            "mailEnabled": True,
+            "mappings": [],
+        }
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """알림 target에 sdwt_prod/user_sdwt_prod 지정 조합을 추가합니다.
+
+        예시 요청:
+        - POST /api/v1/line-dashboard/notification-target-mappings
+          {"lineId":"L1","targetUserSdwtProd":"TARGET_A","sdwtProd":"SDWT_A","userSdwtProd":"USR_A"}
+        """
+
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+        if not selectors.user_can_manage_drone_sop_recipients(user=request.user):
+            return JsonResponse({"error": "forbidden"}, status=403)
+
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        line_id = DroneNotificationTargetView._normalize_line_id(payload.get("lineId"))
+        target_user_sdwt_prod = DroneNotificationTargetView._normalize_target(payload.get("targetUserSdwtProd"))
+        sdwt_prod = DroneNotificationTargetView._normalize_target(payload.get("sdwtProd"))
+        user_sdwt_prod = DroneNotificationTargetView._normalize_target(payload.get("userSdwtProd"))
+        if not line_id:
+            return JsonResponse({"error": "lineId is required"}, status=400)
+        if not target_user_sdwt_prod:
+            return JsonResponse({"error": "targetUserSdwtProd is required"}, status=400)
+        if not sdwt_prod:
+            return JsonResponse({"error": "sdwtProd is required"}, status=400)
+        if not user_sdwt_prod:
+            return JsonResponse({"error": "userSdwtProd is required"}, status=400)
+
+        try:
+            mapping = services.create_drone_sop_target_mapping(
+                line_id=line_id,
+                target_user_sdwt_prod=target_user_sdwt_prod,
+                sdwt_prod=sdwt_prod,
+                user_sdwt_prod=user_sdwt_prod,
+                actor=request.user,
+            )
+        except services.DroneSopTargetMappingDuplicateError as exc:
+            return JsonResponse({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        target = self._find_response_target(
+            line_id=line_id,
+            target_user_sdwt_prod=target_user_sdwt_prod,
+        )
+        return JsonResponse(
+            {
+                "lineId": line_id,
+                "target": target,
+                "mapping": {
+                    "sdwtProd": mapping.sdwt_prod or "",
+                    "userSdwtProd": mapping.user_sdwt_prod or "",
+                },
+            }
+        )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class DroneJiraKeyView(DroneAuthenticatedView):
     """target_user_sdwt_prod 단위 Jira 템플릿/프로젝트 키 조회/갱신 엔드포인트입니다."""
 
     MAX_PROJECT_KEY_LENGTH = 64
     MAX_TEMPLATE_KEY_LENGTH = 50
+    MAX_NEEDTOSEND_KEYWORD_LENGTH = 64
 
     @staticmethod
     def _ensure_valid_target_user_sdwt_prod(target_user_sdwt_prod: str) -> JsonResponse | None:
@@ -1113,6 +1210,24 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             )
         return True, normalized or None, None
 
+    @staticmethod
+    def _parse_optional_bool_field(
+        payload: dict[str, Any],
+        *,
+        field_name: str,
+    ) -> tuple[bool, bool | None, JsonResponse | None]:
+        """jira-keys 요청의 옵션 boolean 필드를 파싱/검증합니다."""
+
+        if field_name not in payload:
+            return False, None, None
+        raw_value = payload.get(field_name)
+        if not isinstance(raw_value, bool):
+            return False, None, JsonResponse(
+                {"error": f"{field_name} must be a boolean"},
+                status=400,
+            )
+        return True, raw_value, None
+
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """userSdwtProd에 해당하는 Jira 키/템플릿 키를 조회합니다.
 
@@ -1168,6 +1283,12 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 "lineId": entry.line_id if entry else "",
                 "jiraKey": jira_key,
                 "templateKey": template_key,
+                "jiraEnabled": bool(entry.jira_enabled) if entry else True,
+                "messengerEnabled": bool(entry.messenger_enabled) if entry else True,
+                "mailEnabled": bool(entry.mail_enabled) if entry else True,
+                "needtosendCommentLastAt": entry.needtosend_comment_last_at if entry else None,
+                "needtosendEnabled": bool(entry.needtosend_enabled) if entry else False,
+                "needtosendIgnoreSampleType": bool(entry.needtosend_ignore_sample_type) if entry else False,
             }
         )
 
@@ -1243,7 +1364,67 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         if template_key_error is not None:
             return template_key_error
 
-        if not (jira_key_provided or template_key_provided):
+        jira_enabled_provided, jira_enabled, jira_enabled_error = self._parse_optional_bool_field(
+            payload,
+            field_name="jiraEnabled",
+        )
+        if jira_enabled_error is not None:
+            return jira_enabled_error
+
+        messenger_enabled_provided, messenger_enabled, messenger_enabled_error = self._parse_optional_bool_field(
+            payload,
+            field_name="messengerEnabled",
+        )
+        if messenger_enabled_error is not None:
+            return messenger_enabled_error
+
+        mail_enabled_provided, mail_enabled, mail_enabled_error = self._parse_optional_bool_field(
+            payload,
+            field_name="mailEnabled",
+        )
+        if mail_enabled_error is not None:
+            return mail_enabled_error
+
+        needtosend_comment_provided, needtosend_comment_last_at, needtosend_comment_error = (
+            self._parse_optional_jira_field(
+                payload,
+                field_name="needtosendCommentLastAt",
+                max_length=self.MAX_NEEDTOSEND_KEYWORD_LENGTH,
+            )
+        )
+        if needtosend_comment_error is not None:
+            return needtosend_comment_error
+
+        needtosend_enabled_provided, needtosend_enabled, needtosend_enabled_error = (
+            self._parse_optional_bool_field(
+                payload,
+                field_name="needtosendEnabled",
+            )
+        )
+        if needtosend_enabled_error is not None:
+            return needtosend_enabled_error
+
+        (
+            needtosend_ignore_sample_type_provided,
+            needtosend_ignore_sample_type,
+            needtosend_ignore_sample_type_error,
+        ) = self._parse_optional_bool_field(
+            payload,
+            field_name="needtosendIgnoreSampleType",
+        )
+        if needtosend_ignore_sample_type_error is not None:
+            return needtosend_ignore_sample_type_error
+
+        if not (
+            jira_key_provided
+            or template_key_provided
+            or jira_enabled_provided
+            or messenger_enabled_provided
+            or mail_enabled_provided
+            or needtosend_comment_provided
+            or needtosend_enabled_provided
+            or needtosend_ignore_sample_type_provided
+        ):
             return JsonResponse({"error": "jiraKey or templateKey is required"}, status=400)
 
         # -----------------------------------------------------------------------------
@@ -1257,6 +1438,18 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             payload_kwargs["jira_key"] = jira_key
         if template_key_provided:
             payload_kwargs["jira_template_key"] = template_key
+        if jira_enabled_provided:
+            payload_kwargs["jira_enabled"] = jira_enabled
+        if messenger_enabled_provided:
+            payload_kwargs["messenger_enabled"] = messenger_enabled
+        if mail_enabled_provided:
+            payload_kwargs["mail_enabled"] = mail_enabled
+        if needtosend_comment_provided:
+            payload_kwargs["needtosend_comment_last_at"] = needtosend_comment_last_at
+        if needtosend_enabled_provided:
+            payload_kwargs["needtosend_enabled"] = needtosend_enabled
+        if needtosend_ignore_sample_type_provided:
+            payload_kwargs["needtosend_ignore_sample_type"] = needtosend_ignore_sample_type
 
         try:
             template, updated = services.upsert_drone_sop_user_sdwt_channel(**payload_kwargs)
@@ -1269,6 +1462,12 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 "lineId": template.line_id or line_id,
                 "jiraKey": template.jira_key,
                 "templateKey": template.jira_template_key,
+                "jiraEnabled": template.jira_enabled,
+                "messengerEnabled": template.messenger_enabled,
+                "mailEnabled": template.mail_enabled,
+                "needtosendCommentLastAt": template.needtosend_comment_last_at,
+                "needtosendEnabled": template.needtosend_enabled,
+                "needtosendIgnoreSampleType": template.needtosend_ignore_sample_type,
                 "updated": updated,
             }
         )
