@@ -206,6 +206,56 @@ def _parse_chunk_factor(raw: str | None) -> Dict[str, str | int] | None:
     return normalized or None
 
 
+def _normalize_string_sequence(
+    values: Sequence[str] | str | None,
+    *,
+    split_commas: bool = False,
+    dedupe: bool = False,
+) -> List[str]:
+    """문자열/시퀀스 입력을 공통 규칙으로 정규화합니다.
+
+    입력:
+    - values: 문자열 또는 문자열 시퀀스
+    - split_commas: 문자열 입력을 CSV로 분리할지 여부
+    - dedupe: 중복 제거 여부
+
+    반환:
+    - List[str]: 공백 제거가 끝난 문자열 목록
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 유효성 확인 및 리스트화
+    # -----------------------------------------------------------------------------
+    if not values:
+        return []
+    if isinstance(values, str):
+        raw_values = values.split(",") if split_commas else [values]
+    elif isinstance(values, Sequence):
+        raw_values = list(values)
+    else:
+        return []
+
+    # -----------------------------------------------------------------------------
+    # 2) 값 정제
+    # -----------------------------------------------------------------------------
+    normalized: List[str] = []
+    for value in raw_values:
+        if value is None:
+            continue
+        cleaned = str(value).strip()
+        if cleaned:
+            normalized.append(cleaned)
+    if dedupe:
+        return list(dict.fromkeys(normalized))
+    return normalized
+
+
 def _normalize_permission_groups(groups: Sequence[str] | str | None) -> List[str]:
     """permission_groups 입력을 문자열 리스트로 정규화합니다.
 
@@ -222,29 +272,7 @@ def _normalize_permission_groups(groups: Sequence[str] | str | None) -> List[str
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인 및 리스트화
-    # -----------------------------------------------------------------------------
-    if not groups:
-        return []
-    if isinstance(groups, str):
-        values = [groups]
-    elif isinstance(groups, Sequence):
-        values = list(groups)
-    else:
-        return []
-
-    # -----------------------------------------------------------------------------
-    # 2) 값 정제
-    # -----------------------------------------------------------------------------
-    normalized: List[str] = []
-    for value in values:
-        if value is None:
-            continue
-        cleaned = str(value).strip()
-        if cleaned:
-            normalized.append(cleaned)
-    return normalized
+    return _normalize_string_sequence(groups)
 
 
 def _normalize_index_names(index_names: Sequence[str] | str | None) -> List[str]:
@@ -263,29 +291,7 @@ def _normalize_index_names(index_names: Sequence[str] | str | None) -> List[str]
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인 및 리스트화
-    # -----------------------------------------------------------------------------
-    if not index_names:
-        return []
-    if isinstance(index_names, str):
-        values = index_names.split(",")
-    elif isinstance(index_names, Sequence):
-        values = list(index_names)
-    else:
-        return []
-
-    # -----------------------------------------------------------------------------
-    # 2) 값 정제 및 중복 제거
-    # -----------------------------------------------------------------------------
-    normalized: List[str] = []
-    for value in values:
-        if value is None:
-            continue
-        cleaned = str(value).strip()
-        if cleaned:
-            normalized.append(cleaned)
-    return list(dict.fromkeys(normalized))
+    return _normalize_string_sequence(index_names, split_commas=True, dedupe=True)
 
 
 # =============================================================================

@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Sequence
 
 import requests
@@ -162,6 +161,59 @@ def resolve_rag_index_names(index_names: Sequence[str] | str | None) -> List[str
     return [fallback] if fallback else []
 
 
+def _resolve_configured_permission_groups(permission_groups: Sequence[str] | None) -> List[str]:
+    """요청 권한 그룹 또는 RAG 기본 권한 그룹을 정규화합니다."""
+
+    rag_services = _get_rag_services()
+    if permission_groups is not None:
+        return _normalize_permission_groups(permission_groups)
+    return _normalize_permission_groups(rag_services.RAG_PERMISSION_GROUPS)
+
+
+def _raise_logged_value_error(action: str, payload: Dict[str, Any], message: str) -> None:
+    """검증 오류를 RAG 실패 로그에 남긴 뒤 ValueError로 전파합니다."""
+
+    error = ValueError(message)
+    _log_rag_failure(action, payload, error)
+    raise error
+
+
+def _require_rag_setting(action: str, payload: Dict[str, Any], value: Any, message: str) -> Any:
+    """필수 RAG 설정/값이 비었는지 확인합니다."""
+
+    if value:
+        return value
+    _raise_logged_value_error(action, payload, message)
+
+
+def _post_rag_request(
+    action: str,
+    url: str,
+    payload: Dict[str, Any],
+    *,
+    timeout: int,
+    expect_json: bool = False,
+) -> Dict[str, Any] | None:
+    """RAG HTTP 요청을 수행하고 실패 시 동일한 로깅 규칙으로 기록합니다."""
+
+    rag_services = _get_rag_services()
+    response = None
+    try:
+        response = requests.post(
+            url,
+            headers=rag_services.RAG_HEADERS,
+            json=payload,
+            timeout=max(1, int(timeout)),
+        )
+        response.raise_for_status()
+        if expect_json:
+            return response.json()
+        return None
+    except Exception as exc:
+        _log_rag_failure(action, payload, exc, response=response)
+        raise
+
+
 def _build_insert_payload(
     email: Any,
     index_name: str | None = None,
@@ -187,7 +239,6 @@ def _build_insert_payload(
     # -----------------------------------------------------------------------------
     # 1) 인덱스/시간/수신자 정규화
     # -----------------------------------------------------------------------------
-    rag_services = _get_rag_services()
     resolved_index_name = resolve_rag_index_name(index_name)
     created_time = getattr(email, "received_at", None) or timezone.now()
     recipient_value = getattr(email, "recipient", None)
@@ -198,11 +249,7 @@ def _build_insert_payload(
     # -----------------------------------------------------------------------------
     # 2) 권한 그룹 정규화
     # -----------------------------------------------------------------------------
-    resolved_permission_groups = (
-        _normalize_permission_groups(permission_groups)
-        if permission_groups is not None
-        else _normalize_permission_groups(rag_services.RAG_PERMISSION_GROUPS)
-    )
+    resolved_permission_groups = _resolve_configured_permission_groups(permission_groups)
     # -----------------------------------------------------------------------------
     # 3) 페이로드 구성
     # -----------------------------------------------------------------------------
@@ -226,6 +273,7 @@ def _build_insert_payload(
     # -----------------------------------------------------------------------------
     # 4) chunk_factor 옵션 반영
     # -----------------------------------------------------------------------------
+    rag_services = _get_rag_services()
     if rag_services.RAG_CHUNK_FACTOR:
         payload["chunk_factor"] = rag_services.RAG_CHUNK_FACTOR
     return payload
@@ -256,13 +304,8 @@ def _build_delete_payload(
     # -----------------------------------------------------------------------------
     # 1) 인덱스/권한 그룹 정규화
     # -----------------------------------------------------------------------------
-    rag_services = _get_rag_services()
     resolved_index_name = resolve_rag_index_name(index_name)
-    resolved_permission_groups = (
-        _normalize_permission_groups(permission_groups)
-        if permission_groups is not None
-        else _normalize_permission_groups(rag_services.RAG_PERMISSION_GROUPS)
-    )
+    resolved_permission_groups = _resolve_configured_permission_groups(permission_groups)
     # -----------------------------------------------------------------------------
     # 2) 페이로드 구성
     # -----------------------------------------------------------------------------
@@ -301,7 +344,6 @@ def _build_search_payload(
     # -----------------------------------------------------------------------------
     # 1) 인덱스명 정규화
     # -----------------------------------------------------------------------------
-    rag_services = _get_rag_services()
     resolved_index_names = resolve_rag_index_names(index_name)
     resolved_index_name = ",".join(resolved_index_names)
 
@@ -321,9 +363,7 @@ def _build_search_payload(
     # -----------------------------------------------------------------------------
     return {
         "index_name": resolved_index_name,
-        "permission_groups": _normalize_permission_groups(permission_groups)
-        if permission_groups is not None
-        else _normalize_permission_groups(rag_services.RAG_PERMISSION_GROUPS),
+        "permission_groups": _resolve_configured_permission_groups(permission_groups),
         "query_text": normalized_query,
         "num_result_doc": normalized_num,
     }
@@ -370,45 +410,13 @@ def search_rag(
 
     resolved_index_name = payload.get("index_name")
 
-    # -----------------------------------------------------------------------------
-    # 2) 필수 설정 및 입력 검증
-    # -----------------------------------------------------------------------------
     rag_services = _get_rag_services()
-    if not rag_services.RAG_SEARCH_URL:
-        error = ValueError("RAG_SEARCH_URL is not configured")
-        _log_rag_failure("search", payload, error)
-        raise error
-    if not resolved_index_name:
-        error = ValueError("RAG_INDEX_DEFAULT is not configured")
-        _log_rag_failure("search", payload, error)
-        raise error
-    if not payload.get("query_text"):
-        error = ValueError("query_text is empty")
-        _log_rag_failure("search", payload, error)
-        raise error
+    search_url = _require_rag_setting("search", payload, rag_services.RAG_SEARCH_URL, "RAG_SEARCH_URL is not configured")
+    _require_rag_setting("search", payload, resolved_index_name, "RAG_INDEX_DEFAULT is not configured")
+    _require_rag_setting("search", payload, payload.get("query_text"), "query_text is empty")
 
-    # -----------------------------------------------------------------------------
-    # 3) HTTP 요청 및 응답 처리
-    # -----------------------------------------------------------------------------
-    try:
-        resp = requests.post(
-            rag_services.RAG_SEARCH_URL,
-            headers=rag_services.RAG_HEADERS,
-            json=payload,
-            timeout=max(1, int(timeout)),
-        )
-        resp.raise_for_status()
-        try:
-            return resp.json()
-        except (json.JSONDecodeError, ValueError) as exc:
-            _log_rag_failure("search", payload, exc, response=resp)
-            raise
-    # -----------------------------------------------------------------------------
-    # 4) 오류 로깅 및 재전파
-    # -----------------------------------------------------------------------------
-    except Exception as exc:
-        _log_rag_failure("search", payload, exc)
-        raise
+    result = _post_rag_request("search", search_url, payload, timeout=timeout, expect_json=True)
+    return result or {}
 
 
 def insert_email_to_rag(
@@ -451,32 +459,9 @@ def insert_email_to_rag(
 
     resolved_index_name = payload.get("index_name")
 
-    # -----------------------------------------------------------------------------
-    # 2) 필수 설정 검증
-    # -----------------------------------------------------------------------------
-    if not rag_services.RAG_INSERT_URL:
-        error = ValueError("RAG_INSERT_URL is not configured")
-        _log_rag_failure("insert", payload, error)
-        raise error
-    if not resolved_index_name:
-        error = ValueError("RAG_INDEX_DEFAULT is not configured")
-        _log_rag_failure("insert", payload, error)
-        raise error
-
-    # -----------------------------------------------------------------------------
-    # 3) HTTP 요청 수행
-    # -----------------------------------------------------------------------------
-    try:
-        resp = requests.post(
-            rag_services.RAG_INSERT_URL,
-            headers=rag_services.RAG_HEADERS,
-            json=payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-    except Exception as exc:
-        _log_rag_failure("insert", payload, exc)
-        raise
+    insert_url = _require_rag_setting("insert", payload, rag_services.RAG_INSERT_URL, "RAG_INSERT_URL is not configured")
+    _require_rag_setting("insert", payload, resolved_index_name, "RAG_INDEX_DEFAULT is not configured")
+    _post_rag_request("insert", insert_url, payload, timeout=30)
 
 
 def delete_rag_doc(
@@ -510,29 +495,6 @@ def delete_rag_doc(
 
     resolved_index_name = payload.get("index_name")
 
-    # -----------------------------------------------------------------------------
-    # 2) 필수 설정 검증
-    # -----------------------------------------------------------------------------
-    if not rag_services.RAG_DELETE_URL:
-        error = ValueError("RAG_DELETE_URL is not configured")
-        _log_rag_failure("delete", payload, error)
-        raise error
-    if not resolved_index_name:
-        error = ValueError("RAG_INDEX_DEFAULT is not configured")
-        _log_rag_failure("delete", payload, error)
-        raise error
-
-    # -----------------------------------------------------------------------------
-    # 3) HTTP 요청 수행
-    # -----------------------------------------------------------------------------
-    try:
-        resp = requests.post(
-            rag_services.RAG_DELETE_URL,
-            headers=rag_services.RAG_HEADERS,
-            json=payload,
-            timeout=10,
-        )
-        resp.raise_for_status()
-    except Exception as exc:
-        _log_rag_failure("delete", payload, exc)
-        raise
+    delete_url = _require_rag_setting("delete", payload, rag_services.RAG_DELETE_URL, "RAG_DELETE_URL is not configured")
+    _require_rag_setting("delete", payload, resolved_index_name, "RAG_INDEX_DEFAULT is not configured")
+    _post_rag_request("delete", delete_url, payload, timeout=10)
