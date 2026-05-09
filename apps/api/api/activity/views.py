@@ -4,33 +4,10 @@
 # - 불변 조건: 권한 확인 후 최근 로그만 반환합니다.
 # =============================================================================
 
-"""액티비티 로그 조회 엔드포인트를 제공합니다.
-
-이 모듈은 최근 ActivityLog 레코드를 조회해 간단한 JSON으로 반환합니다.
-처리 흐름은 권한 확인 → limit 파라미터 정규화 → 조회/직렬화 → 응답 순서로 진행됩니다.
-
-# 응답 포맷(예시)
-{
-  예시 "results": [
-    {
-      예시 "id": 123,
-      예시 "user": "alice",
-      예시 "role": "admin",
-      예시 "action": "UPDATE",
-      예시 "path": "/api/tables",
-      예시 "method": "PATCH",
-      예시 "status": 200,
-      예시 "metadata": {...},
-      예시 "timestamp": "2025-11-10T12:34:56.789+09:00"
-    }
-  ]
-}
-
-주의:
-- 인증/권한이 없으면 401/403을 반환합니다.
-- limit 파라미터는 1~200 사이의 정수만 허용하며 기본값은 50입니다.
-"""
+"""액티비티 로그 조회 엔드포인트를 제공합니다."""
 from __future__ import annotations
+
+from typing import Any
 
 from django.http import HttpRequest, JsonResponse
 from rest_framework.views import APIView
@@ -41,13 +18,32 @@ from .services import get_recent_activity_payload
 DEFAULT_LIMIT: int = 50
 MAX_LIMIT: int = 200
 MIN_LIMIT: int = 1
+VIEW_ACTIVITY_LOG_PERMISSIONS = ("activity.view_activitylog", "api.view_activitylog")
+
+
+def _parse_activity_log_limit(raw_limit: str | None) -> int:
+    """limit 쿼리 값을 기존 규칙대로 기본값/허용 범위 안으로 정규화합니다."""
+
+    try:
+        limit = int(raw_limit) if raw_limit is not None else DEFAULT_LIMIT
+    except (TypeError, ValueError):
+        # 비정상 값은 기존 API 동작처럼 오류 대신 기본값으로 처리합니다.
+        limit = DEFAULT_LIMIT
+
+    return max(MIN_LIMIT, min(limit, MAX_LIMIT))
+
+
+def _can_view_activity_logs(user: Any) -> bool:
+    """현재 사용자가 ActivityLog 조회 권한을 하나라도 보유했는지 확인합니다."""
+
+    return any(user.has_perm(permission) for permission in VIEW_ACTIVITY_LOG_PERMISSIONS)
 
 
 class ActivityLogView(APIView):
     """최근 액티비티 로그 조회.
 
     - 인증 필요
-    - 권한 코드: "api.view_activitylog"
+    - 권한 코드: "activity.view_activitylog" 또는 "api.view_activitylog"
     - GET 파라미터:
         - limit (int, optional): 반환 개수. 기본 50, 최소 1, 최대 200.
     """
@@ -84,27 +80,13 @@ class ActivityLogView(APIView):
         if not request.user.is_authenticated:
             return JsonResponse({"error": "Unauthorized"}, status=401)
 
-        # 권한 이름은 앱 라벨 + 권한 코드 문자열로 구성됩니다.
-        # 예: <app_label>.view_<modelname>
-        # 리팩토링 과정에서 앱 라벨이 api -> activity로 변경될 수 있어 둘 다 허용합니다.
-        if not (
-            request.user.has_perm("activity.view_activitylog")
-            or request.user.has_perm("api.view_activitylog")
-        ):
+        if not _can_view_activity_logs(request.user):
             return JsonResponse({"error": "Forbidden"}, status=403)
 
         # -----------------------------------------------------------------------------
         # 2) limit 파라미터 파싱/정규화
         # -----------------------------------------------------------------------------
-        limit_param = request.GET.get("limit")
-        try:
-            limit = int(limit_param) if limit_param is not None else DEFAULT_LIMIT
-        except (TypeError, ValueError):
-            # 비정상 값이 들어오면 기본값 사용
-            limit = DEFAULT_LIMIT
-
-        # 허용 범위 강제(1 ~ 200)
-        limit = max(MIN_LIMIT, min(limit, MAX_LIMIT))
+        limit = _parse_activity_log_limit(request.GET.get("limit"))
 
         # -----------------------------------------------------------------------------
         # 3) payload 생성
