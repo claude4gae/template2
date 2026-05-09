@@ -8,16 +8,6 @@ function optionKey(opt) {
   return `${opt.department}||${opt.line}||${opt.user_sdwt_prod}`
 }
 
-function formatDateTimeLocal(date) {
-  const pad = (value) => String(value).padStart(2, "0")
-  const year = date.getFullYear()
-  const month = pad(date.getMonth() + 1)
-  const day = pad(date.getDate())
-  const hours = pad(date.getHours())
-  const minutes = pad(date.getMinutes())
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
 const EMPTY_OPTIONS = []
 
 export function AffiliationCard({
@@ -28,7 +18,6 @@ export function AffiliationCard({
   successMessage,
 }) {
   const [selectedKey, setSelectedKey] = useState("")
-  const [effectiveFrom, setEffectiveFrom] = useState(() => formatDateTimeLocal(new Date()))
 
   const options = data?.affiliationOptions ?? EMPTY_OPTIONS
 
@@ -57,32 +46,36 @@ export function AffiliationCard({
       department: target.department,
       line: target.line,
     }
-    if (effectiveFrom) {
-      payload.effectiveFrom = effectiveFrom
-    }
     onSubmit(payload, () => {
       setSelectedKey("")
     })
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle>소속 변경 요청</CardTitle>
-        <CardDescription>
-          소속 변경은 승인 이후에만 적용됩니다. 메일 재분류는 선택한 기준 시각 이후 수신분부터 반영됩니다.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-3 rounded-lg border p-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">현재 소속 :
-              <span className="text-lg font-semibold text-foreground"> {(data?.currentDepartment || "미지정") + " / " + (data?.currentLine || "미지정") + " / " + (data?.currentUserSdwtProd || "미지정")}</span>
-            </span>
+    <Card className="max-h-96 overflow-hidden py-0">
+      <CardHeader className="shrink-0 border-b px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle>소속 변경 요청</CardTitle>
           </div>
         </div>
+        <CardDescription>
+          소속 변경은 승인 이후에만 적용됩니다. 메일함과 RAG 인덱스는 승인된 변경 이력을 기준으로 반영됩니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid min-h-0 gap-4 overflow-y-auto p-5">
+        <div className="grid gap-1 rounded-lg border bg-muted/30 p-3">
+          <span className="text-xs font-medium text-muted-foreground">현재 소속</span>
+          <span className="text-sm font-semibold text-foreground">
+            {(data?.currentDepartment || "미지정") +
+              " / " +
+              (data?.currentLine || "미지정") +
+              " / " +
+              (data?.currentUserSdwtProd || "미지정")}
+          </span>
+        </div>
 
-        <form onSubmit={handleSubmit} className="grid gap-3">
+        <form onSubmit={handleSubmit} className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="affiliationSelect">변경할 소속 (Department / Line / user_sdwt_prod)</Label>
             <select
@@ -107,17 +100,6 @@ export function AffiliationCard({
             ) : null}
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="effectiveFromInput">소속 변경 기준 시각 (KST)</Label>
-            <input
-              id="effectiveFromInput"
-              type="datetime-local"
-              className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 rounded-md border px-3 text-sm outline-none"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-            />
-          </div>
-
           <div className="grid gap-1 rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
             <p>관리자 승인 후 소속이 변경됩니다.</p>
             <p>승인 완료 후 메일함과 RAG 인덱스가 반영됩니다.</p>
@@ -128,7 +110,7 @@ export function AffiliationCard({
           ) : null}
           {successMessage ? <p className="text-sm text-primary">{successMessage}</p> : null}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end border-t pt-4">
             <Button type="submit" disabled={isSubmitting || !options.length || !selectedKey}>
               {isSubmitting ? "요청 중..." : "변경 신청"}
             </Button>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { accountApi } from "../api/accountApi"
+import { normalizeAccountOverview } from "../utils/accountOverview"
 
 export const AFFILIATION_QUERY_KEY = ["account", "affiliation"]
 export const AFFILIATION_REQUESTS_QUERY_KEY = ["account", "affiliationRequests"]
@@ -30,6 +31,7 @@ export function useAccountOverview() {
   return useQuery({
     queryKey: OVERVIEW_QUERY_KEY,
     queryFn: accountApi.fetchOverview,
+    select: normalizeAccountOverview,
   })
 }
 

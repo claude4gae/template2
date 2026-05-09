@@ -8,17 +8,11 @@
 
 - 주요 대상: 소속 변경, 개요 조회, 승인/목록, 외부 동기화, 권한 부여
 - 주요 엔드포인트/클래스: AccountAffiliationView 등
-- 가정/불변 조건: 모든 날짜는 UTC 기준으로 처리되며 입력이 없으면 KST로 해석함
+- 가정/불변 조건: 비즈니스 처리는 서비스 레이어에 위임함
 """
 from __future__ import annotations
 
-from datetime import timezone as dt_timezone
-from typing import Optional
-from zoneinfo import ZoneInfo
-
 from django.http import HttpRequest, JsonResponse
-from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
@@ -35,55 +29,9 @@ from .serializers import (
 # -----------------------------------------------------------------------------
 # 시간대/페이지네이션 상수
 # -----------------------------------------------------------------------------
-KST = ZoneInfo("Asia/Seoul")          # 타임존 없는 datetime을 KST로 해석할 때 사용할 tzinfo
 TIMEZONE_NAME = "Asia/Seoul"         # 서비스 레이어에 전달할 시간대 이름
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
-
-
-def _parse_effective_from(value: Optional[str]):
-    """effective_from 입력 문자열을 UTC timezone-aware datetime으로 변환합니다.
-
-    입력:
-    - value: ISO 형식 날짜 문자열
-
-    반환:
-    - datetime | None: UTC 기준 datetime 또는 None
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음(파싱 실패 시 None 반환)
-
-    허용 예시:
-    - 예시: "2025-12-28T10:30:00+09:00"
-    - 예시: "2025-12-28T01:30:00Z"
-    - "2025-12-28T10:30:00" (타임존 정보 없으면 KST로 간주)
-    """
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not value:
-        return None
-
-    # -----------------------------------------------------------------------------
-    # 2) ISO 문자열 파싱
-    # -----------------------------------------------------------------------------
-    parsed = parse_datetime(str(value))
-    if not parsed:
-        return None
-
-    # -----------------------------------------------------------------------------
-    # 3) 타임존 정보 보정(KST 가정)
-    # -----------------------------------------------------------------------------
-    if timezone.is_naive(parsed):
-        parsed = parsed.replace(tzinfo=KST)
-
-    # -----------------------------------------------------------------------------
-    # 4) UTC로 변환
-    # -----------------------------------------------------------------------------
-    return parsed.astimezone(dt_timezone.utc)
 
 
 def _parse_int(value: object, default: int) -> int:
@@ -175,11 +123,10 @@ class AccountAffiliationView(APIView):
 
         예시 요청:
         - 예시 요청: POST /api/v1/account/affiliation
-          요청 바디 예시: {"user_sdwt_prod":"SDWT_A","effective_from":"2025-12-28T10:00:00+09:00"}
+          요청 바디 예시: {"user_sdwt_prod":"SDWT_A"}
 
         snake/camel 호환:
         - user_sdwt_prod / userSdwtProd (키 매핑)
-        - effective_from / effectiveFrom (키 매핑)
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -212,21 +159,13 @@ class AccountAffiliationView(APIView):
             return JsonResponse({"error": "Invalid user_sdwt_prod"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 5) effective_from 파싱
-        # -----------------------------------------------------------------------------
-        effective_from_raw = payload.get("effective_from") or payload.get("effectiveFrom")
-        effective_from = _parse_effective_from(effective_from_raw)
-        if effective_from_raw and effective_from is None:
-            return JsonResponse({"error": "Invalid effective_from"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 6) 서비스 호출 및 응답 반환
+        # 5) 서비스 호출 및 응답 반환
         # -----------------------------------------------------------------------------
         response_payload, status_code = services.request_affiliation_change(
             user=user,
             option=option,
             to_user_sdwt_prod=new_value,
-            effective_from=effective_from,
+            effective_from=None,
             timezone_name=TIMEZONE_NAME,
         )
         return JsonResponse(response_payload, status=status_code)
@@ -541,8 +480,6 @@ class AccountAffiliationReconfirmView(APIView):
         response_payload, status_code = services.submit_affiliation_reconfirm_response(
             user=user,
             accepted=validated["accepted"],
-            department=validated.get("department"),
-            line=validated.get("line"),
             user_sdwt_prod=validated.get("user_sdwt_prod"),
             timezone_name=TIMEZONE_NAME,
         )

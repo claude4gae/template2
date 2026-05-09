@@ -12,10 +12,55 @@
 """
 from __future__ import annotations
 
+from typing import Any, Iterable
+
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.base_user import BaseUserManager
 from django.conf import settings
 from django.db import models
+
+
+def _normalize_user_sdwt_prod(value: Any) -> str:
+    """user_sdwt_prod 값을 공백 제거 기준으로 정규화합니다."""
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _normalize_user_sdwt_lookup_key(value: Any) -> str:
+    """대소문자 비구분 비교용 user_sdwt_prod 키를 생성합니다."""
+
+    normalized = _normalize_user_sdwt_prod(value)
+    if not normalized:
+        return ""
+    return normalized.casefold()
+
+
+def _same_user_sdwt_prod(left: Any, right: Any) -> bool:
+    """두 user_sdwt_prod 값이 대소문자 비구분으로 같은지 확인합니다."""
+
+    left_key = _normalize_user_sdwt_lookup_key(left)
+    right_key = _normalize_user_sdwt_lookup_key(right)
+    return bool(left_key and right_key and left_key == right_key)
+
+
+def _build_user_sdwt_display_map(values: Iterable[Any]) -> dict[str, str]:
+    """case-insensitive 비교용 lookup key와 표시값 매핑을 생성합니다."""
+
+    display_map: dict[str, str] = {}
+    for value in values:
+        normalized = _normalize_user_sdwt_prod(value)
+        lookup_key = _normalize_user_sdwt_lookup_key(normalized)
+        if normalized and lookup_key and lookup_key not in display_map:
+            display_map[lookup_key] = normalized
+    return display_map
+
+
+def _collapse_user_sdwt_prod_values(values: Iterable[Any]) -> set[str]:
+    """user_sdwt_prod 값들을 대소문자 비구분으로 중복 제거합니다."""
+
+    return set(_build_user_sdwt_display_map(values).values())
 
 
 class UserManager(BaseUserManager):

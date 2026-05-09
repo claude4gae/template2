@@ -9,29 +9,18 @@ import {
   TableRow,
 } from "@/components/common"
 
-const STATUS_LABELS = {
-  PENDING: { label: "대기", variant: "secondary" },
-  APPROVED: { label: "승인", variant: "default" },
-  REJECTED: { label: "거절", variant: "destructive" },
-  SUPERSEDED: { label: "취소(대체됨)", variant: "outline" },
-}
-
-function formatDate(value) {
-  if (!value) return "-"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString("ko-KR")
-}
+import { formatAccountDateValue, getRequestStatus } from "../utils/accountOverview"
 
 export function AffiliationHistoryCard({ history }) {
   if (!history?.length) {
     return (
-      <Card className="h-full">
-        <CardHeader className="pb-2">
+      <Card className="max-h-96 overflow-hidden py-0">
+        <CardHeader className="shrink-0 border-b px-5 py-4">
+          <p className="text-xs font-medium text-muted-foreground">감사 이력</p>
           <CardTitle>승인/변경 히스토리</CardTitle>
-          <CardDescription>소속 변경 신청과 승인 결과를 확인합니다.</CardDescription>
+          <CardDescription>소속 변경 신청과 승인 결과를 시간순으로 추적합니다.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-h-0 overflow-y-auto p-5">
           <p className="text-sm text-muted-foreground">변경 히스토리가 없습니다.</p>
         </CardContent>
       </Card>
@@ -39,31 +28,34 @@ export function AffiliationHistoryCard({ history }) {
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle>승인/변경 히스토리</CardTitle>
-        <CardDescription>소속 변경 신청과 승인 결과를 확인합니다.</CardDescription>
+    <Card className="max-h-96 overflow-hidden py-0">
+      <CardHeader className="shrink-0 border-b px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">감사 이력</p>
+            <CardTitle>승인/변경 히스토리</CardTitle>
+            <CardDescription>소속 변경 신청과 승인 결과를 시간순으로 추적합니다.</CardDescription>
+          </div>
+          <Badge variant="outline">{history.length.toLocaleString("ko-KR")}건</Badge>
+        </div>
       </CardHeader>
-      <CardContent className="grid gap-3">
+      <CardContent className="min-h-0 overflow-y-auto p-5">
         <div className="rounded-lg border">
-          <Table>
+          <Table stickyHeader>
             <TableHeader>
               <TableRow>
                 <TableHead>상태</TableHead>
                 <TableHead>변경</TableHead>
                 <TableHead>조직</TableHead>
-              <TableHead>적용 시점</TableHead>
-              <TableHead>요청 시점</TableHead>
-              <TableHead>승인자</TableHead>
-              <TableHead>거절 사유</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {history.map((item) => {
-                const status = STATUS_LABELS[item.status] || {
-                  label: item.status || "미지정",
-                  variant: "outline",
-                }
+                <TableHead>적용 시점</TableHead>
+                <TableHead>요청 시점</TableHead>
+                <TableHead>승인자</TableHead>
+                <TableHead>거절 사유</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.map((item) => {
+                const status = getRequestStatus(item.status)
                 return (
                   <TableRow key={item.id}>
                     <TableCell>
@@ -76,10 +68,10 @@ export function AffiliationHistoryCard({ history }) {
                       {(item.department || "미지정") + " / " + (item.line || "미지정")}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(item.effectiveFrom)}
+                      {formatAccountDateValue(item.effectiveFrom)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(item.requestedAt)}
+                      {formatAccountDateValue(item.requestedAt)}
                     </TableCell>
                     <TableCell className="text-sm">
                       {item.approvedBy?.username || "-"}

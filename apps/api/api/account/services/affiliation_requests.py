@@ -25,6 +25,7 @@ from .access import downgrade_member_access, ensure_self_access
 from .utils import (
     _build_user_sdwt_display_map,
     _is_privileged_user,
+    _normalize_user_sdwt_prod,
     _normalize_user_sdwt_lookup_key,
     _same_user_sdwt_prod,
     _user_can_approve_affiliation_change,
@@ -361,12 +362,28 @@ def _apply_affiliation_change(*, change: UserSdwtProdChange, approver: Any | Non
     }
 
 
+def _should_auto_apply_affiliation_change(
+    *,
+    predicted_user_sdwt: str,
+    target_user_sdwt: str,
+    force_pending: bool,
+    has_existing_pending: bool,
+) -> bool:
+    """예측 소속과 요청 상태를 기준으로 자동 적용 가능 여부를 판단합니다."""
+
+    return (
+        _same_user_sdwt_prod(predicted_user_sdwt, target_user_sdwt)
+        and not force_pending
+        and not has_existing_pending
+    )
+
+
 def request_affiliation_change(
     *,
     user: Any,
     option: Any,
     to_user_sdwt_prod: str,
-    effective_from: datetime,
+    effective_from: datetime | None,
     timezone_name: str,
     force_pending: bool = False,
 ) -> Tuple[dict[str, object], int]:
@@ -376,7 +393,7 @@ def request_affiliation_change(
     - user: Django 사용자 객체
     - option: 소속 옵션 객체
     - to_user_sdwt_prod: 대상 소속
-    - effective_from: 효력 시작 시각
+    - effective_from: 효력 시작 시각(None이면 현재 시각)
     - timezone_name: 시간대 이름
     - force_pending: 자동 승인 차단 여부
 
@@ -394,8 +411,8 @@ def request_affiliation_change(
     # -----------------------------------------------------------------------------
     # 1) 대상 소속 정규화 및 동일 소속 요청 차단
     # -----------------------------------------------------------------------------
-    normalized_target = (to_user_sdwt_prod or "").strip()
-    current_user_sdwt = (selectors.get_current_user_sdwt_prod(user=user) or "").strip()
+    normalized_target = _normalize_user_sdwt_prod(to_user_sdwt_prod)
+    current_user_sdwt = _normalize_user_sdwt_prod(selectors.get_current_user_sdwt_prod(user=user))
     if _same_user_sdwt_prod(current_user_sdwt, normalized_target):
         return {"error": "already current affiliation"}, 400
 
@@ -417,14 +434,16 @@ def request_affiliation_change(
     predicted_user_sdwt = ""
     if knox_id:
         snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(knox_id=knox_id)
-        predicted_user_sdwt = (snapshot.predicted_user_sdwt_prod or "").strip() if snapshot else ""
+        predicted_user_sdwt = _normalize_user_sdwt_prod(
+            snapshot.predicted_user_sdwt_prod if snapshot else None
+        )
 
-    predicted_match = _same_user_sdwt_prod(predicted_user_sdwt, normalized_target)
-    should_auto_apply = predicted_match
-    if force_pending:
-        should_auto_apply = False
-    if has_existing_pending:
-        should_auto_apply = False
+    should_auto_apply = _should_auto_apply_affiliation_change(
+        predicted_user_sdwt=predicted_user_sdwt,
+        target_user_sdwt=normalized_target,
+        force_pending=force_pending,
+        has_existing_pending=has_existing_pending,
+    )
 
     # -----------------------------------------------------------------------------
     # 5) effective_from 보정

@@ -368,6 +368,33 @@ class AccountEndpointTests(TestCase):
         )
         self.assertEqual(approve_response.status_code, 200)
 
+    def test_account_affiliation_post_ignores_effective_from_input(self) -> None:
+        """사용자 소속 변경 API는 클라이언트 기준 시각 입력을 받지 않는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 과거 기준 시각을 포함해 소속 변경 요청
+        # -----------------------------------------------------------------------------
+        self.client.force_login(self.user)
+        requested_effective_from = timezone.now() - timedelta(days=30)
+        before = timezone.now()
+
+        create_response = self.client.post(
+            reverse("account-affiliation"),
+            data=(
+                '{"department":"Dept","line":"L1","user_sdwt_prod":"group-b",'
+                '"effectiveFrom":"%s"}' % requested_effective_from.isoformat()
+            ),
+            content_type="application/json",
+        )
+        after = timezone.now()
+
+        # -----------------------------------------------------------------------------
+        # 2) 저장된 기준 시각은 요청 처리 시각인지 확인
+        # -----------------------------------------------------------------------------
+        self.assertEqual(create_response.status_code, 202)
+        change = UserSdwtProdChange.objects.get(id=create_response.json()["changeId"])
+        self.assertGreaterEqual(change.effective_from, before)
+        self.assertLessEqual(change.effective_from, after)
+
     def test_account_affiliation_rejection_reason_is_exposed(self) -> None:
         """거절 사유가 히스토리에 노출되는지 확인합니다."""
         # -----------------------------------------------------------------------------
@@ -1946,8 +1973,6 @@ class ExternalAffiliationSyncTests(TestCase):
         payload, status_code = submit_affiliation_reconfirm_response(
             user=user,
             accepted=True,
-            department="Dept",
-            line="Line",
             user_sdwt_prod="group-a",
             timezone_name="Asia/Seoul",
         )
@@ -1996,8 +2021,6 @@ class ExternalAffiliationSyncTests(TestCase):
         payload, status_code = submit_affiliation_reconfirm_response(
             user=user,
             accepted=True,
-            department="Dept",
-            line="Line",
             user_sdwt_prod="group-b",
             timezone_name="Asia/Seoul",
         )
@@ -2035,8 +2058,6 @@ class ExternalAffiliationSyncTests(TestCase):
         payload, status_code = submit_affiliation_reconfirm_response(
             user=user,
             accepted=False,
-            department=None,
-            line=None,
             user_sdwt_prod=None,
             timezone_name="Asia/Seoul",
         )
@@ -2073,8 +2094,6 @@ class ExternalAffiliationSyncTests(TestCase):
         payload, status_code = submit_affiliation_reconfirm_response(
             user=user,
             accepted=True,
-            department="Dept",
-            line="Line",
             user_sdwt_prod="group-x",
             timezone_name="Asia/Seoul",
         )

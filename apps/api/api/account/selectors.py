@@ -29,95 +29,10 @@ from .models import (
     UserProfile,
     UserSdwtProdAccess,
     UserSdwtProdChange,
+    _build_user_sdwt_display_map,
+    _collapse_user_sdwt_prod_values,
+    _normalize_user_sdwt_prod,
 )
-
-
-def _normalize_user_sdwt_prod(value: Any) -> str | None:
-    """user_sdwt_prod 값을 공백 제거 기준으로 정규화합니다.
-
-    입력:
-    - value: 원본 값
-
-    반환:
-    - str | None: 정규화된 문자열 또는 None
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음
-    """
-
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip()
-    return cleaned or None
-
-
-def _normalize_user_sdwt_lookup_key(value: Any) -> str | None:
-    """대소문자 비구분 비교용 user_sdwt_prod 키를 생성합니다.
-
-    입력:
-    - value: 원본 값
-
-    반환:
-    - str | None: casefold 기준 비교 키 또는 None
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음
-    """
-
-    cleaned = _normalize_user_sdwt_prod(value)
-    if not cleaned:
-        return None
-    return cleaned.casefold()
-
-
-def _build_user_sdwt_display_map(values: Iterable[Any]) -> dict[str, str]:
-    """case-insensitive 비교용 lookup key → 표시값 매핑을 생성합니다.
-
-    입력:
-    - values: 원본 값 iterable
-
-    반환:
-    - dict[str, str]: lookup key → 공백 제거된 원본 표시값
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음
-    """
-
-    display_map: dict[str, str] = {}
-    for value in values:
-        cleaned = _normalize_user_sdwt_prod(value)
-        lookup_key = _normalize_user_sdwt_lookup_key(cleaned)
-        if cleaned and lookup_key and lookup_key not in display_map:
-            display_map[lookup_key] = cleaned
-    return display_map
-
-
-def _collapse_user_sdwt_prod_values(values: Iterable[Any]) -> set[str]:
-    """user_sdwt_prod 값들을 대소문자 비구분으로 중복 제거합니다.
-
-    입력:
-    - values: 원본 값 iterable
-
-    반환:
-    - set[str]: 중복 제거된 표시값 집합
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음
-    """
-
-    return set(_build_user_sdwt_display_map(values).values())
 
 
 def get_current_affiliation_record(*, user: Any) -> UserCurrentAffiliation | None:

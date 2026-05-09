@@ -1,29 +1,12 @@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 
-const ROLE_LABELS = {
-  viewer: "뷰어",
-  member: "멤버",
-  manager: "관리자",
-}
-
-const ROLE_VARIANTS = {
-  viewer: "secondary",
-  member: "outline",
-  manager: "default",
-}
-
-function resolveRole(value) {
-  return ROLE_LABELS[value] ? value : "viewer"
-}
-
-function formatDate(value) {
-  if (!value) return ""
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString("ko-KR")
-}
+import {
+  ACCESS_ROLE_LABELS,
+  ACCESS_ROLE_VARIANTS,
+  formatAccountDateValue,
+  resolveAccessRole,
+} from "../utils/accountOverview"
 
 function AccessList({ items }) {
   if (!items?.length) {
@@ -33,7 +16,7 @@ function AccessList({ items }) {
   return (
     <div className="grid gap-2">
       {items.map((item) => {
-        const role = resolveRole(item.role)
+        const role = resolveAccessRole(item.role)
         return (
           <div
             key={`${item.userSdwtProd}-${item.source}`}
@@ -48,11 +31,11 @@ function AccessList({ items }) {
                   <Badge variant="outline">부여됨</Badge>
                 )}
               </div>
-              <Badge variant={ROLE_VARIANTS[role]}>{ROLE_LABELS[role]}</Badge>
+              <Badge variant={ACCESS_ROLE_VARIANTS[role]}>{ACCESS_ROLE_LABELS[role]}</Badge>
             </div>
             {item.grantedAt ? (
               <span className="text-xs text-muted-foreground">
-                부여 시각: {formatDate(item.grantedAt)}
+                부여 시각: {formatAccountDateValue(item.grantedAt)}
               </span>
             ) : null}
           </div>

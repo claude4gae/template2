@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -10,38 +9,28 @@ import {
   TableRow,
 } from "@/components/common"
 
-const ROLE_LABELS = {
-  viewer: "뷰어",
-  member: "멤버",
-  manager: "관리자",
-}
-
-const ROLE_VARIANTS = {
-  viewer: "secondary",
-  member: "outline",
-  manager: "default",
-}
-
-function resolveRole(value) {
-  return ROLE_LABELS[value] ? value : "viewer"
-}
-
-function formatDate(value) {
-  if (!value) return "-"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString("ko-KR")
-}
+import {
+  ACCESS_ROLE_LABELS,
+  ACCESS_ROLE_VARIANTS,
+  buildManageableGroupRows,
+  countManageableGroupMembers,
+  formatAccountDateValue,
+  resolveAccessRole,
+} from "../utils/accountOverview"
 
 export function ManageableGroupsCard({ groups }) {
+  const groupRows = buildManageableGroupRows(groups || [])
+  const memberCount = countManageableGroupMembers(groups || [])
+
   if (!groups?.length) {
     return (
-      <Card className="h-full">
-        <CardHeader className="pb-2">
+      <Card className="max-h-96 overflow-hidden py-0">
+        <CardHeader className="shrink-0 border-b px-5 py-4">
+          <p className="text-xs font-medium text-muted-foreground">권한 관리</p>
           <CardTitle>관리 가능한 그룹</CardTitle>
           <CardDescription>현재 사용자가 관리 가능한 user_sdwt_prod 목록입니다.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-h-0 overflow-y-auto p-5">
           <p className="text-sm text-muted-foreground">관리 가능한 그룹이 없습니다.</p>
         </CardContent>
       </Card>
@@ -49,69 +38,78 @@ export function ManageableGroupsCard({ groups }) {
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle>관리 가능한 그룹</CardTitle>
-        <CardDescription>그룹별 멤버와 권한 상태를 확인합니다.</CardDescription>
+    <Card className="max-h-96 overflow-hidden py-0">
+      <CardHeader className="shrink-0 border-b px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">권한 관리</p>
+            <CardTitle>관리 가능한 그룹</CardTitle>
+            <CardDescription>그룹별 멤버와 권한 상태를 확인합니다.</CardDescription>
+          </div>
+          <Badge variant="secondary">{groups.length}개 그룹</Badge>
+        </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {groups.map((group, index) => (
-          <div key={group.userSdwtProd} className="grid gap-2">
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold text-foreground">{group.userSdwtProd}</h4>
-              <Badge variant="secondary">관리</Badge>
-            </div>
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>사용자</TableHead>
-                    <TableHead>권한</TableHead>
-                    <TableHead>부여 시각</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {group.members?.length ? (
-                    group.members.map((member) => {
-                      const username = member.username || "미지정"
-                      const knoxId = member.knoxId || member.knox_id
-                      const name = (member.name || "").trim()
-                      const detail = name && knoxId ? `${name} (${knoxId})` : name || knoxId || ""
-                      const role = resolveRole(member.role)
-                      return (
-                        <TableRow key={`${group.userSdwtProd}-${member.userId}`}>
-                          <TableCell>
-                            <div className="flex min-w-0 items-baseline gap-2">
-                              <span className="truncate font-medium">{username}</span>
-                              {detail ? (
-                                <span className="truncate text-xs text-muted-foreground">
-                                  {detail}
-                                </span>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={ROLE_VARIANTS[role]}>{ROLE_LABELS[role]}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {formatDate(member.grantedAt)}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
+      <CardContent className="grid min-h-0 gap-4 overflow-y-auto p-5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">관리 그룹</p>
+            <p className="mt-1 text-lg font-semibold">{groups.length.toLocaleString("ko-KR")}</p>
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">등록 멤버</p>
+            <p className="mt-1 text-lg font-semibold">{memberCount.toLocaleString("ko-KR")}</p>
+          </div>
+        </div>
+        <div className="rounded-lg border">
+          <Table stickyHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>그룹</TableHead>
+                <TableHead>사용자</TableHead>
+                <TableHead>권한</TableHead>
+                <TableHead>부여 시각</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupRows.map(({ group, member }) => {
+                if (!member) {
+                  return (
+                    <TableRow key={`${group.userSdwtProd}-empty`}>
+                      <TableCell className="font-medium">{group.userSdwtProd}</TableCell>
+                      <TableCell colSpan={3} className="text-sm text-muted-foreground">
                         멤버가 없습니다.
                       </TableCell>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            {index < groups.length - 1 ? <Separator /> : null}
-          </div>
-        ))}
+                  )
+                }
+
+                const username = member.username || "미지정"
+                const knoxId = member.knoxId || member.knox_id
+                const name = (member.name || "").trim()
+                const detail = name && knoxId ? `${name} (${knoxId})` : name || knoxId || ""
+                const role = resolveAccessRole(member.role)
+
+                return (
+                  <TableRow key={`${group.userSdwtProd}-${member.userId}`}>
+                    <TableCell className="font-medium">{group.userSdwtProd}</TableCell>
+                    <TableCell>
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate font-medium">{username}</span>
+                        {detail ? <span className="truncate text-xs text-muted-foreground">{detail}</span> : null}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={ACCESS_ROLE_VARIANTS[role]}>{ACCESS_ROLE_LABELS[role]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatAccountDateValue(member.grantedAt)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   )

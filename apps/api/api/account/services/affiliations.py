@@ -21,7 +21,7 @@ from ..models import Affiliation, UserCurrentAffiliation
 from .. import selectors
 from .access import _current_access_list
 from .affiliation_requests import request_affiliation_change
-from .utils import _same_user_sdwt_prod
+from .utils import _normalize_user_sdwt_prod, _same_user_sdwt_prod
 
 
 def _update_affiliation_option_values(
@@ -308,12 +308,36 @@ def set_current_affiliation_for_user(
         )
 
 
+def _clear_reconfirm_requirement(current_affiliation: UserCurrentAffiliation) -> None:
+    """현재 소속의 재확인 필요 플래그를 해제합니다."""
+
+    current_affiliation.requires_reconfirm = False
+    current_affiliation.save(update_fields=["requires_reconfirm"])
+
+
+def _get_predicted_user_sdwt_prod(*, user: Any) -> str:
+    """외부 스냅샷에서 예측 user_sdwt_prod 값을 정규화해 반환합니다."""
+
+    snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(
+        knox_id=getattr(user, "knox_id", "") or ""
+    )
+    return _normalize_user_sdwt_prod(snapshot.predicted_user_sdwt_prod if snapshot else None)
+
+
+def _resolve_reconfirm_target_user_sdwt(
+    *,
+    selected_user_sdwt: str | None,
+    predicted_user_sdwt: str,
+) -> str:
+    """재확인 수락 시 사용자가 선택한 값 또는 예측값을 적용 대상으로 결정합니다."""
+
+    return _normalize_user_sdwt_prod(selected_user_sdwt) or predicted_user_sdwt
+
+
 def submit_affiliation_reconfirm_response(
     *,
     user: Any,
     accepted: bool,
-    department: str | None,
-    line: str | None,
     user_sdwt_prod: str | None,
     timezone_name: str,
 ) -> Tuple[dict[str, object], int]:
@@ -322,7 +346,7 @@ def submit_affiliation_reconfirm_response(
     입력:
     - user: Django 사용자 객체
     - accepted: 재확인 수락 여부
-    - department/line/user_sdwt_prod: 선택된 소속 정보
+    - user_sdwt_prod: 선택된 소속 정보
     - timezone_name: 시간대 이름
 
     반환:
@@ -356,8 +380,7 @@ def submit_affiliation_reconfirm_response(
     # 3) 기존 소속 유지 선택 처리
     # -----------------------------------------------------------------------------
     if not accepted:
-        current_affiliation.requires_reconfirm = False
-        current_affiliation.save(update_fields=["requires_reconfirm"])
+        _clear_reconfirm_requirement(current_affiliation)
         return {
             "status": "kept",
             "userSdwtProd": selectors.get_current_user_sdwt_prod(user=user),
@@ -366,22 +389,17 @@ def submit_affiliation_reconfirm_response(
     # -----------------------------------------------------------------------------
     # 4) 적용 대상 user_sdwt_prod 결정
     # -----------------------------------------------------------------------------
-    snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(
-        knox_id=getattr(user, "knox_id", "") or ""
+    predicted = _get_predicted_user_sdwt_prod(user=user)
+    selected_user_sdwt = _resolve_reconfirm_target_user_sdwt(
+        selected_user_sdwt=user_sdwt_prod,
+        predicted_user_sdwt=predicted,
     )
-    predicted = (snapshot.predicted_user_sdwt_prod or "").strip() if snapshot else ""
-
-    selected_user_sdwt = (user_sdwt_prod or "").strip()
-    if not selected_user_sdwt:
-        selected_user_sdwt = predicted
-
     if not selected_user_sdwt:
         return {"error": "user_sdwt_prod is required"}, 400
 
-    current_user_sdwt = (selectors.get_current_user_sdwt_prod(user=user) or "").strip()
+    current_user_sdwt = _normalize_user_sdwt_prod(selectors.get_current_user_sdwt_prod(user=user))
     if _same_user_sdwt_prod(current_user_sdwt, selected_user_sdwt):
-        current_affiliation.requires_reconfirm = False
-        current_affiliation.save(update_fields=["requires_reconfirm"])
+        _clear_reconfirm_requirement(current_affiliation)
         return {
             "status": "kept",
             "userSdwtProd": current_user_sdwt,
@@ -409,8 +427,7 @@ def submit_affiliation_reconfirm_response(
     )
 
     if status_code in (200, 202):
-        current_affiliation.requires_reconfirm = False
-        current_affiliation.save(update_fields=["requires_reconfirm"])
+        _clear_reconfirm_requirement(current_affiliation)
 
     return response_payload, status_code
 

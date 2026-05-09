@@ -28,7 +28,7 @@ function buildLinePath({ pathname, nextLineId, currentLineId }) {
     return `/${next.join("/")}`
   }
 
-  return `/ESOP_Dashboard/${nextLineId}`
+  return `/ESOP_Dashboard/status/${nextLineId}`
 }
 
 export function useLineSwitcher() {
