@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
@@ -17,6 +16,7 @@ from ...models import DroneSOP, DroneSopChannelDelivery, DroneSopTarget
 from ..shared.delivery_state import ensure_channel_delivery_snapshots_for_rows, mark_channel_delivery_status
 from ..shared.notify_resolver import load_user_sdwt_prod_map_index, resolve_target_user_sdwt_prods
 from ..shared.policy import REASON_TARGET_MISSING, TARGET_MISSING_DELIVERY_TARGET
+from .retry_results import DroneSopRetryChannelResult, build_retry_channel_result
 
 _DELIVERY_CHANNEL_BY_CHANNEL = {
     "jira": DroneSopChannelDelivery.Channels.JIRA,
@@ -124,17 +124,6 @@ def _requeue_target_missing_delivery(
     return "queued"
 
 
-@dataclass(frozen=True)
-class DroneSopRetryChannelResult:
-    """Drone SOP 단건 채널 재시도 요청 결과."""
-
-    channel: str
-    queued: bool = False
-    already_pending: bool = False
-    already_sent: bool = False
-    updated_fields: dict[str, Any] = field(default_factory=dict)
-
-
 def retry_drone_sop_channel(
     *,
     sop_id: int,
@@ -192,24 +181,8 @@ def retry_drone_sop_channel(
             channel=delivery_channel,
             failed_deliveries=failed_deliveries,
         )
-        if target_missing_result == "queued":
-            return DroneSopRetryChannelResult(
-                channel=normalized_channel,
-                queued=True,
-                updated_fields={},
-            )
-        if target_missing_result == "pending":
-            return DroneSopRetryChannelResult(
-                channel=normalized_channel,
-                already_pending=True,
-                updated_fields={},
-            )
-        if target_missing_result == "success":
-            return DroneSopRetryChannelResult(
-                channel=normalized_channel,
-                already_sent=True,
-                updated_fields={},
-            )
+        if target_missing_result is not None:
+            return build_retry_channel_result(channel=normalized_channel, state=target_missing_result)
 
         failed_delivery_ids = [int(delivery.id) for delivery in failed_deliveries if delivery.id]
         pending_exists = DroneSopChannelDelivery.objects.filter(
@@ -228,31 +201,15 @@ def retry_drone_sop_channel(
                 delivery_ids=[int(delivery_id) for delivery_id in failed_delivery_ids],
                 status=DroneSopChannelDelivery.Statuses.PENDING,
             )
-            return DroneSopRetryChannelResult(
-                channel=normalized_channel,
-                queued=True,
-                updated_fields={},
-            )
+            return build_retry_channel_result(channel=normalized_channel, state="queued")
 
         if pending_exists:
-            return DroneSopRetryChannelResult(
-                channel=normalized_channel,
-                already_pending=True,
-                updated_fields={},
-            )
+            return build_retry_channel_result(channel=normalized_channel, state="pending")
 
         if success_exists:
-            return DroneSopRetryChannelResult(
-                channel=normalized_channel,
-                already_sent=True,
-                updated_fields={},
-            )
+            return build_retry_channel_result(channel=normalized_channel, state="success")
 
-        return DroneSopRetryChannelResult(
-            channel=normalized_channel,
-            already_pending=True,
-            updated_fields={},
-        )
+        return build_retry_channel_result(channel=normalized_channel, state="pending")
 
 
 __all__ = ["DroneSopRetryChannelResult", "retry_drone_sop_channel"]
