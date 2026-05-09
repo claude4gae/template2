@@ -13,14 +13,11 @@ from django.db import transaction
 
 from ... import selectors
 from ...models import DroneSopUserSdwtChannel
-from .normalization import (
-    UNSET as _UNSET,
-    normalize_optional_template_key as _normalize_optional_template_key,
-    normalize_optional_text as _normalize_optional_text,
-    normalize_target_source as _normalize_target_source,
-    same_text as _same_text,
-    validate_optional_chatroom_id as _validate_optional_chatroom_id,
-    validate_optional_str as _validate_optional_str,
+from .normalization import UNSET as _UNSET, same_text as _same_text
+from .user_sdwt_upsert import (
+    apply_user_sdwt_channel_field_updates,
+    normalize_user_sdwt_channel_target,
+    normalize_user_sdwt_channel_upsert_fields,
 )
 
 
@@ -75,54 +72,28 @@ def upsert_drone_sop_user_sdwt_channel(
     # -----------------------------------------------------------------------------
     # 1) 입력 검증
     # -----------------------------------------------------------------------------
-    if not isinstance(target_user_sdwt_prod, str) or not target_user_sdwt_prod.strip():
-        raise ValueError("target_user_sdwt_prod is required")
-    if (
-        line_id is _UNSET
-        and source is _UNSET
-        and jira_key is _UNSET
-        and chatroom_id is _UNSET
-        and jira_template_key is _UNSET
-        and mail_template_key is _UNSET
-        and messenger_template_key is _UNSET
-        and jira_enabled is _UNSET
-        and messenger_enabled is _UNSET
-        and mail_enabled is _UNSET
-        and needtosend_comment_last_at is _UNSET
-        and needtosend_ignore_sample_type is _UNSET
-        and needtosend_enabled is _UNSET
-    ):
+    normalized_target = normalize_user_sdwt_channel_target(target_user_sdwt_prod)
+    fields = normalize_user_sdwt_channel_upsert_fields(
+        line_id=line_id,
+        source=source,
+        jira_key=jira_key,
+        chatroom_id=chatroom_id,
+        jira_template_key=jira_template_key,
+        mail_template_key=mail_template_key,
+        messenger_template_key=messenger_template_key,
+        jira_enabled=jira_enabled,
+        messenger_enabled=messenger_enabled,
+        mail_enabled=mail_enabled,
+        needtosend_comment_last_at=needtosend_comment_last_at,
+        needtosend_ignore_sample_type=needtosend_ignore_sample_type,
+        needtosend_enabled=needtosend_enabled,
+    )
+    if not fields.has_any_field():
         raise ValueError("at least one field is required")
-
-    _validate_optional_str(jira_key, "jira_key")
-    _validate_optional_chatroom_id(chatroom_id)
-    _validate_optional_str(jira_template_key, "jira_template_key")
-    _validate_optional_str(mail_template_key, "mail_template_key")
-    _validate_optional_str(messenger_template_key, "messenger_template_key")
-    _validate_optional_str(needtosend_comment_last_at, "needtosend_comment_last_at")
-    normalized_line_id = _normalize_optional_text(line_id) if line_id is not _UNSET else _UNSET
-    normalized_source = _normalize_target_source(source)
-    if jira_enabled is not _UNSET and not isinstance(jira_enabled, bool):
-        raise ValueError("jira_enabled must be bool")
-    if messenger_enabled is not _UNSET and not isinstance(messenger_enabled, bool):
-        raise ValueError("messenger_enabled must be bool")
-    if mail_enabled is not _UNSET and not isinstance(mail_enabled, bool):
-        raise ValueError("mail_enabled must be bool")
-    if needtosend_ignore_sample_type is not _UNSET and not isinstance(needtosend_ignore_sample_type, bool):
-        raise ValueError("needtosend_ignore_sample_type must be bool")
-    if needtosend_enabled is not _UNSET and not isinstance(needtosend_enabled, bool):
-        raise ValueError("needtosend_enabled must be bool")
-
-    normalized_jira_template_key = _normalize_optional_template_key(jira_template_key)
-    normalized_mail_template_key = _normalize_optional_template_key(mail_template_key)
-    normalized_messenger_template_key = _normalize_optional_template_key(messenger_template_key)
-    normalized_needtosend_comment_last_at = _normalize_optional_template_key(needtosend_comment_last_at)
-
-    normalized_target = target_user_sdwt_prod.strip()
     if (
-        normalized_line_id is not _UNSET
-        and normalized_line_id
-        and not selectors.line_id_exists(line_id=normalized_line_id)
+        fields.line_id is not _UNSET
+        and fields.line_id
+        and not selectors.line_id_exists(line_id=fields.line_id)
     ):
         raise ValueError("line_id must be an existing line")
 
@@ -138,83 +109,32 @@ def upsert_drone_sop_user_sdwt_channel(
         )
         created = channel is None
         if channel is None:
-            if normalized_line_id is _UNSET:
+            if fields.line_id is _UNSET:
                 raise ValueError("line_id is required for new target")
             channel = DroneSopUserSdwtChannel(target_user_sdwt_prod=normalized_target)
         update_fields: list[str] = []
 
-        if normalized_line_id is not _UNSET:
-            if not normalized_line_id and created:
+        if fields.line_id is not _UNSET:
+            if not fields.line_id and created:
                 raise ValueError("line_id is required for new target")
-            if normalized_line_id:
-                if channel.line_id and not _same_text(channel.line_id, normalized_line_id):
+            if fields.line_id:
+                if channel.line_id and not _same_text(channel.line_id, fields.line_id):
                     raise ValueError("targetUserSdwtProd already belongs to another line")
-                if channel.line_id != normalized_line_id:
-                    channel.line_id = normalized_line_id
+                if channel.line_id != fields.line_id:
+                    channel.line_id = fields.line_id
                     update_fields.append("line_id")
-        if normalized_source is not _UNSET and (created or not channel.source) and channel.source != normalized_source:
-            channel.source = normalized_source
+        if fields.source is not _UNSET and (created or not channel.source) and channel.source != fields.source:
+            channel.source = fields.source
             update_fields.append("source")
         if created and getattr(actor, "is_authenticated", False):
             channel.created_by = actor
             update_fields.append("created_by")
 
-        if jira_key is not _UNSET and channel.jira_key != jira_key:
-            channel.jira_key = jira_key
-            update_fields.append("jira_key")
-        if chatroom_id is not _UNSET:
-            if channel.chatroom_id != chatroom_id:
-                channel.chatroom_id = chatroom_id
-                update_fields.append("chatroom_id")
-        if (
-            normalized_jira_template_key is not _UNSET
-            and channel.jira_template_key != normalized_jira_template_key
-        ):
-            channel.jira_template_key = normalized_jira_template_key
-            update_fields.append("jira_template_key")
-        if (
-            normalized_mail_template_key is not _UNSET
-            and channel.mail_template_key != normalized_mail_template_key
-        ):
-            channel.mail_template_key = normalized_mail_template_key
-            update_fields.append("mail_template_key")
-        resolved_messenger_template_key = normalized_messenger_template_key
-        if (
-            resolved_messenger_template_key is _UNSET
-            and normalized_jira_template_key is not _UNSET
-            and not channel.messenger_template_key
-        ):
-            resolved_messenger_template_key = normalized_jira_template_key
-        if (
-            resolved_messenger_template_key is not _UNSET
-            and channel.messenger_template_key != resolved_messenger_template_key
-        ):
-            channel.messenger_template_key = resolved_messenger_template_key
-            update_fields.append("messenger_template_key")
-        if jira_enabled is not _UNSET and channel.jira_enabled != jira_enabled:
-            channel.jira_enabled = jira_enabled
-            update_fields.append("jira_enabled")
-        if messenger_enabled is not _UNSET and channel.messenger_enabled != messenger_enabled:
-            channel.messenger_enabled = messenger_enabled
-            update_fields.append("messenger_enabled")
-        if mail_enabled is not _UNSET and channel.mail_enabled != mail_enabled:
-            channel.mail_enabled = mail_enabled
-            update_fields.append("mail_enabled")
-        if (
-            normalized_needtosend_comment_last_at is not _UNSET
-            and channel.needtosend_comment_last_at != normalized_needtosend_comment_last_at
-        ):
-            channel.needtosend_comment_last_at = normalized_needtosend_comment_last_at
-            update_fields.append("needtosend_comment_last_at")
-        if (
-            needtosend_ignore_sample_type is not _UNSET
-            and channel.needtosend_ignore_sample_type != needtosend_ignore_sample_type
-        ):
-            channel.needtosend_ignore_sample_type = needtosend_ignore_sample_type
-            update_fields.append("needtosend_ignore_sample_type")
-        if needtosend_enabled is not _UNSET and channel.needtosend_enabled != needtosend_enabled:
-            channel.needtosend_enabled = needtosend_enabled
-            update_fields.append("needtosend_enabled")
+        apply_user_sdwt_channel_field_updates(
+            channel=channel,
+            fields=fields,
+            update_fields=update_fields,
+        )
         if not channel.is_active:
             channel.is_active = True
             update_fields.append("is_active")
