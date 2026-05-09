@@ -18,6 +18,11 @@ from .table_delivery import (
     append_delivery_columns as _append_delivery_columns,
     attach_delivery_rows as _attach_delivery_rows,
 )
+from .table_normalization import (
+    build_update_assignments as _build_update_assignments,
+    normalize_update_items as _normalize_update_items,
+    resolve_recent_hours_range as _resolve_recent_hours_range,
+)
 
 
 class TableNotFoundError(LookupError):
@@ -41,24 +46,8 @@ class TableUpdateResult:
     updated_row: dict[str, Any] | None
 
 
-@dataclass(frozen=True)
-class UpdateAssignment:
-    """검증된 업데이트 컬럼과 정규화된 값을 보관합니다."""
-
-    column_name: str
-    value: Any
-
-_ALLOWED_UPDATE_COLUMNS = {"comment", "needtosend", "instant_inform", "status"}
 _ALLOWED_TABLES = {table_schema.DEFAULT_TABLE}
 
-_RECENT_HOURS_MIN = 0
-_RECENT_HOURS_DAY_STEP = 24
-_RECENT_HOURS_DAY_MODE_MIN_DAYS = 2
-_RECENT_HOURS_DAY_MODE_MAX_DAYS = 7
-_RECENT_HOURS_DAY_MODE_THRESHOLD = 24
-_RECENT_HOURS_MAX = _RECENT_HOURS_DAY_MODE_MAX_DAYS * _RECENT_HOURS_DAY_STEP
-_RECENT_HOURS_DEFAULT_START = 8
-_RECENT_HOURS_DEFAULT_END = 0
 _RECENT_FUTURE_TOLERANCE_MINUTES = 5
 
 
@@ -115,72 +104,6 @@ def _fetch_table_record(*, table_name: str, id_column: str, record_id: Any) -> d
         ).format(table=table_name, id_column=id_column),
         params=[record_id],
     )
-
-
-def _snap_recent_hours(value: int) -> int:
-    """recentHours 값을 허용 범위/일 단위 규칙으로 보정합니다."""
-
-    clamped = max(_RECENT_HOURS_MIN, min(value, _RECENT_HOURS_MAX))
-    if clamped <= _RECENT_HOURS_DAY_MODE_THRESHOLD:
-        return clamped
-
-    days = (clamped + _RECENT_HOURS_DAY_STEP - 1) // _RECENT_HOURS_DAY_STEP
-    bounded_days = max(
-        _RECENT_HOURS_DAY_MODE_MIN_DAYS,
-        min(days, _RECENT_HOURS_DAY_MODE_MAX_DAYS),
-    )
-    return bounded_days * _RECENT_HOURS_DAY_STEP
-
-
-def _clamp_recent_hours(value: Any, fallback: int) -> int:
-    """입력값을 recentHours 규칙에 맞게 정수 보정합니다."""
-
-    try:
-        numeric = int(value)
-    except (TypeError, ValueError):
-        numeric = fallback
-    return _snap_recent_hours(numeric)
-
-
-def _resolve_recent_hours_range(params: Mapping[str, Any]) -> tuple[int, int]:
-    """recentHoursStart/End를 해석하고 역전 값을 보정합니다."""
-
-    start = _clamp_recent_hours(params.get("recentHoursStart"), _RECENT_HOURS_DEFAULT_START)
-    end = _clamp_recent_hours(params.get("recentHoursEnd"), _RECENT_HOURS_DEFAULT_END)
-    if start < end:
-        start = end
-    return start, end
-
-
-def _normalize_update_items(*, updates: Mapping[str, Any]) -> list[tuple[str, Any]]:
-    """허용된 컬럼과 null이 아닌 값만 업데이트 후보로 남깁니다."""
-
-    return [
-        (key, value)
-        for key, value in updates.items()
-        if key in _ALLOWED_UPDATE_COLUMNS and value is not None
-    ]
-
-
-def _build_update_assignments(
-    *,
-    column_names: Sequence[str],
-    update_items: Sequence[tuple[str, Any]],
-) -> list[UpdateAssignment]:
-    """실제 DB 컬럼이 존재하는 업데이트 항목만 SQL assignment로 변환합니다."""
-
-    assignments: list[UpdateAssignment] = []
-    for key, value in update_items:
-        column_name = table_schema.find_column(column_names, key)
-        if not column_name:
-            continue
-        assignments.append(
-            UpdateAssignment(
-                column_name=column_name,
-                value=_normalize_update_value(key, value),
-            )
-        )
-    return assignments
 
 
 def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -322,52 +245,6 @@ def update_table_record(*, payload: Mapping[str, Any]) -> TableUpdateResult:
         previous_row=previous_row,
         updated_row=updated_row,
     )
-
-
-def _normalize_update_value(key: str, value: Any) -> Any:
-    """컬럼별 업데이트 값을 정규화합니다."""
-
-    if key == "comment":
-        return "" if value is None else str(value)
-    if key == "needtosend":
-        return _coerce_smallint_flag(value)
-    if key == "instant_inform":
-        return _coerce_smallint_flag(value)
-    if key == "status":
-        return "" if value is None else str(value)
-    return value
-
-
-def _coerce_smallint_flag(value: Any) -> int:
-    """다양한 입력을 0~127 범위 정수로 변환합니다."""
-
-    tiny_min, tiny_max = 0, 127
-
-    def clamp(numeric: int) -> int:
-        return max(tiny_min, min(tiny_max, int(numeric)))
-
-    if isinstance(value, bool):
-        return 1 if value else 0
-    if value is None:
-        return 0
-    if isinstance(value, (int, float)):
-        return clamp(value)
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "t", "y", "yes"}:
-            return 1
-        if normalized in {"0", "false", "f", "n", "no", ""}:
-            return 0
-        try:
-            parsed = int(float(normalized))
-            return clamp(parsed)
-        except (TypeError, ValueError):
-            return 0
-    try:
-        coerced = int(value)
-        return clamp(coerced)
-    except (TypeError, ValueError):
-        return 0
 
 
 __all__ = [
