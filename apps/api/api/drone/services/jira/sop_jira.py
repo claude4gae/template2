@@ -17,7 +17,6 @@ from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
     filter_delivery_ids_for_config_failure,
     mark_channel_delivery_status,
-    normalize_positive_ids,
 )
 from ..shared.policy import (
     REASON_CONFIG_MISSING,
@@ -33,6 +32,12 @@ from .delivery import (
     _single_create_jira_issues,
 )
 from .delivery_preparation import collect_jira_delivery_rows as _collect_jira_delivery_rows
+from .delivery_results import (
+    collect_attempted_delivery_ids as _collect_attempted_delivery_ids,
+    collect_failed_delivery_ids as _collect_failed_delivery_ids,
+    count_updated_sop_rows as _count_updated_sop_rows,
+    normalize_delivery_ids as _normalize_delivery_ids,
+)
 from .instant_inform import DroneSopInstantInformResult, enqueue_drone_sop_jira_instant_inform
 from .status import (
     update_drone_sop_jira_status as _update_drone_sop_jira_status,
@@ -191,11 +196,12 @@ def _run_drone_sop_jira_create_with_rows(
         project_key_by_id=prepared.project_key_by_delivery_id,
         template_key_by_id=prepared.template_key_by_delivery_id,
     )
-    normalized_done_delivery_ids = normalize_positive_ids(done_delivery_ids)
-    attempted_delivery_ids = normalize_positive_ids(
-        [int(row["delivery_id"]) for row in prepared.rows_to_send if isinstance(row.get("delivery_id"), int)]
+    normalized_done_delivery_ids = _normalize_delivery_ids(done_delivery_ids)
+    attempted_delivery_ids = _collect_attempted_delivery_ids(rows=prepared.rows_to_send)
+    failed_delivery_ids = _collect_failed_delivery_ids(
+        attempted_ids=attempted_delivery_ids,
+        done_ids=normalized_done_delivery_ids,
     )
-    failed_delivery_ids = [delivery_id for delivery_id in attempted_delivery_ids if delivery_id not in normalized_done_delivery_ids]
     mark_channel_delivery_status(
         delivery_ids=failed_delivery_ids,
         status=DroneSopChannelDelivery.Statuses.FAILED,
@@ -215,12 +221,9 @@ def _run_drone_sop_jira_create_with_rows(
         key_by_delivery_id=key_by_delivery_id,
         step_by_delivery_id=prepared.step_by_delivery_id,
     )
-    updated_rows = len(
-        {
-            prepared.sop_id_by_delivery_id[delivery_id]
-            for delivery_id in normalized_done_delivery_ids
-            if delivery_id in prepared.sop_id_by_delivery_id
-        }
+    updated_rows = _count_updated_sop_rows(
+        done_delivery_ids=normalized_done_delivery_ids,
+        sop_id_by_delivery_id=prepared.sop_id_by_delivery_id,
     )
     return DroneSopJiraCreateResult(
         candidates=candidate_count,
