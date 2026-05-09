@@ -13,8 +13,11 @@ from typing import Any, Mapping, Sequence
 
 from api.common.services.db import execute, run_query
 
-from .. import selectors
 from . import table_schema
+from .table_delivery import (
+    append_delivery_columns as _append_delivery_columns,
+    attach_delivery_rows as _attach_delivery_rows,
+)
 
 
 class TableNotFoundError(LookupError):
@@ -57,15 +60,6 @@ _RECENT_HOURS_MAX = _RECENT_HOURS_DAY_MODE_MAX_DAYS * _RECENT_HOURS_DAY_STEP
 _RECENT_HOURS_DEFAULT_START = 8
 _RECENT_HOURS_DEFAULT_END = 0
 _RECENT_FUTURE_TOLERANCE_MINUTES = 5
-_DELIVERY_VIRTUAL_COLUMNS = [
-    "delivery_targets",
-    "delivery_status",
-]
-_DELIVERY_COLUMN_BY_CHANNEL = {
-    "jira": "delivery_jira",
-    "messenger": "delivery_messenger",
-    "mail": "delivery_mail",
-}
 
 
 def _raise_if_table_missing(exc: Exception, table_name: str) -> None:
@@ -121,149 +115,6 @@ def _fetch_table_record(*, table_name: str, id_column: str, record_id: Any) -> d
         ).format(table=table_name, id_column=id_column),
         params=[record_id],
     )
-
-
-def _normalize_positive_int(value: Any) -> int | None:
-    """양의 정수 ID 값을 정규화합니다."""
-
-    if isinstance(value, int) and value > 0:
-        return value
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _summarize_delivery_flag(*, delivery_rows: list[dict[str, Any]], channel: str) -> int:
-    """delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
-
-    channel_rows = [row for row in delivery_rows if row.get("channel") == channel]
-    if not channel_rows:
-        return 0
-    statuses = {str(row.get("status") or "").strip().lower() for row in channel_rows}
-    if "failed" in statuses:
-        return -1
-    if "pending" in statuses or "unknown" in statuses:
-        return 0
-    if "success" in statuses:
-        return 1
-    return 0
-
-
-def _summarize_delivery_overall_flag(*, delivery_rows: list[dict[str, Any]]) -> int:
-    """전체 delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
-
-    if not delivery_rows:
-        return 0
-    statuses = {str(row.get("status") or "").strip().lower() for row in delivery_rows}
-    if "failed" in statuses:
-        return -1
-    if "pending" in statuses or "unknown" in statuses:
-        return 0
-    if "success" in statuses:
-        return 1
-    return 0
-
-
-def _latest_success_sent_at(*, delivery_rows: list[dict[str, Any]]) -> datetime | None:
-    """성공 delivery 중 가장 최근 발송 시각을 반환합니다."""
-
-    latest_sent_at: datetime | None = None
-    for delivery in delivery_rows:
-        if delivery.get("status") != "success":
-            continue
-        sent_at = delivery.get("sentAt")
-        if not isinstance(sent_at, datetime):
-            continue
-        if latest_sent_at is None or sent_at > latest_sent_at:
-            latest_sent_at = sent_at
-    return latest_sent_at
-
-
-def _extract_delivery_targets(delivery_rows: list[dict[str, Any]]) -> list[str]:
-    """delivery row에서 중복 없는 target 목록을 추출합니다."""
-
-    targets: list[str] = []
-    seen: set[str] = set()
-    for delivery in delivery_rows:
-        target = delivery.get("targetUserSdwtProd") or delivery.get("target_user_sdwt_prod")
-        if not isinstance(target, str) or not target.strip():
-            continue
-        cleaned = target.strip()
-        lookup = cleaned.casefold()
-        if lookup in seen:
-            continue
-        seen.add(lookup)
-        targets.append(cleaned)
-    return targets
-
-
-def _attach_delivery_summary_columns(*, row: dict[str, Any], delivery_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """테이블 row에 delivery 가상 컬럼 값을 붙입니다."""
-
-    targets = _extract_delivery_targets(delivery_rows)
-    enriched = {
-        **row,
-        "deliveryRows": delivery_rows,
-        "delivery_targets": targets[0] if targets else None,
-        "delivery_status": _summarize_delivery_overall_flag(delivery_rows=delivery_rows),
-    }
-    for channel, column in _DELIVERY_COLUMN_BY_CHANNEL.items():
-        enriched[column] = _summarize_delivery_flag(delivery_rows=delivery_rows, channel=channel)
-
-    jira_success = next(
-        (
-            delivery
-            for delivery in delivery_rows
-            if delivery.get("channel") == "jira" and delivery.get("status") == "success"
-        ),
-        None,
-    )
-    if jira_success:
-        enriched["jira_key"] = jira_success.get("externalKey")
-        enriched["inform_step"] = jira_success.get("sentStep")
-    enriched["informed_at"] = _latest_success_sent_at(delivery_rows=delivery_rows)
-    return enriched
-
-
-def _attach_delivery_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """테이블 row에 target/channel delivery 메타를 붙입니다."""
-
-    if not rows:
-        return rows
-
-    sop_ids = [
-        sop_id
-        for row in rows
-        if isinstance(row, dict) and (sop_id := _normalize_positive_int(row.get("id"))) is not None
-    ]
-    delivery_rows_by_sop_id = selectors.list_drone_sop_channel_delivery_rows_by_sop_ids(sop_ids=sop_ids)
-    enriched_rows: list[dict[str, Any]] = []
-    for row in rows:
-        sop_id = _normalize_positive_int(row.get("id")) if isinstance(row, dict) else None
-        delivery_rows = delivery_rows_by_sop_id.get(sop_id or 0, [])
-        enriched_rows.append(_attach_delivery_summary_columns(row=row, delivery_rows=delivery_rows))
-    return enriched_rows
-
-
-def _append_delivery_columns(column_names: list[str]) -> list[str]:
-    """DB 컬럼 목록에 delivery 가상 컬럼을 추가합니다."""
-
-    response_columns = list(column_names)
-    for summary_column in ("informed_at", "jira_key"):
-        if summary_column not in response_columns:
-            response_columns.append(summary_column)
-    insert_index = len(response_columns)
-    for anchor in ("sdwt_prod", "user_sdwt_prod", "line_id"):
-        if anchor in response_columns:
-            insert_index = response_columns.index(anchor) + 1
-            break
-    for column in reversed(_DELIVERY_VIRTUAL_COLUMNS):
-        if column in response_columns:
-            continue
-        response_columns.insert(insert_index, column)
-    return response_columns
 
 
 def _snap_recent_hours(value: int) -> int:
