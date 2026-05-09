@@ -1,4 +1,4 @@
-# common/services/request_helpers.py
+# 공용 요청/응답 헬퍼
 """Django 웹 요청/응답 관련 헬퍼 함수 모음."""
 from __future__ import annotations
 
@@ -12,15 +12,35 @@ from django.http import HttpRequest, JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
 
 
+def _load_json_bytes(body: bytes, *, encoding: str = "utf-8") -> tuple[bool, Any]:
+    """바이트 요청/응답 본문을 JSON 값으로 파싱합니다."""
+
+    try:
+        decoded = body.decode(encoding)
+    except (LookupError, UnicodeDecodeError):
+        return False, None
+
+    try:
+        return True, json.loads(decoded)
+    except json.JSONDecodeError:
+        return False, None
+
+
+def _get_authorization_header(request: HttpRequest) -> str:
+    """요청에서 Authorization 헤더 값을 안전하게 문자열로 반환합니다."""
+
+    auth_header = (
+        request.headers.get("Authorization")
+        or request.META.get("HTTP_AUTHORIZATION")
+        or ""
+    )
+    return auth_header if isinstance(auth_header, str) else ""
+
+
 def parse_json_body(request: HttpRequest) -> Optional[Dict[str, Any]]:
     """요청 바디(JSON)를 파싱해 딕셔너리로 반환합니다."""
-    try:
-        body = request.body.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
+    parsed, data = _load_json_bytes(request.body)
+    if not parsed:
         return None
     return data if isinstance(data, dict) else None
 
@@ -88,27 +108,31 @@ def extract_first_error_message(detail: Any, default: str = "Invalid request") -
 
 def extract_bearer_token(request: HttpRequest) -> str:
     """Authorization 헤더에서 토큰 문자열을 추출합니다."""
-    auth_header = request.headers.get("Authorization") or request.META.get("HTTP_AUTHORIZATION") or ""
-    if not isinstance(auth_header, str):
-        return ""
-    normalized = auth_header.strip()
+    normalized = _get_authorization_header(request).strip()
     if normalized.lower().startswith("bearer "):
         return normalized[7:].strip()
     return normalized
 
 
-def ensure_airflow_token(request: HttpRequest, *, require_bearer: bool = False) -> JsonResponse | None:
+def ensure_airflow_token(
+    request: HttpRequest, *, require_bearer: bool = False
+) -> JsonResponse | None:
     """AIRFLOW_TRIGGER_TOKEN을 검증하고 실패 시 JsonResponse를 반환합니다."""
     expected = (
-        getattr(settings, "AIRFLOW_TRIGGER_TOKEN", "") or os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
+        getattr(settings, "AIRFLOW_TRIGGER_TOKEN", "")
+        or os.getenv("AIRFLOW_TRIGGER_TOKEN")
+        or ""
     ).strip()
     if not expected:
-        return JsonResponse({"error": "AIRFLOW_TRIGGER_TOKEN not configured"}, status=500)
+        return JsonResponse(
+            {"error": "AIRFLOW_TRIGGER_TOKEN not configured"},
+            status=500,
+        )
 
     if require_bearer:
-        auth_header = request.headers.get("Authorization") or request.META.get("HTTP_AUTHORIZATION") or ""
-        if isinstance(auth_header, str) and auth_header.strip().lower().startswith("bearer "):
-            provided = auth_header.strip()[7:].strip()
+        normalized = _get_authorization_header(request).strip()
+        if normalized.lower().startswith("bearer "):
+            provided = normalized[7:].strip()
         else:
             provided = ""
     else:

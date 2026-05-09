@@ -19,6 +19,12 @@ from django.db import connection  # Django의 DB 연결 객체 (커서 획득용
 from django.db.backends.utils import CursorWrapper
 
 
+def _normalize_params(params: Optional[Sequence[object]]) -> Sequence[object]:
+    """DB 커서에 전달할 파라미터 기본값을 일관되게 정규화합니다."""
+
+    return params or []
+
+
 def _dictfetchall(cursor) -> List[dict]:
     """커서의 결과 행을 딕셔너리 리스트로 변환합니다.
 
@@ -77,7 +83,7 @@ def run_query(sql: str, params: Optional[Sequence[object]] = None) -> List[dict]
     - 없음(쿼리 실패 시 상위 예외가 전파됨)
     """
     with get_cursor() as cursor:
-        cursor.execute(sql, params or [])
+        cursor.execute(sql, _normalize_params(params))
         return _dictfetchall(cursor)
 
 
@@ -101,7 +107,7 @@ def execute(sql: str, params: Optional[Sequence[object]] = None) -> tuple[int, O
         # -----------------------------------------------------------------------------
         # 1) 쿼리 실행
         # -----------------------------------------------------------------------------
-        cursor.execute(sql, params or [])
+        cursor.execute(sql, _normalize_params(params))
         lastrowid = None
 
         # -----------------------------------------------------------------------------

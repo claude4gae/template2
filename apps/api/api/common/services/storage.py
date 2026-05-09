@@ -24,6 +24,20 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 _MINIO_CLIENT: Any | None = None
 _BUCKET_READY = False
+_MISSING_BUCKET_ERROR_CODES = {"404", "NoSuchBucket"}
+_MISSING_OBJECT_ERROR_CODES = {"404", "NoSuchBucket", "NoSuchKey"}
+
+
+def _client_error_code(exc: ClientError) -> str:
+    """botocore ClientError에서 에러 코드를 안전하게 추출합니다."""
+
+    return str(exc.response.get("Error", {}).get("Code", ""))
+
+
+def _is_client_error_code(exc: ClientError, codes: set[str]) -> bool:
+    """ClientError가 지정된 S3/MinIO 에러 코드에 해당하는지 확인합니다."""
+
+    return _client_error_code(exc) in codes
 
 
 def _build_minio_client() -> Any:
@@ -115,8 +129,7 @@ def ensure_minio_bucket() -> str:
         _BUCKET_READY = True
         return bucket
     except ClientError as exc:
-        error_code = str(exc.response.get("Error", {}).get("Code", ""))
-        if error_code not in {"404", "NoSuchBucket"}:
+        if not _is_client_error_code(exc, _MISSING_BUCKET_ERROR_CODES):
             raise
 
     # -----------------------------------------------------------------------------
@@ -189,8 +202,7 @@ def download_bytes(*, object_key: str) -> bytes | None:
     try:
         response = client.get_object(Bucket=bucket, Key=object_key)
     except ClientError as exc:
-        error_code = str(exc.response.get("Error", {}).get("Code", ""))
-        if error_code in {"404", "NoSuchKey", "NoSuchBucket"}:
+        if _is_client_error_code(exc, _MISSING_OBJECT_ERROR_CODES):
             return None
         raise
 
@@ -231,8 +243,7 @@ def delete_object(*, object_key: str) -> None:
     try:
         client.delete_object(Bucket=bucket, Key=object_key)
     except ClientError as exc:
-        error_code = str(exc.response.get("Error", {}).get("Code", ""))
-        if error_code in {"404", "NoSuchKey", "NoSuchBucket"}:
+        if _is_client_error_code(exc, _MISSING_OBJECT_ERROR_CODES):
             return
         raise
 

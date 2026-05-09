@@ -116,6 +116,12 @@ def _normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/") + "/"
 
 
+def _build_url(base_url: str, path: str) -> str:
+    """Knox API base URL과 상대 경로를 안전하게 결합합니다."""
+
+    return f"{_normalize_base_url(base_url)}{path.lstrip('/')}"
+
+
 def _build_headers(config: KnoxMessengerConfig) -> dict[str, str]:
     return {
         "accept": "*/*",
@@ -130,20 +136,48 @@ def _split_key_iv(key_hex: str) -> tuple[bytes, bytes]:
     return keyplusiv[:32], keyplusiv[32:48]
 
 
-def _register_device(config: KnoxMessengerConfig) -> dict[str, str]:
-    if not config.is_ready():
-        raise KnoxMessengerError("KNOX 설정 누락 (base_url/authorization/system_id)")
-
-    base_url = _normalize_base_url(config.base_url)
-    headers = _build_headers(config)
+def _get_knox(
+    config: KnoxMessengerConfig,
+    headers: dict[str, str],
+    path: str,
+) -> requests.Response:
+    """Knox GET 요청 공통 옵션(timeout/verify/header)을 적용합니다."""
 
     response = requests.get(
-        f"{base_url}contact/api/v2.0/device/o1/reg",
+        _build_url(config.base_url, path),
         headers=headers,
         verify=False,
         timeout=config.timeout_seconds,
     )
     response.raise_for_status()
+    return response
+
+
+def _post_knox_json(
+    config: KnoxMessengerConfig,
+    headers: dict[str, str],
+    path: str,
+    payload: dict[str, Any],
+) -> requests.Response:
+    """Knox JSON POST 요청 공통 옵션(timeout/verify/header)을 적용합니다."""
+
+    response = requests.post(
+        _build_url(config.base_url, path),
+        headers=headers,
+        data=json.dumps(payload),
+        verify=False,
+        timeout=config.timeout_seconds,
+    )
+    response.raise_for_status()
+    return response
+
+
+def _register_device(config: KnoxMessengerConfig) -> dict[str, str]:
+    if not config.is_ready():
+        raise KnoxMessengerError("KNOX 설정 누락 (base_url/authorization/system_id)")
+
+    headers = _build_headers(config)
+    response = _get_knox(config, headers, "contact/api/v2.0/device/o1/reg")
 
     device_id = response.json()["deviceServerID"]
     headers["x-device-id"] = str(device_id)
@@ -151,16 +185,10 @@ def _register_device(config: KnoxMessengerConfig) -> dict[str, str]:
     return headers
 
 
-def _fetch_key_iv(config: KnoxMessengerConfig, headers: dict[str, str]) -> tuple[bytes, bytes]:
-    base_url = _normalize_base_url(config.base_url)
-
-    response = requests.get(
-        f"{base_url}msgctx/api/v2.0/key/getkeys",
-        headers=headers,
-        verify=False,
-        timeout=config.timeout_seconds,
-    )
-    response.raise_for_status()
+def _fetch_key_iv(
+    config: KnoxMessengerConfig, headers: dict[str, str]
+) -> tuple[bytes, bytes]:
+    response = _get_knox(config, headers, "msgctx/api/v2.0/key/getkeys")
     return _split_key_iv(response.json()["key"])
 
 
@@ -205,18 +233,14 @@ def search_user_ids_by_single_ids(
 
     resolved = config or KnoxMessengerConfig.from_env()
     headers = _register_device(resolved)
-    base_url = _normalize_base_url(resolved.base_url)
 
     payload = create_request_parameters(single_ids)
-    request_url = f"{base_url}contact/api/v2.0/profile/o1/search/loginid"
-    response = requests.post(
-        request_url,
-        headers=headers,
-        data=json.dumps(payload),
-        verify=False,
-        timeout=resolved.timeout_seconds,
+    response = _post_knox_json(
+        resolved,
+        headers,
+        "contact/api/v2.0/profile/o1/search/loginid",
+        payload,
     )
-    response.raise_for_status()
     return response.json()["userSearchResult"]["searchResultList"]
 
 

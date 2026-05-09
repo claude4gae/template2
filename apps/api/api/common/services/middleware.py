@@ -1,14 +1,14 @@
 # =============================================================================
 # 모듈 설명: 활동 로그 기록/knox_id 검증 미들웨어를 제공합니다.
 # - 주요 클래스: ActivityLoggingMiddleware, KnoxIdRequiredMiddleware
-# - 불변 조건: ActivityLog 모델이 존재하며 request.user가 인증 객체일 수 있습니다.
+# - 불변 조건: 활동 로그 저장은 activity 서비스 파사드를 통해 수행합니다.
 # =============================================================================
 
 """활동 로그 기록과 knox_id 검증을 담당하는 공용 미들웨어 모음.
 
 - 주요 대상: ActivityLoggingMiddleware, KnoxIdRequiredMiddleware
 - 주요 엔드포인트/클래스: ActivityLoggingMiddleware, KnoxIdRequiredMiddleware
-- 가정/불변 조건: activity.ActivityLog 모델이 존재하며 request.user가 인증 객체일 수 있음
+- 가정/불변 조건: 활동 로그 저장은 activity 서비스 파사드를 통해 수행됨
 """
 from __future__ import annotations
 
@@ -17,9 +17,10 @@ import logging
 from datetime import date, datetime
 from typing import Any, Dict, Iterable, Mapping, Optional
 
-from django.apps import apps as django_apps
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.deprecation import MiddlewareMixin  # Django 미들웨어 호환성 클래스
+
+from .request_helpers import _load_json_bytes
 
 # 현재 파일의 로거(logger) 설정
 logger = logging.getLogger(__name__)
@@ -174,22 +175,22 @@ class ActivityLoggingMiddleware(MiddlewareMixin):
                     metadata["error"] = status_text
 
         # -----------------------------------------------------------------------------
-        # 5) ActivityLog 행 생성
+        # 5) activity 서비스 파사드를 통한 로그 생성
         # -----------------------------------------------------------------------------
-        activity_log_model = django_apps.get_model("activity", "ActivityLog")
-        activity_log_model.objects.create(
-            user=user,  # 인증된 사용자 또는 None
-            # 뷰 이름 (URLconf에 name이 지정된 경우 자동 추적)
+        from api.activity import services as activity_services
+
+        activity_services.record_activity_log(
+            user=user,
             action=context.get("summary")
             or (
                 request.resolver_match.view_name
                 if getattr(request, "resolver_match", None)
                 else ""
             ),
-            path=path,  # 요청 경로 (예: /api/v1/line-dashboard/tables)
-            method=getattr(request, "method", "GET"),  # 요청 HTTP 메서드
-            status_code=getattr(response, "status_code", 200),  # 응답 상태 코드
-            metadata=metadata,  # 부가 정보 (쿼리, IP 등)
+            path=path,
+            method=getattr(request, "method", "GET"),
+            status_code=getattr(response, "status_code", 200),
+            metadata=metadata,
         )
 
     def _extract_request_payload(self, request: HttpRequest) -> Optional[Any]:
@@ -225,16 +226,18 @@ class ActivityLoggingMiddleware(MiddlewareMixin):
         # -----------------------------------------------------------------------------
         # 3) JSON 파싱 시도
         # -----------------------------------------------------------------------------
+        encoding = request.encoding or "utf-8"
+        parsed, payload = _load_json_bytes(body, encoding=encoding)
+        if parsed:
+            return payload
+
+        # -----------------------------------------------------------------------------
+        # 4) 텍스트 폴백 처리
+        # -----------------------------------------------------------------------------
         try:
-            return json.loads(body.decode(request.encoding or "utf-8"))
+            return body.decode(encoding, errors="replace")
         except Exception:
-            # -----------------------------------------------------------------------------
-            # 4) 텍스트 폴백 처리
-            # -----------------------------------------------------------------------------
-            try:
-                return body.decode(request.encoding or "utf-8", errors="replace")
-            except Exception:
-                return None
+            return None
 
     def _extract_response_payload(self, response: HttpResponse) -> Optional[Any]:
         """응답 본문을 JSON으로 파싱합니다.
@@ -275,10 +278,8 @@ class ActivityLoggingMiddleware(MiddlewareMixin):
         # -----------------------------------------------------------------------------
         # 4) JSON 파싱
         # -----------------------------------------------------------------------------
-        try:
-            return json.loads(content.decode(response.charset or "utf-8"))
-        except Exception:
-            return None
+        parsed, payload = _load_json_bytes(content, encoding=response.charset or "utf-8")
+        return payload if parsed else None
 
     def _compute_diff(
         self, before: Optional[Any], after: Optional[Any]
