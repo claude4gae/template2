@@ -35,6 +35,83 @@ from .models import (
 )
 
 
+def _normalize_text(value: Any) -> str | None:
+    """문자열 값을 공백 제거 기준으로 정규화합니다."""
+
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_text_list(values: Iterable[Any]) -> list[str]:
+    """문자열 iterable에서 빈 값을 제거한 정규화 목록을 반환합니다."""
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = _normalize_text(value)
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_positive_int_set(values: Iterable[Any], *, allow_cast: bool = False) -> set[int]:
+    """양의 정수 ID 집합을 중복 없이 정규화합니다."""
+
+    normalized: set[int] = set()
+    for value in values:
+        if allow_cast:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+        elif isinstance(value, int):
+            parsed = value
+        else:
+            continue
+        if parsed > 0:
+            normalized.add(parsed)
+    return normalized
+
+
+def _list_active_user_contact_values_by_user_sdwt_prod(
+    *,
+    user_sdwt_prod: str,
+    contact_field: str,
+) -> list[str]:
+    """소속에 연결된 활성 사용자 연락처 값을 중복 없이 조회합니다."""
+
+    if contact_field not in {"email", "knox_id"}:
+        raise ValueError("contact_field must be email or knox_id")
+
+    normalized_user_sdwt_prod = _normalize_text(user_sdwt_prod)
+    if not normalized_user_sdwt_prod:
+        return []
+
+    User = get_user_model()
+    rows = (
+        User.objects.filter(
+            current_affiliation__affiliation__user_sdwt_prod__iexact=normalized_user_sdwt_prod,
+            is_active=True,
+        )
+        .exclude(**{f"{contact_field}__isnull": True})
+        .exclude(**{f"{contact_field}__exact": ""})
+        .values_list(contact_field, flat=True)
+        .order_by(contact_field)
+        .distinct()
+    )
+
+    normalized_values: list[str] = []
+    seen: set[str] = set()
+    for value in rows:
+        cleaned = _normalize_text(value)
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized_values.append(cleaned)
+    return normalized_values
+
+
 def get_current_affiliation_record(*, user: Any) -> UserCurrentAffiliation | None:
     """사용자의 현재 앱 소속 행을 조회합니다.
 
@@ -107,14 +184,7 @@ def get_current_affiliation_values_by_user_ids(*, user_ids: Iterable[int]) -> di
     - 없음
     """
 
-    normalized_ids: set[int] = set()
-    for user_id in user_ids:
-        try:
-            value = int(user_id)
-        except (TypeError, ValueError):
-            continue
-        if value > 0:
-            normalized_ids.add(value)
+    normalized_ids = _normalize_positive_int_set(user_ids, allow_cast=True)
     if not normalized_ids:
         return {}
 
@@ -268,15 +338,11 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+    normalized = _normalize_text(user_sdwt_prod)
+    if not normalized:
         return False
-    # -----------------------------------------------------------------------------
-    # 2) 존재 여부 조회
-    # -----------------------------------------------------------------------------
-    return Affiliation.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod.strip()).exists()
+
+    return Affiliation.objects.filter(user_sdwt_prod__iexact=normalized).exists()
 
 
 def list_active_user_emails_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
@@ -295,38 +361,10 @@ def list_active_user_emails_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[st
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
-        return []
-
-    # -----------------------------------------------------------------------------
-    # 2) 활성 사용자 이메일 조회
-    # -----------------------------------------------------------------------------
-    User = get_user_model()
-    rows = (
-        User.objects.filter(
-            current_affiliation__affiliation__user_sdwt_prod__iexact=user_sdwt_prod.strip(),
-            is_active=True,
-        )
-        .exclude(email__isnull=True)
-        .exclude(email__exact="")
-        .values_list("email", flat=True)
-        .order_by("email")
-        .distinct()
+    return _list_active_user_contact_values_by_user_sdwt_prod(
+        user_sdwt_prod=user_sdwt_prod,
+        contact_field="email",
     )
-    normalized_emails: list[str] = []
-    seen: set[str] = set()
-    for email in rows:
-        if not isinstance(email, str):
-            continue
-        cleaned = email.strip()
-        if not cleaned or cleaned in seen:
-            continue
-        seen.add(cleaned)
-        normalized_emails.append(cleaned)
-    return normalized_emails
 
 
 def list_active_user_knox_ids_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
@@ -345,38 +383,10 @@ def list_active_user_knox_ids_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
-        return []
-
-    # -----------------------------------------------------------------------------
-    # 2) 활성 사용자 knox_id 조회
-    # -----------------------------------------------------------------------------
-    User = get_user_model()
-    rows = (
-        User.objects.filter(
-            current_affiliation__affiliation__user_sdwt_prod__iexact=user_sdwt_prod.strip(),
-            is_active=True,
-        )
-        .exclude(knox_id__isnull=True)
-        .exclude(knox_id__exact="")
-        .values_list("knox_id", flat=True)
-        .order_by("knox_id")
-        .distinct()
+    return _list_active_user_contact_values_by_user_sdwt_prod(
+        user_sdwt_prod=user_sdwt_prod,
+        contact_field="knox_id",
     )
-    normalized_knox_ids: list[str] = []
-    seen: set[str] = set()
-    for knox_id in rows:
-        if not isinstance(knox_id, str):
-            continue
-        cleaned = knox_id.strip()
-        if not cleaned or cleaned in seen:
-            continue
-        seen.add(cleaned)
-        normalized_knox_ids.append(cleaned)
-    return normalized_knox_ids
 
 
 def list_active_user_ids_by_ids(*, user_ids: Iterable[int]) -> set[int]:
@@ -395,20 +405,10 @@ def list_active_user_ids_by_ids(*, user_ids: Iterable[int]) -> set[int]:
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 양의 정수 id만 중복 제거
-    # -----------------------------------------------------------------------------
-    normalized_ids = {
-        int(user_id)
-        for user_id in user_ids
-        if isinstance(user_id, int) and user_id > 0
-    }
+    normalized_ids = _normalize_positive_int_set(user_ids)
     if not normalized_ids:
         return set()
 
-    # -----------------------------------------------------------------------------
-    # 2) 활성 사용자 id 조회
-    # -----------------------------------------------------------------------------
     User = get_user_model()
     return set(
         User.objects.filter(id__in=normalized_ids, is_active=True).values_list("id", flat=True)
@@ -432,22 +432,12 @@ def list_active_user_ids_with_contact_by_ids(*, user_ids: Iterable[int], contact
     - ValueError: 지원하지 않는 연락처 필드일 때
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 연락처 필드와 id 입력값 검증
-    # -----------------------------------------------------------------------------
     if contact_field not in {"email", "knox_id"}:
         raise ValueError("contact_field must be email or knox_id")
-    normalized_ids = {
-        int(user_id)
-        for user_id in user_ids
-        if isinstance(user_id, int) and user_id > 0
-    }
+    normalized_ids = _normalize_positive_int_set(user_ids)
     if not normalized_ids:
         return set()
 
-    # -----------------------------------------------------------------------------
-    # 2) 연락처가 있는 활성 사용자 id 조회
-    # -----------------------------------------------------------------------------
     User = get_user_model()
     rows = (
         User.objects.filter(id__in=normalized_ids, is_active=True)
@@ -526,9 +516,9 @@ def list_active_user_pool(
     # 1) 기본 사용자 queryset 구성
     # -----------------------------------------------------------------------------
     safe_limit = None if limit is None else max(1, min(int(limit or 50), 500))
-    normalized_search = search.strip() if isinstance(search, str) else ""
-    normalized_user_sdwt = user_sdwt_prod.strip() if isinstance(user_sdwt_prod, str) else ""
-    normalized_contact_field = contact_field.strip() if isinstance(contact_field, str) else ""
+    normalized_search = _normalize_text(search) or ""
+    normalized_user_sdwt = _normalize_text(user_sdwt_prod) or ""
+    normalized_contact_field = _normalize_text(contact_field) or ""
 
     User = get_user_model()
     queryset = User.objects.filter(is_active=True).select_related(
@@ -821,20 +811,15 @@ def get_user_by_knox_id(*, knox_id: str) -> Any | None:
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(knox_id, str) or not knox_id.strip():
+    normalized_knox_id = _normalize_text(knox_id)
+    if not normalized_knox_id:
         return None
 
     UserModel = get_user_model()
     if not hasattr(UserModel, "knox_id"):
         return None
 
-    # -----------------------------------------------------------------------------
-    # 2) 사용자 조회
-    # -----------------------------------------------------------------------------
-    return UserModel.objects.filter(knox_id=knox_id.strip()).first()
+    return UserModel.objects.filter(knox_id=normalized_knox_id).first()
 
 
 def get_users_by_knox_ids(*, knox_ids: list[str]) -> dict[str, Any]:
@@ -853,10 +838,7 @@ def get_users_by_knox_ids(*, knox_ids: list[str]) -> dict[str, Any]:
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    normalized_ids = [value.strip() for value in knox_ids if isinstance(value, str) and value.strip()]
+    normalized_ids = _normalize_text_list(knox_ids)
     if not normalized_ids:
         return {}
 
@@ -864,15 +846,13 @@ def get_users_by_knox_ids(*, knox_ids: list[str]) -> dict[str, Any]:
     if not hasattr(UserModel, "knox_id"):
         return {}
 
-    # -----------------------------------------------------------------------------
-    # 2) 사용자 조회 및 매핑
-    # -----------------------------------------------------------------------------
     users = UserModel.objects.filter(knox_id__in=normalized_ids)
     mapped: dict[str, Any] = {}
     for user in users:
         knox_id = getattr(user, "knox_id", None)
-        if isinstance(knox_id, str) and knox_id.strip():
-            mapped[knox_id.strip()] = user
+        normalized_knox_id = _normalize_text(knox_id)
+        if normalized_knox_id:
+            mapped[normalized_knox_id] = user
     return mapped
 
 
@@ -923,16 +903,11 @@ def get_external_affiliation_snapshot_by_knox_id(
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(knox_id, str) or not knox_id.strip():
+    normalized_knox_id = _normalize_text(knox_id)
+    if not normalized_knox_id:
         return None
 
-    # -----------------------------------------------------------------------------
-    # 2) 스냅샷 조회
-    # -----------------------------------------------------------------------------
-    return ExternalAffiliationSnapshot.objects.filter(knox_id=knox_id.strip()).first()
+    return ExternalAffiliationSnapshot.objects.filter(knox_id=normalized_knox_id).first()
 
 
 def get_external_affiliation_snapshots_by_knox_ids(
@@ -954,16 +929,10 @@ def get_external_affiliation_snapshots_by_knox_ids(
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    normalized_ids = [value.strip() for value in knox_ids if isinstance(value, str) and value.strip()]
+    normalized_ids = _normalize_text_list(knox_ids)
     if not normalized_ids:
         return {}
 
-    # -----------------------------------------------------------------------------
-    # 2) 스냅샷 조회 및 매핑
-    # -----------------------------------------------------------------------------
     return ExternalAffiliationSnapshot.objects.in_bulk(normalized_ids, field_name="knox_id")
 
 
@@ -983,20 +952,14 @@ def get_current_user_sdwt_prod_change(*, user: Any) -> UserSdwtProdChange | None
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 사용자 및 현재 소속 확인
-    # -----------------------------------------------------------------------------
     if not user:
         return None
 
     current_user_sdwt_prod = get_current_user_sdwt_prod(user=user)
-    if not isinstance(current_user_sdwt_prod, str) or not current_user_sdwt_prod.strip():
+    normalized = _normalize_text(current_user_sdwt_prod)
+    if not normalized:
         return None
 
-    # -----------------------------------------------------------------------------
-    # 2) 승인된 변경 이력 조회
-    # -----------------------------------------------------------------------------
-    normalized = current_user_sdwt_prod.strip()
     return (
         UserSdwtProdChange.objects.filter(user=user, to_user_sdwt_prod__iexact=normalized)
         .filter(Q(status=UserSdwtProdChange.Status.APPROVED) | Q(approved=True))
@@ -1057,16 +1020,10 @@ def get_pending_user_sdwt_prod_changes_by_user_ids(*, user_ids: list[int]) -> se
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    normalized = [value for value in user_ids if isinstance(value, int)]
+    normalized = _normalize_positive_int_set(user_ids)
     if not normalized:
         return set()
 
-    # -----------------------------------------------------------------------------
-    # 2) 대기 요청 사용자 id 조회
-    # -----------------------------------------------------------------------------
     rows = (
         UserSdwtProdChange.objects.filter(user_id__in=normalized)
         .filter(
@@ -1248,11 +1205,9 @@ def list_affiliation_change_requests(
             to_user_sdwt_prod_lookup__in=allowed_lookup_keys
         )
 
-    # -----------------------------------------------------------------------------
-    # 3) 상태 필터
-    # -----------------------------------------------------------------------------
-    if isinstance(status, str) and status.strip():
-        normalized_status = status.strip().upper()
+    normalized_status_input = _normalize_text(status)
+    if normalized_status_input:
+        normalized_status = normalized_status_input.upper()
         if normalized_status == UserSdwtProdChange.Status.PENDING:
             qs = qs.filter(
                 Q(status=UserSdwtProdChange.Status.PENDING)
@@ -1274,17 +1229,12 @@ def list_affiliation_change_requests(
         elif normalized_status == UserSdwtProdChange.Status.SUPERSEDED:
             qs = qs.filter(status=UserSdwtProdChange.Status.SUPERSEDED)
 
-    # -----------------------------------------------------------------------------
-    # 4) 소속 필터
-    # -----------------------------------------------------------------------------
-    if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
-        qs = qs.filter(to_user_sdwt_prod__iexact=user_sdwt_prod.strip())
+    normalized_user_sdwt_prod = _normalize_text(user_sdwt_prod)
+    if normalized_user_sdwt_prod:
+        qs = qs.filter(to_user_sdwt_prod__iexact=normalized_user_sdwt_prod)
 
-    # -----------------------------------------------------------------------------
-    # 5) 검색어 필터
-    # -----------------------------------------------------------------------------
-    if isinstance(search, str) and search.strip():
-        keyword = search.strip()
+    keyword = _normalize_text(search)
+    if keyword:
         qs = qs.filter(
             Q(user__username__icontains=keyword)
             | Q(user__email__icontains=keyword)
@@ -1534,20 +1484,17 @@ def get_affiliation_option(
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not department or not line or not user_sdwt_prod:
+    normalized_department = _normalize_text(department)
+    normalized_line = _normalize_text(line)
+    normalized_user_sdwt_prod = _normalize_text(user_sdwt_prod)
+    if not normalized_department or not normalized_line or not normalized_user_sdwt_prod:
         return None
 
-    # -----------------------------------------------------------------------------
-    # 2) 단일 행 조회
-    # -----------------------------------------------------------------------------
     return (
         Affiliation.objects.filter(
-            department=department.strip(),
-            line=line.strip(),
-            user_sdwt_prod__iexact=user_sdwt_prod.strip(),
+            department=normalized_department,
+            line=normalized_line,
+            user_sdwt_prod__iexact=normalized_user_sdwt_prod,
         )
         .order_by("id")
         .first()
@@ -1570,16 +1517,10 @@ def get_affiliation_option_by_user_sdwt_prod(*, user_sdwt_prod: str) -> Affiliat
     - 없음
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 입력 유효성 확인
-    # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+    normalized = _normalize_text(user_sdwt_prod)
+    if not normalized:
         return None
 
-    # -----------------------------------------------------------------------------
-    # 2) 단일 행 여부 확인
-    # -----------------------------------------------------------------------------
-    normalized = user_sdwt_prod.strip()
     rows = list(Affiliation.objects.filter(user_sdwt_prod__iexact=normalized).order_by("id")[:2])
     if len(rows) != 1:
         return None
