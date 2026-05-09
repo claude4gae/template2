@@ -42,11 +42,12 @@ from .jira.sop_jira import (
     enqueue_drone_sop_jira_instant_inform,
     run_drone_sop_jira_create_from_env,
 )
-from .channels.recipients import normalize_recipient_channel, replace_drone_sop_channel_recipients
-from .channels.user_sdwt_channel import (
+from .channels import (
     DroneSopTargetMappingDuplicateError,
     create_drone_sop_target_mapping,
     ensure_drone_sop_notification_target,
+    normalize_recipient_channel,
+    replace_drone_sop_channel_recipients,
     upsert_drone_sop_user_sdwt_channel,
 )
 from .pop3.config import DroneSopPop3Config, DroneSopPop3IngestResult, NeedToSendRule
