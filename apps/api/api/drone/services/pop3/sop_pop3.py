@@ -8,14 +8,9 @@
 from __future__ import annotations
 
 import logging
-import poplib
 from datetime import timedelta
-from email.header import decode_header, make_header
-from email.parser import BytesParser
-from email.policy import default
 from typing import Any, Optional, Sequence
 
-import requests
 from bs4 import BeautifulSoup
 
 from django.db import connection, transaction
@@ -37,6 +32,22 @@ from .config import (
 )
 from .defect_json import serialize_defect_json_entries
 from .defectmap_sidecar import post_defect_png_sidecar_if_needed
+from .dummy_mail import (
+    delete_dummy_mail_messages as _delete_dummy_mail_messages,
+    list_dummy_mail_messages as _list_dummy_mail_messages,
+)
+from .mailbox import (
+    authenticate_pop3_client as _authenticate_pop3_client,
+    close_pop3_client as _close_pop3_client,
+    create_pop3_client as _create_pop3_client,
+    decode_header_value as _decode_header_value,
+    extract_html_from_email as _extract_html_from_email,
+    list_pop3_message_numbers as _list_pop3_message_numbers,
+    mark_pop3_message_for_deletion as _mark_pop3_message_for_deletion,
+    retrieve_pop3_message as _retrieve_pop3_message,
+    rollback_pop3_deletions as _rollback_pop3_deletions,
+    subject_matches as _subject_matches,
+)
 from .utils import sanitize_url
 
 logger = logging.getLogger(__name__)
@@ -218,91 +229,6 @@ def _compute_needtosend_by_target(
     return 0
 
 
-def _extract_html_from_email(msg: Any) -> Optional[str]:
-    """이메일 메시지에서 HTML 본문을 추출합니다.
-
-    인자:
-        msg: email.message 객체.
-
-    반환:
-        HTML 문자열 또는 None.
-
-    부작용:
-        없음. 순수 추출입니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 멀티파트 메시지에서 HTML 파트 탐색
-    # -------------------------------------------------------------------------
-    html = next(
-        (part.get_content() for part in msg.walk() if part.get_content_type() == "text/html"),
-        None,
-    )
-    if html:
-        return html
-    # -------------------------------------------------------------------------
-    # 2) 단일 파트 HTML 처리
-    # -------------------------------------------------------------------------
-    if getattr(msg, "get_content_type", lambda: None)() == "text/html":
-        return msg.get_content()
-    return None
-
-
-def _decode_header_value(raw_value: Any) -> str:
-    """메일 헤더 값을 디코딩합니다.
-
-    인자:
-        raw_value: 헤더 원본 값.
-
-    반환:
-        디코딩된 문자열.
-
-    부작용:
-        없음. 순수 디코딩입니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) None 처리 및 디코딩 시도
-    # -------------------------------------------------------------------------
-    if raw_value is None:
-        return ""
-    try:
-        return str(make_header(decode_header(str(raw_value))))
-    except Exception:
-        return str(raw_value)
-
-
-def _subject_matches(subject: str, include_subjects: Sequence[str]) -> bool:
-    """제목이 허용된 prefix로 시작하는지 확인합니다.
-
-    인자:
-        subject: 메일 제목.
-        include_subjects: 허용 제목 목록.
-
-    반환:
-        포함 여부(boolean).
-
-    부작용:
-        없음. 순수 비교입니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 제목 정규화 및 prefix 매칭
-    # -------------------------------------------------------------------------
-    normalized_subject = subject.strip().lower()
-    if not normalized_subject:
-        return False
-    for prefix in include_subjects:
-        if not isinstance(prefix, str):
-            continue
-        normalized_prefix = prefix.strip().lower()
-        if not normalized_prefix:
-            continue
-        if normalized_subject.startswith(normalized_prefix):
-            return True
-    return False
-
-
 def _build_drone_sop_row(
     *,
     html: str,
@@ -443,66 +369,6 @@ def build_drone_sop_row(
         user_sdwt_map_index=user_sdwt_map_index,
         needtosend_rule_cache=needtosend_rule_cache,
     )
-
-
-def _list_dummy_mail_messages(*, url: str, timeout: int) -> list[dict[str, Any]]:
-    """더미 메일 API에서 메시지 목록을 조회합니다.
-
-    인자:
-        url: 더미 메일 API URL.
-        timeout: 요청 타임아웃(초).
-
-    반환:
-        메시지 dict 리스트.
-
-    부작용:
-        외부 HTTP 요청이 발생합니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 메시지 목록 조회
-    # -------------------------------------------------------------------------
-    resp = requests.get(url, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    messages = data.get("messages")
-    if not isinstance(messages, list):
-        return []
-    # -------------------------------------------------------------------------
-    # 2) dict 필터링 및 정렬
-    # -------------------------------------------------------------------------
-    normalized: list[dict[str, Any]] = []
-    for entry in messages:
-        if isinstance(entry, dict):
-            normalized.append(entry)
-    normalized.sort(key=lambda item: int(item.get("id") or 0))
-    return normalized
-
-
-def _delete_dummy_mail_messages(*, url: str, mail_ids: Sequence[int], timeout: int) -> int:
-    """더미 메일 API에서 메시지를 삭제합니다.
-
-    인자:
-        url: 더미 메일 API URL.
-        mail_ids: 삭제할 메시지 ID 목록.
-        timeout: 요청 타임아웃(초).
-
-    반환:
-        삭제된 메시지 수.
-
-    부작용:
-        외부 HTTP 요청이 발생합니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 메시지 삭제 요청
-    # -------------------------------------------------------------------------
-    deleted = 0
-    for mail_id in mail_ids:
-        resp = requests.delete(f"{url.rstrip('/')}/{mail_id}", timeout=timeout)
-        if resp.status_code in {200, 204}:
-            deleted += 1
-    return deleted
 
 
 def _ensure_snapshots_for_upserted_rows(*, source_by_sop_key: dict[str, dict[str, Any]]) -> None:
@@ -808,22 +674,15 @@ def _run_pop3_mode_ingest(
 ) -> DroneSopPop3IngestResult:
     """실 POP3 기반 수집을 실행합니다."""
 
-    if not config.host or not config.username or not config.password:
-        raise ValueError("POP3 connection info is incomplete (host/username/password required)")
-
-    client_cls = poplib.POP3_SSL if config.use_ssl else poplib.POP3
-    client = client_cls(config.host, config.port, timeout=config.timeout)
+    client = _create_pop3_client(config=config)
     matched = 0
     upserted = 0
     deleted = 0
 
     try:
-        client.user(config.username)
-        client.pass_(config.password)
-        num_msgs = len(client.list()[1])
-        for msg_num in range(1, num_msgs + 1):
-            _, lines, _ = client.retr(msg_num)
-            msg = BytesParser(policy=default).parsebytes(b"\r\n".join(lines))
+        _authenticate_pop3_client(client=client, config=config)
+        for msg_num in _list_pop3_message_numbers(client=client):
+            msg = _retrieve_pop3_message(client=client, msg_num=msg_num)
             subject = _decode_header_value(msg.get("Subject"))
             if not _subject_matches(subject, config.include_subjects):
                 continue
@@ -859,7 +718,7 @@ def _run_pop3_mode_ingest(
                 continue
 
             try:
-                client.dele(msg_num)
+                _mark_pop3_message_for_deletion(client=client, msg_num=msg_num)
                 deleted += 1
             except Exception:
                 logger.exception("Failed to mark POP3 message #%s for deletion", msg_num)
@@ -874,13 +733,13 @@ def _run_pop3_mode_ingest(
     except Exception:
         logger.exception("Drone SOP POP3 ingest failed; rolling back POP3 deletions via rset()")
         try:
-            client.rset()
+            _rollback_pop3_deletions(client=client)
         except Exception:
             logger.debug("POP3 rset failed")
         raise
     finally:
         try:
-            client.quit()
+            _close_pop3_client(client=client)
         except Exception:
             pass
 
