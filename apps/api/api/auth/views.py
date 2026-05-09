@@ -12,11 +12,21 @@
 """
 from __future__ import annotations
 
-from django.http import HttpRequest, HttpResponseRedirect
+from django.conf import settings
+from django.contrib.auth import login, logout
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseRedirect,
+    JsonResponse,
+)
+from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 
 from api.auth import services as auth_services
+from api.auth.services.oidc_validation import append_error_to_target
 from api.common.services import resolve_frontend_target
 
 
@@ -85,7 +95,7 @@ def auth_config(request: HttpRequest):
     - 해당 없음(요청 바디 없음)
     """
 
-    return auth_services.auth_config(request)
+    return JsonResponse(auth_services.auth_config())
 
 
 def auth_login(request: HttpRequest):
@@ -113,7 +123,11 @@ def auth_login(request: HttpRequest):
     - 해당 없음(쿼리 파라미터 target/next만 사용)
     """
 
-    return auth_services.auth_login(request)
+    requested_target = request.GET.get("target") or request.GET.get("next")
+    result = auth_services.auth_login(requested_target=requested_target, request=request)
+    if result.bad_request_message:
+        return HttpResponseBadRequest(result.bad_request_message)
+    return redirect(result.authorize_url)
 
 
 @csrf_exempt
@@ -144,7 +158,26 @@ def auth_callback(request: HttpRequest):
     - 해당 없음(form_post 키를 그대로 사용)
     """
 
-    return auth_services.auth_callback(request)
+    if request.method != "POST":
+        return HttpResponseBadRequest("form_post only")
+
+    id_token = request.POST.get("id_token")
+    state = request.POST.get("state")
+    if not id_token or not state:
+        return HttpResponseBadRequest("missing id_token/state")
+
+    result = auth_services.auth_callback(
+        request=request,
+        raw_id_token=id_token,
+        state=state,
+    )
+    if result.bad_request_message:
+        return HttpResponseBadRequest(result.bad_request_message)
+    if result.error_code:
+        return redirect(append_error_to_target(str(result.target), result.error_code))
+
+    login(request, result.user)
+    return redirect(result.target)
 
 
 def auth_me(request: HttpRequest):
@@ -172,7 +205,10 @@ def auth_me(request: HttpRequest):
     - 해당 없음(요청 바디 없음)
     """
 
-    return auth_services.auth_me(request)
+    if not request.user.is_authenticated:
+        return JsonResponse({"detail": "unauthorized"}, status=401)
+
+    return JsonResponse(auth_services.auth_me(user=request.user))
 
 
 def auth_logout(request: HttpRequest):
@@ -202,7 +238,21 @@ def auth_logout(request: HttpRequest):
     - 해당 없음(요청 바디 없음)
     """
 
-    return auth_services.auth_logout(request)
+    logout_url = auth_services.auth_logout()
+    logout(request)
+
+    def _delete_session_cookie(response: HttpResponse) -> HttpResponse:
+        """세션 쿠키를 삭제한 응답을 반환합니다."""
+
+        response.delete_cookie(settings.SESSION_COOKIE_NAME)
+        return response
+
+    if request.method == "POST":
+        response = JsonResponse({"logoutUrl": logout_url})
+        return _delete_session_cookie(response)
+
+    response = redirect(logout_url)
+    return _delete_session_cookie(response)
 
 
 __all__ = [
