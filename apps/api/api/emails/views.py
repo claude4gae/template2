@@ -10,7 +10,6 @@ import logging
 from typing import Any, List, Optional
 
 from django.conf import settings
-from django.core.paginator import EmptyPage, Paginator
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -18,17 +17,18 @@ from rest_framework.exceptions import NotFound
 from rest_framework.views import APIView
 
 from api.common.services import (
+    UNASSIGNED_USER_SDWT_PROD,
     ensure_airflow_token,
     parse_json_body,
     parse_json_body_or_error_when_present,
 )
 
 from .permissions import (
-    email_is_unassigned,
     extract_bearer_token,
     resolve_access_control,
+    resolve_email_access_denial,
     _resolve_sender_id_from_user,
-    user_can_access_email,
+    user_can_access_mailbox,
     user_can_view_unassigned,
 )
 from .selectors import (
@@ -39,16 +39,14 @@ from .selectors import (
     get_filtered_emails,
     get_sent_emails,
     list_mailbox_members,
-    list_privileged_email_mailboxes,
     user_can_bulk_delete_emails,
 )
-from api.common.services import UNASSIGNED_USER_SDWT_PROD
 
 from .serializers import (
     EmailAssetOcrClaimSerializer,
     EmailAssetOcrUpdateSerializer,
     serialize_email_detail,
-    serialize_email_summary,
+    serialize_email_page,
 )
 from .services import (
     bulk_delete_emails,
@@ -66,6 +64,7 @@ from .services import (
     SENT_MAILBOX_ID,
     update_email_asset_ocr_results,
 )
+from .services.mailbox import list_mailboxes_for_user_access
 
 # =============================================================================
 # 로깅
@@ -122,7 +121,7 @@ def _check_email_access(
     is_privileged: bool,
     accessible: Optional[set[str]],
 ) -> Optional[JsonResponse]:
-    """공통 이메일 접근 검증을 수행하고, 문제 시 JsonResponse를 반환합니다.
+    """공통 이메일 접근 검증 결과를 HTTP 에러 응답으로 변환합니다.
 
     입력:
         요청: Django HttpRequest.
@@ -138,33 +137,27 @@ def _check_email_access(
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 대상 메일 존재 확인
+    # 1) 도메인 권한 판별
     # -----------------------------------------------------------------------------
-    if email is None:
+    denial = resolve_email_access_denial(
+        user=request.user,
+        email=email,
+        is_privileged=is_privileged,
+        accessible=accessible,
+    )
+
+    # -----------------------------------------------------------------------------
+    # 2) HTTP 에러 응답 변환
+    # -----------------------------------------------------------------------------
+    if denial == "not_found":
         return JsonResponse({"error": "Email not found"}, status=404)
-
-    # -----------------------------------------------------------------------------
-    # 2) UNASSIGNED 접근 제한 확인
-    # -----------------------------------------------------------------------------
-    if email_is_unassigned(email) and not user_can_view_unassigned(request.user):
-        if not user_can_access_email(request.user, email, accessible):
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-    # -----------------------------------------------------------------------------
-    # 3) 일반 사용자 권한 범위 확인
-    # -----------------------------------------------------------------------------
-    if not is_privileged:
-        if not accessible or not user_can_access_email(request.user, email, accessible):
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-    # -----------------------------------------------------------------------------
-    # 4) 접근 허용
-    # -----------------------------------------------------------------------------
+    if denial == "forbidden":
+        return JsonResponse({"error": "forbidden"}, status=403)
     return None
 
 
 def _build_email_list_response(qs: Any, page: int, page_size: int) -> JsonResponse:
-    """메일 목록 조회 결과를 페이지네이션 응답으로 구성합니다.
+    """메일 목록 직렬화 결과를 JsonResponse로 감쌉니다.
 
     입력:
         qs: Email QuerySet 또는 iterable.
@@ -175,32 +168,13 @@ def _build_email_list_response(qs: Any, page: int, page_size: int) -> JsonRespon
     부작용:
         없음.
     오류:
-        잘못된 페이지 요청은 마지막 페이지로 보정합니다.
+        없음.
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 페이지네이터 구성 및 페이지 선택
+    # 1) 응답 payload 구성
     # -----------------------------------------------------------------------------
-    paginator = Paginator(qs, page_size)
-    try:
-        page_obj = paginator.page(page)
-    except EmptyPage:
-        page_obj = paginator.page(paginator.num_pages or 1)
-
-    # -----------------------------------------------------------------------------
-    # 2) 응답 payload 구성
-    # -----------------------------------------------------------------------------
-    results = [serialize_email_summary(email) for email in page_obj.object_list]
-
-    return JsonResponse(
-        {
-            "results": results,
-            "page": page_obj.number,
-            "pageSize": page_size,
-            "total": paginator.count,
-            "totalPages": paginator.num_pages,
-        }
-    )
+    return JsonResponse(serialize_email_page(qs, page=page, page_size=page_size))
 
 
 
@@ -255,18 +229,20 @@ class EmailInboxListView(APIView):
             max_page_size=MAX_PAGE_SIZE,
         )
         mailbox_user_sdwt_prod = filters["mailbox_user_sdwt_prod"]
-        can_view_unassigned = user_can_view_unassigned(request.user)
         if mailbox_user_sdwt_prod == SENT_MAILBOX_ID:
             return JsonResponse({"error": "use sent endpoint"}, status=400)
-        if mailbox_user_sdwt_prod == UNASSIGNED_USER_SDWT_PROD and not can_view_unassigned:
+        if not user_can_access_mailbox(
+            user=request.user,
+            mailbox_user_sdwt_prod=mailbox_user_sdwt_prod,
+            is_privileged=is_privileged,
+            accessible=accessible,
+        ):
             return JsonResponse({"error": "forbidden"}, status=403)
-        if mailbox_user_sdwt_prod and not is_privileged:
-            if mailbox_user_sdwt_prod not in accessible:
-                return JsonResponse({"error": "forbidden"}, status=403)
 
         # -----------------------------------------------------------------------------
         # 3) 조회 실행
         # -----------------------------------------------------------------------------
+        can_view_unassigned = user_can_view_unassigned(request.user)
         qs = get_filtered_emails(
             accessible_user_sdwt_prods=accessible,
             is_privileged=is_privileged,
@@ -392,27 +368,16 @@ class EmailMailboxListView(APIView):
             return JsonResponse({"error": "unauthorized"}, status=401)
 
         # -----------------------------------------------------------------------------
-        # 2) 특권 사용자 목록 구성
+        # 2) 메일함 목록 구성
         # -----------------------------------------------------------------------------
-        if is_privileged:
-            results = list_privileged_email_mailboxes()
-            if not user_can_view_unassigned(request.user):
-                results = [
-                    mailbox
-                    for mailbox in results
-                    if mailbox not in {UNASSIGNED_USER_SDWT_PROD, "rp-unclassified"}
-                ]
-            results = [SENT_MAILBOX_ID, *[mailbox for mailbox in results if mailbox != SENT_MAILBOX_ID]]
-            return JsonResponse({"results": results})
-
-        # -----------------------------------------------------------------------------
-        # 3) 일반 사용자 목록 구성
-        # -----------------------------------------------------------------------------
-        if not accessible:
+        if not is_privileged and not accessible:
             return JsonResponse({"error": "forbidden"}, status=403)
 
-        results = sorted(accessible)
-        results = [SENT_MAILBOX_ID, *[mailbox for mailbox in results if mailbox != SENT_MAILBOX_ID]]
+        results = list_mailboxes_for_user_access(
+            user=request.user,
+            is_privileged=is_privileged,
+            accessible_user_sdwt_prods=accessible,
+        )
         return JsonResponse({"results": results})
 
 
@@ -462,11 +427,12 @@ class EmailMailboxMembersView(APIView):
         # -----------------------------------------------------------------------------
         # 3) UNASSIGNED/권한 검증
         # -----------------------------------------------------------------------------
-        can_view_unassigned = user_can_view_unassigned(request.user)
-        if mailbox_user_sdwt_prod == UNASSIGNED_USER_SDWT_PROD and not can_view_unassigned:
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        if not is_privileged and mailbox_user_sdwt_prod not in accessible:
+        if not user_can_access_mailbox(
+            user=request.user,
+            mailbox_user_sdwt_prod=mailbox_user_sdwt_prod,
+            is_privileged=is_privileged,
+            accessible=accessible,
+        ):
             return JsonResponse({"error": "forbidden"}, status=403)
 
         # -----------------------------------------------------------------------------

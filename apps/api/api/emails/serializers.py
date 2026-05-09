@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from django.core.paginator import EmptyPage, Paginator
 from rest_framework import serializers
 
 from .models import EmailAsset
@@ -76,6 +77,42 @@ def serialize_email_detail(email: Any) -> Dict[str, Any]:
     }
 
 
+def serialize_email_page(qs: Any, *, page: int, page_size: int) -> Dict[str, Any]:
+    """Email 목록 QuerySet을 페이지네이션 응답 dict로 직렬화합니다.
+
+    입력:
+        qs: Email QuerySet 또는 iterable.
+        page: 요청 페이지 번호.
+        page_size: 페이지 크기.
+    반환:
+        목록/페이지 정보를 포함한 dict.
+    부작용:
+        QuerySet 평가가 발생할 수 있습니다.
+    오류:
+        잘못된 페이지 요청은 마지막 페이지로 보정합니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 페이지네이터 구성 및 안전한 페이지 선택
+    # -----------------------------------------------------------------------------
+    paginator = Paginator(qs, page_size)
+    try:
+        page_obj = paginator.page(page)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages or 1)
+
+    # -----------------------------------------------------------------------------
+    # 2) 기존 API 응답 shape 유지
+    # -----------------------------------------------------------------------------
+    return {
+        "results": [serialize_email_summary(email) for email in page_obj.object_list],
+        "page": page_obj.number,
+        "pageSize": page_size,
+        "total": paginator.count,
+        "totalPages": paginator.num_pages,
+    }
+
+
 class EmailAssetOcrClaimSerializer(serializers.Serializer):
     """OCR 작업 클레임 요청을 검증합니다."""
 
@@ -109,5 +146,6 @@ __all__ = [
     "EmailAssetOcrUpdateSerializer",
     "EmailAssetOcrUpdateItemSerializer",
     "serialize_email_detail",
+    "serialize_email_page",
     "serialize_email_summary",
 ]

@@ -28,13 +28,9 @@ from ..selectors import (
     list_unassigned_email_ids_for_sender_id,
     user_can_bulk_delete_emails,
 )
+from .constants import SENT_MAILBOX_ID
 from .rag import enqueue_rag_delete, enqueue_rag_index_for_emails
 from .storage import delete_email_objects
-
-# =============================================================================
-# 상수
-# =============================================================================
-SENT_MAILBOX_ID = "__sent__"
 
 
 def _resolve_sender_id_from_user(user: Any) -> str | None:

@@ -17,6 +17,51 @@ from ..selectors import (
     list_privileged_email_mailboxes,
 )
 from ..permissions import user_can_view_unassigned
+from .constants import SENT_MAILBOX_ID
+
+
+def list_mailboxes_for_user_access(
+    *,
+    user: Any,
+    is_privileged: bool,
+    accessible_user_sdwt_prods: set[str],
+    include_sent: bool = True,
+) -> list[str]:
+    """권한 판별 결과를 기준으로 노출할 메일함 목록을 반환합니다.
+
+    입력:
+        user: Django User 또는 유사 객체.
+        is_privileged: 특권 사용자 여부.
+        accessible_user_sdwt_prods: 일반 사용자에게 허용된 메일함 집합.
+        include_sent: 보낸메일함 가상 메일함 포함 여부.
+    반환:
+        노출 가능한 메일함 식별자 리스트.
+    부작용:
+        없음. 조회 전용.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 특권/일반 사용자별 메일함 목록 구성
+    # -----------------------------------------------------------------------------
+    if is_privileged:
+        mailboxes = list_privileged_email_mailboxes()
+        if not user_can_view_unassigned(user):
+            mailboxes = [
+                mailbox
+                for mailbox in mailboxes
+                if mailbox not in {UNASSIGNED_USER_SDWT_PROD, "rp-unclassified"}
+            ]
+    else:
+        mailboxes = sorted(accessible_user_sdwt_prods)
+
+    # -----------------------------------------------------------------------------
+    # 2) 보낸메일함 가상 항목을 기존 순서대로 선두에 배치
+    # -----------------------------------------------------------------------------
+    if not include_sent:
+        return [mailbox for mailbox in mailboxes if mailbox != SENT_MAILBOX_ID]
+    return [SENT_MAILBOX_ID, *[mailbox for mailbox in mailboxes if mailbox != SENT_MAILBOX_ID]]
 
 
 def get_mailbox_access_summary_for_user(*, user: Any) -> list[dict[str, object]]:
@@ -43,16 +88,13 @@ def get_mailbox_access_summary_for_user(*, user: Any) -> list[dict[str, object]]
     # -----------------------------------------------------------------------------
     # 2) 접근 가능한 메일함 목록 구성
     # -----------------------------------------------------------------------------
-    if is_privileged:
-        mailboxes = list_privileged_email_mailboxes()
-        if not user_can_view_unassigned(user):
-            mailboxes = [
-                mailbox
-                for mailbox in mailboxes
-                if mailbox not in {UNASSIGNED_USER_SDWT_PROD, "rp-unclassified"}
-            ]
-    else:
-        mailboxes = sorted(get_accessible_user_sdwt_prods_for_user(user))
+    accessible = get_accessible_user_sdwt_prods_for_user(user) if not is_privileged else set()
+    mailboxes = list_mailboxes_for_user_access(
+        user=user,
+        is_privileged=is_privileged,
+        accessible_user_sdwt_prods=accessible,
+        include_sent=False,
+    )
 
     # -----------------------------------------------------------------------------
     # 3) 메일함별 멤버 요약 구성

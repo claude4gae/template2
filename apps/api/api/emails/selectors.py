@@ -483,6 +483,59 @@ def list_emails_by_ids(*, email_ids: list[int]) -> QuerySet[Email]:
     return Email.objects.filter(id__in=email_ids).order_by("id")
 
 
+def _apply_email_common_filters(
+    queryset: QuerySet[Email],
+    *,
+    search: str,
+    sender: str,
+    recipient: str,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> QuerySet[Email]:
+    """메일 목록 공통 검색/기간 필터를 QuerySet에 적용합니다.
+
+    입력:
+        queryset: 기본 Email QuerySet.
+        search: 자유 검색(제목/본문/발신자/참여자).
+        sender: 발신자 문자열 필터.
+        recipient: 수신자 문자열 필터(To/Cc).
+        date_from: 시작 시각(포함).
+        date_to: 종료 시각(포함).
+    반환:
+        공통 필터가 적용된 QuerySet.
+    부작용:
+        없음. 조회 전용.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 텍스트 검색 필터 적용
+    # -----------------------------------------------------------------------------
+    if search:
+        normalized_participant_search = search.lower()
+        queryset = queryset.filter(
+            Q(subject__icontains=search)
+            | Q(body_text__icontains=search)
+            | Q(sender__icontains=search)
+            | Q(participants_search__contains=normalized_participant_search)
+        )
+    if sender:
+        queryset = queryset.filter(sender__icontains=sender)
+    if recipient:
+        queryset = queryset.filter(participants_search__contains=recipient.lower())
+
+    # -----------------------------------------------------------------------------
+    # 2) 수신 시각 범위 필터 적용
+    # -----------------------------------------------------------------------------
+    if date_from:
+        queryset = queryset.filter(received_at__gte=date_from)
+    if date_to:
+        queryset = queryset.filter(received_at__lte=date_to)
+
+    return queryset
+
+
 def get_filtered_emails(
     *,
     accessible_user_sdwt_prods: set[str],
@@ -532,29 +585,19 @@ def get_filtered_emails(
         queryset = queryset.exclude(_unassigned_mailbox_query())
 
     # -----------------------------------------------------------------------------
-    # 3) 검색/기간 필터 적용
+    # 3) 메일함 및 공통 검색/기간 필터 적용
     # -----------------------------------------------------------------------------
     if mailbox_user_sdwt_prod:
         queryset = queryset.filter(user_sdwt_prod=mailbox_user_sdwt_prod)
 
-    if search:
-        normalized_participant_search = search.lower()
-        queryset = queryset.filter(
-            Q(subject__icontains=search)
-            | Q(body_text__icontains=search)
-            | Q(sender__icontains=search)
-            | Q(participants_search__contains=normalized_participant_search)
-        )
-    if sender:
-        queryset = queryset.filter(sender__icontains=sender)
-    if recipient:
-        queryset = queryset.filter(participants_search__contains=recipient.lower())
-    if date_from:
-        queryset = queryset.filter(received_at__gte=date_from)
-    if date_to:
-        queryset = queryset.filter(received_at__lte=date_to)
-
-    return queryset
+    return _apply_email_common_filters(
+        queryset,
+        search=search,
+        sender=sender,
+        recipient=recipient,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 def get_sent_emails(
@@ -592,26 +635,16 @@ def get_sent_emails(
     queryset = Email.objects.filter(sender_id=sender_id.strip()).order_by("-received_at", "-id")
 
     # -----------------------------------------------------------------------------
-    # 2) 검색/기간 필터 적용
+    # 2) 공통 검색/기간 필터 적용
     # -----------------------------------------------------------------------------
-    if search:
-        normalized_participant_search = search.lower()
-        queryset = queryset.filter(
-            Q(subject__icontains=search)
-            | Q(body_text__icontains=search)
-            | Q(sender__icontains=search)
-            | Q(participants_search__contains=normalized_participant_search)
-        )
-    if sender:
-        queryset = queryset.filter(sender__icontains=sender)
-    if recipient:
-        queryset = queryset.filter(participants_search__contains=recipient.lower())
-    if date_from:
-        queryset = queryset.filter(received_at__gte=date_from)
-    if date_to:
-        queryset = queryset.filter(received_at__lte=date_to)
-
-    return queryset
+    return _apply_email_common_filters(
+        queryset,
+        search=search,
+        sender=sender,
+        recipient=recipient,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 def list_distinct_email_mailboxes() -> list[str]:

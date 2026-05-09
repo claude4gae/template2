@@ -14,13 +14,13 @@ from .constants import (
     EMAIL_RAG_INDEX_STATUS_INDEXED,
     EMAIL_RAG_INDEX_STATUS_PENDING,
     EMAIL_RAG_INDEX_STATUS_SKIPPED,
+    SENT_MAILBOX_ID,
 )
 from .ingest import _parse_message_to_fields, ingest_pop3_mailbox, run_pop3_ingest, run_pop3_ingest_from_env
 from .mail_api import MailSendError, requests, send_knox_mail_api
 from .mailbox import get_mailbox_access_summary_for_user
 from .ocr import claim_email_asset_ocr_tasks, update_email_asset_ocr_results
 from .mutations import (
-    SENT_MAILBOX_ID,
     bulk_delete_emails,
     claim_unassigned_emails_for_user,
     delete_single_email,

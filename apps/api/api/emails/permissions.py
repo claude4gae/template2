@@ -138,6 +138,89 @@ def user_can_access_email(
     return bool(getattr(email, "user_sdwt_prod", None) and email.user_sdwt_prod in accessible)
 
 
+def resolve_email_access_denial(
+    *,
+    user: Any,
+    email: Any,
+    is_privileged: bool,
+    accessible: Optional[Set[str]],
+) -> str | None:
+    """단일 메일 접근 실패 사유를 반환합니다.
+
+    입력:
+        user: Django User 또는 유사 객체.
+        email: Email 인스턴스 또는 None.
+        is_privileged: 특권 사용자 여부.
+        accessible: 접근 가능한 user_sdwt_prod 집합.
+    반환:
+        "not_found", "forbidden" 또는 None(접근 허용).
+    부작용:
+        없음.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 대상 존재 여부 확인
+    # -----------------------------------------------------------------------------
+    if email is None:
+        return "not_found"
+
+    # -----------------------------------------------------------------------------
+    # 2) UNASSIGNED 정책을 기존 순서 그대로 적용
+    # -----------------------------------------------------------------------------
+    if email_is_unassigned(email) and not user_can_view_unassigned(user):
+        if not user_can_access_email(user, email, accessible):
+            return "forbidden"
+
+    # -----------------------------------------------------------------------------
+    # 3) 일반 사용자 접근 범위 확인
+    # -----------------------------------------------------------------------------
+    if not is_privileged:
+        if not accessible or not user_can_access_email(user, email, accessible):
+            return "forbidden"
+
+    return None
+
+
+def user_can_access_mailbox(
+    *,
+    user: Any,
+    mailbox_user_sdwt_prod: str,
+    is_privileged: bool,
+    accessible: Set[str],
+) -> bool:
+    """요청 사용자가 특정 메일함에 접근 가능한지 확인합니다.
+
+    입력:
+        user: Django User 또는 유사 객체.
+        mailbox_user_sdwt_prod: 대상 메일함 식별자.
+        is_privileged: 특권 사용자 여부.
+        accessible: 접근 가능한 user_sdwt_prod 집합.
+    반환:
+        접근 가능하면 True.
+    부작용:
+        없음.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 빈 메일함 필터는 전체 접근 범위 조회를 의미합니다.
+    # -----------------------------------------------------------------------------
+    if not mailbox_user_sdwt_prod:
+        return True
+
+    # -----------------------------------------------------------------------------
+    # 2) UNASSIGNED 접근 정책과 일반 사용자 접근 범위 확인
+    # -----------------------------------------------------------------------------
+    if mailbox_user_sdwt_prod == UNASSIGNED_USER_SDWT_PROD and not user_can_view_unassigned(user):
+        return False
+    if not is_privileged and mailbox_user_sdwt_prod not in accessible:
+        return False
+    return True
+
+
 def resolve_access_control(request: HttpRequest) -> tuple[bool, bool, Set[str]]:
     """공통 권한 처리 결과(인증/특권/접근 범위)를 반환합니다.
 
