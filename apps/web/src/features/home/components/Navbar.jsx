@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation } from "react-router-dom"
-import { BellIcon, SearchIcon } from "lucide-react"
+import { SearchIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -19,11 +19,16 @@ import { useAuth } from "@/lib/auth"
 import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
 import { cn } from "@/lib/utils"
 
-import NotificationDropdown from "./NotificationDropdown"
 import { HomeNavLink } from "./HomeNavLink"
 import ProfileDropdown from "./ProfileDropdown"
 
 const NAV_HIDE_DELAY_MS = 3000
+const NAV_ICON_CLASS_NAME = "size-4"
+const NAV_MENU_LINK_CLASS_NAME = "flex flex-row items-center gap-1.5"
+const NAV_MENU_TRIGGER_CLASS_NAME = "gap-1.5"
+const NAV_MENU_CONTENT_CLASS_NAME =
+  "data-[motion=from-start]:slide-in-from-left-30! data-[motion=to-start]:slide-out-to-left-30! data-[motion=from-end]:slide-in-from-right-30! data-[motion=to-end]:slide-out-to-right-30! absolute z-50 w-auto"
+const NAV_SUB_LINK_CLASS_NAME = "block px-3 py-1.5"
 
 const HomeNavbar = ({ navigationItems }) => {
   const { user } = useAuth()
@@ -96,7 +101,7 @@ const HomeNavbar = ({ navigationItems }) => {
 
   const renderIcon = (Icon) => {
     if (!Icon) return null
-    return <Icon className="size-4" />
+    return <Icon className={NAV_ICON_CLASS_NAME} />
   }
 
   return (
@@ -128,7 +133,7 @@ const HomeNavbar = ({ navigationItems }) => {
                     asChild
                     className={cn(
                       navigationMenuTriggerStyle(),
-                      "flex flex-row items-center gap-1.5",
+                      NAV_MENU_LINK_CLASS_NAME,
                       navItemVisibilityClassName,
                     )}
                   >
@@ -143,11 +148,13 @@ const HomeNavbar = ({ navigationItems }) => {
 
             return (
               <NavigationMenuItem key={navItem.title}>
-                <NavigationMenuTrigger className={cn("gap-1.5", navItemVisibilityClassName)}>
+                <NavigationMenuTrigger
+                  className={cn(NAV_MENU_TRIGGER_CLASS_NAME, navItemVisibilityClassName)}
+                >
                   {renderIcon(Icon)}
                   {navItem.title}
                 </NavigationMenuTrigger>
-                <NavigationMenuContent className="data-[motion=from-start]:slide-in-from-left-30! data-[motion=to-start]:slide-out-to-left-30! data-[motion=from-end]:slide-in-from-right-30! data-[motion=to-end]:slide-out-to-right-30! absolute z-50 w-auto">
+                <NavigationMenuContent className={NAV_MENU_CONTENT_CLASS_NAME}>
                   <ul className="grid w-38 gap-4 p-2">
                     <li>
                       {navItem.items?.map((item) => (
@@ -157,12 +164,12 @@ const HomeNavbar = ({ navigationItems }) => {
                               href={item.href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block px-3 py-1.5"
+                              className={NAV_SUB_LINK_CLASS_NAME}
                             >
                               {item.title}
                             </a>
                           ) : (
-                            <HomeNavLink href={item.href} className="block px-3 py-1.5">
+                            <HomeNavLink href={item.href} className={NAV_SUB_LINK_CLASS_NAME}>
                               {item.title}
                             </HomeNavLink>
                           )}
@@ -183,15 +190,6 @@ const HomeNavbar = ({ navigationItems }) => {
         </Button>
         <ThemeToggle />
         <ThemeColorSelector />
-        {/* 알림 영역 */}
-        {/* <NotificationDropdown
-          trigger={
-            <Button variant="ghost" size="icon" className="relative">
-              <BellIcon />
-              <span className="bg-destructive absolute right-2.5 top-2 size-2 rounded-full" />
-            </Button>
-          }
-        /> */}
         <ProfileDropdown
           trigger={
             <Button variant="ghost" className="h-full p-0">

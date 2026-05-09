@@ -1,8 +1,7 @@
 import HeroSection from "../components/HeroSection"
 import AppIntegrationMarquee from "../components/AppIntegrationMarquee"
-import Team from "../components/Team"
 import { PopularServicesSection } from "../components/PopularSection"
-import { marqueeApps, teamMembers } from "../utils/constants"
+import { marqueeApps } from "../utils/constants"
 
 const DEFAULT_HERO_ACTIONS = [
   { label: "대시보드로 이동", href: "/esop_dashboard" },
@@ -14,7 +13,6 @@ const HomePage = ({ heroActions = DEFAULT_HERO_ACTIONS }) => {
     <>
       <HeroSection actions={heroActions} />
       <PopularServicesSection />
-      {/* <Team teamMembers={teamMembers} /> */}
       <AppIntegrationMarquee apps={marqueeApps} />
     </>
   )

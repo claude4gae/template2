@@ -21,6 +21,9 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 
+const PROFILE_MENU_ITEM_CLASS_NAME = 'px-4 py-2.5 text-base'
+const PROFILE_MENU_ICON_CLASS_NAME = 'text-foreground size-5'
+
 const ProfileDropdown = ({
   trigger,
   defaultOpen,
@@ -59,10 +62,37 @@ const ProfileDropdown = ({
     window.location.assign(buildBackendUrl('/admin/'))
   }
 
+  const handleMenuSelect = (event, action) => {
+    event.preventDefault()
+    action()
+  }
+
+  const renderMenuItem = ({ label, icon: Icon, onSelect }) => (
+    <DropdownMenuItem
+      key={label}
+      className={PROFILE_MENU_ITEM_CLASS_NAME}
+      onSelect={(event) => handleMenuSelect(event, onSelect)}
+    >
+      <Icon className={PROFILE_MENU_ICON_CLASS_NAME} />
+      <span>{label}</span>
+    </DropdownMenuItem>
+  )
+
+  const accountMenuItems = [
+    { label: 'My account', icon: UserIcon, onSelect: handleMyAccount },
+    { label: 'Settings', icon: SettingsIcon, onSelect: handleSettings },
+  ]
+  const teamMenuItems = [
+    { label: 'Manage team', icon: UsersIcon, onSelect: handleManageTeam },
+  ]
+  const adminMenuItems = [
+    { label: 'Admin', icon: ShieldIcon, onSelect: handleAdmin },
+  ]
+
   return (
     <DropdownMenu defaultOpen={defaultOpen}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent className='w-80' align={align || 'end'}>
+      <DropdownMenuContent className='w-80' align={align}>
         <DropdownMenuLabel className='flex items-center gap-4 px-4 py-2.5 font-normal'>
           <div className='relative'>
             <Avatar className='size-10'>
@@ -83,54 +113,20 @@ const ProfileDropdown = ({
         <DropdownMenuSeparator />
 
         <DropdownMenuGroup>
-          <DropdownMenuItem
-            className='px-4 py-2.5 text-base'
-            onSelect={(event) => {
-              event.preventDefault()
-              handleMyAccount()
-            }}>
-            <UserIcon className='text-foreground size-5' />
-            <span>My account</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className='px-4 py-2.5 text-base'
-            onSelect={(event) => {
-              event.preventDefault()
-              handleSettings()
-            }}>
-            <SettingsIcon className='text-foreground size-5' />
-            <span>Settings</span>
-          </DropdownMenuItem>
+          {accountMenuItems.map(renderMenuItem)}
         </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
 
         <DropdownMenuGroup>
-          <DropdownMenuItem
-            className='px-4 py-2.5 text-base'
-            onSelect={(event) => {
-              event.preventDefault()
-              handleManageTeam()
-            }}>
-            <UsersIcon className='text-foreground size-5' />
-            <span>Manage team</span>
-          </DropdownMenuItem>
-
+          {teamMenuItems.map(renderMenuItem)}
         </DropdownMenuGroup>
 
         {user?.is_superuser ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem
-                className='px-4 py-2.5 text-base'
-                onSelect={(event) => {
-                  event.preventDefault()
-                  handleAdmin()
-                }}>
-                <ShieldIcon className='text-foreground size-5' />
-                <span>Admin</span>
-              </DropdownMenuItem>
+              {adminMenuItems.map(renderMenuItem)}
             </DropdownMenuGroup>
           </>
         ) : null}
@@ -139,14 +135,14 @@ const ProfileDropdown = ({
 
         <DropdownMenuItem
           variant='destructive'
-          className='px-4 py-2.5 text-base'
+          className={PROFILE_MENU_ITEM_CLASS_NAME}
           onSelect={handleLogout}>
           <LogOutIcon className='size-5' />
           <span>Logout</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }
 
 export default ProfileDropdown
