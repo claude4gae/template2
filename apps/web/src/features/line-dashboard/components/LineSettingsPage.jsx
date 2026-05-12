@@ -133,7 +133,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const title = isRecipientSettings ? "E-SOP 수신인 설정" : "E-SOP 알림 설정"
   const settingsGridClassName = isRecipientSettings
     ? "grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-3"
-    : "grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(320px,0.8fr)]"
+    : "grid h-full min-h-0 min-w-0 grid-cols-1 gap-3"
   const selectedNotificationTarget = notificationTargets.find(
     (target) => target.targetUserSdwtProd === selectedUserSdwtProd,
   )
@@ -924,6 +924,36 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     [cancelEditing, deleteEntry, editingId],
   )
 
+  const channelSettingsCards = (
+    <>
+      <AlarmChannelSettingsCard
+        selectedUserSdwtProd={selectedUserSdwtProd}
+        jiraKeyDraft={jiraKeyDraft}
+        channelEnabledDraft={channelEnabledDraft}
+        maxJiraKeyLength={MAX_JIRA_KEY_LENGTH}
+        jiraKeyFormError={jiraKeyFormError}
+        jiraKeyError={jiraKeyError}
+        isJiraKeyLoading={isJiraKeyLoading}
+        isSavingJiraKey={isSavingJiraKey}
+        canManage={canManageChannelSettings}
+        onJiraKeyDraftChange={setJiraKeyDraft}
+        onChannelEnabledChange={handleChannelEnabledChange}
+        onSaveJiraKey={handleJiraKeySave}
+      />
+      <NeedToSendCommentRuleCard
+        selectedUserSdwtProd={selectedUserSdwtProd}
+        ruleDraft={needToSendRuleDraft}
+        maxKeywordLength={MAX_NEED_TO_SEND_KEYWORD_LENGTH}
+        formError={needToSendRuleFormError}
+        isLoading={isJiraKeyLoading}
+        isSaving={isSavingNeedToSendRule}
+        canManage={canManageChannelSettings}
+        onDraftChange={handleNeedToSendRuleDraftChange}
+        onSave={handleNeedToSendRuleSave}
+      />
+    </>
+  )
+
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
       <LineSettingsHeader
@@ -969,39 +999,6 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
             />
           )}
 
-          {isNotificationSettings && (
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto,minmax(300px,1fr)] gap-4">
-              <AlarmChannelSettingsCard
-                lineId={lineId}
-                targets={userSdwtValues}
-                selectedUserSdwtProd={selectedUserSdwtProd}
-                jiraKeyDraft={jiraKeyDraft}
-                channelEnabledDraft={channelEnabledDraft}
-                maxJiraKeyLength={MAX_JIRA_KEY_LENGTH}
-                jiraKeyFormError={jiraKeyFormError}
-                jiraKeyError={jiraKeyError}
-                isJiraKeyLoading={isJiraKeyLoading}
-                isSavingJiraKey={isSavingJiraKey}
-                canManage={canManageChannelSettings}
-                onSelectTarget={setSelectedUserSdwtProd}
-                onJiraKeyDraftChange={setJiraKeyDraft}
-                onChannelEnabledChange={handleChannelEnabledChange}
-                onSaveJiraKey={handleJiraKeySave}
-              />
-              <NeedToSendCommentRuleCard
-                selectedUserSdwtProd={selectedUserSdwtProd}
-                ruleDraft={needToSendRuleDraft}
-                maxKeywordLength={MAX_NEED_TO_SEND_KEYWORD_LENGTH}
-                formError={needToSendRuleFormError}
-                isLoading={isJiraKeyLoading}
-                isSaving={isSavingNeedToSendRule}
-                canManage={canManageChannelSettings}
-                onDraftChange={handleNeedToSendRuleDraftChange}
-                onSave={handleNeedToSendRuleSave}
-              />
-            </div>
-          )}
-
           {isRecipientSettings ? (
             <NotificationTargetCard
               lineId={lineId}
@@ -1027,40 +1024,48 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           ) : null}
 
           {isRecipientSettings ? (
-            <RecipientSettingsCards
-              recipientChannels={RECIPIENT_CHANNELS}
-              selectedUserSdwtProd={selectedUserSdwtProd}
-              canManageRecipients={canManageRecipients}
-              currentRecipientDrafts={currentRecipientDrafts}
-              isMessengerRecipientsLoading={isMessengerRecipientsLoading}
-              isMailRecipientsLoading={isMailRecipientsLoading}
-              onRemoveUser={handleRemoveRecipientUser}
-              onSave={handleRecipientsSave}
-              onOpenPicker={handleOpenRecipientPicker}
-              isRecipientDraftCurrent={isRecipientDraftCurrent}
-              isSavingRecipients={isSavingRecipients}
-              recipientActionErrors={recipientActionErrors}
-              messengerRecipientsError={messengerRecipientsError}
-              mailRecipientsError={mailRecipientsError}
-              recipientPickerOpen={recipientPickerOpen}
-              recipientPickerTabs={recipientPickerTabs}
-              accountUserSdwtValues={accountUserSdwtValues}
-              recipientSourceSdwt={recipientSourceSdwt}
-              onPickerOpenChange={handleRecipientPickerOpenChange}
-              onPickerTabChange={handleRecipientPickerTabChange}
-              onSourceSdwtChange={handleRecipientSourceSdwtChange}
-              isLoadingSourceUsers={isLoadingSourceUsers}
-              onLoadSourceRecipients={handleLoadSourceRecipients}
-              recipientSearches={recipientSearches}
-              onRecipientSearchChange={handleRecipientSearchChange}
-              isSearchingRecipients={isSearchingRecipients}
-              onRecipientSearch={handleRecipientSearch}
-              recipientPickerResults={recipientPickerResults}
-              recipientPickerSelectedIds={recipientPickerSelectedIds}
-              onRecipientPickerUserToggle={handleRecipientPickerUserToggle}
-              onRecipientPickerAllToggle={handleRecipientPickerAllToggle}
-              onApplyRecipientPicker={handleApplyRecipientPicker}
-            />
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-4">
+              {channelSettingsCards}
+            </div>
+          ) : null}
+
+          {isRecipientSettings ? (
+            <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
+              <RecipientSettingsCards
+                recipientChannels={RECIPIENT_CHANNELS}
+                selectedUserSdwtProd={selectedUserSdwtProd}
+                canManageRecipients={canManageRecipients}
+                currentRecipientDrafts={currentRecipientDrafts}
+                isMessengerRecipientsLoading={isMessengerRecipientsLoading}
+                isMailRecipientsLoading={isMailRecipientsLoading}
+                onRemoveUser={handleRemoveRecipientUser}
+                onSave={handleRecipientsSave}
+                onOpenPicker={handleOpenRecipientPicker}
+                isRecipientDraftCurrent={isRecipientDraftCurrent}
+                isSavingRecipients={isSavingRecipients}
+                recipientActionErrors={recipientActionErrors}
+                messengerRecipientsError={messengerRecipientsError}
+                mailRecipientsError={mailRecipientsError}
+                recipientPickerOpen={recipientPickerOpen}
+                recipientPickerTabs={recipientPickerTabs}
+                accountUserSdwtValues={accountUserSdwtValues}
+                recipientSourceSdwt={recipientSourceSdwt}
+                onPickerOpenChange={handleRecipientPickerOpenChange}
+                onPickerTabChange={handleRecipientPickerTabChange}
+                onSourceSdwtChange={handleRecipientSourceSdwtChange}
+                isLoadingSourceUsers={isLoadingSourceUsers}
+                onLoadSourceRecipients={handleLoadSourceRecipients}
+                recipientSearches={recipientSearches}
+                onRecipientSearchChange={handleRecipientSearchChange}
+                isSearchingRecipients={isSearchingRecipients}
+                onRecipientSearch={handleRecipientSearch}
+                recipientPickerResults={recipientPickerResults}
+                recipientPickerSelectedIds={recipientPickerSelectedIds}
+                onRecipientPickerUserToggle={handleRecipientPickerUserToggle}
+                onRecipientPickerAllToggle={handleRecipientPickerAllToggle}
+                onApplyRecipientPicker={handleApplyRecipientPicker}
+              />
+            </div>
           ) : null}
         </div>
       </div>

@@ -63,11 +63,15 @@ export function normalizeDeliveryRows(rowOriginal) {
       if (!target || !channel) return null
       return {
         id: row?.id,
+        dispatchId: row?.dispatchId ?? row?.dispatch_id ?? null,
         target,
         channel,
+        dispatchStatus: normalizeTextValue(row?.dispatchStatus ?? row?.dispatch_status),
+        commentOverride: normalizeTextValue(row?.commentOverride ?? row?.comment_override),
         status: normalizeTextValue(row?.status)?.toLowerCase() ?? "unknown",
         reason: normalizeTextValue(row?.reason),
         externalKey: normalizeTextValue(row?.externalKey ?? row?.external_key),
+        sentComment: normalizeTextValue(row?.sentComment ?? row?.sent_comment),
         sentAt: row?.sentAt ?? row?.sent_at ?? null,
         updatedAt: row?.updatedAt ?? row?.updated_at ?? null,
       }

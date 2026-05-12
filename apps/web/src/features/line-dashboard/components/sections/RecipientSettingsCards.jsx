@@ -45,19 +45,21 @@ export function RecipientSettingsCards({
 
     return (
       <React.Fragment key={config.channel}>
-        <RecipientChannelCard
-          config={config}
-          selectedUserSdwtProd={selectedUserSdwtProd}
-          canManageRecipients={canManageRecipients}
-          recipients={currentRecipientDrafts[config.channel] || []}
-          isLoadingRecipients={isMessenger ? isMessengerRecipientsLoading : isMailRecipientsLoading}
-          onRemoveUser={onRemoveUser}
-          onSave={onSave}
-          onOpenPicker={onOpenPicker}
-          isDraftCurrent={Boolean(isRecipientDraftCurrent[config.channel])}
-          isSavingRecipients={Boolean(isSavingRecipients[config.channel])}
-          error={channelError}
-        />
+        <div className="min-h-0 min-w-0 flex-1">
+          <RecipientChannelCard
+            config={config}
+            selectedUserSdwtProd={selectedUserSdwtProd}
+            canManageRecipients={canManageRecipients}
+            recipients={currentRecipientDrafts[config.channel] || []}
+            isLoadingRecipients={isMessenger ? isMessengerRecipientsLoading : isMailRecipientsLoading}
+            onRemoveUser={onRemoveUser}
+            onSave={onSave}
+            onOpenPicker={onOpenPicker}
+            isDraftCurrent={Boolean(isRecipientDraftCurrent[config.channel])}
+            isSavingRecipients={Boolean(isSavingRecipients[config.channel])}
+            error={channelError}
+          />
+        </div>
         <RecipientPickerDialog
           open={Boolean(recipientPickerOpen[config.channel])}
           activeTab={recipientPickerTabs[config.channel] || "group"}

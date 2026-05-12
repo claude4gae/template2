@@ -61,7 +61,7 @@ def extract_sop_id(row: dict[str, Any]) -> int | None:
 
 
 def extract_row_targets(row: dict[str, Any]) -> list[str]:
-    """row에 포함된 target snapshot 값을 단일 target 목록으로 정규화합니다."""
+    """row에 포함된 target snapshot 값을 target 목록으로 정규화합니다."""
 
     raw_targets = row.get("target_user_sdwt_prods")
     candidates: list[Any]
@@ -79,7 +79,6 @@ def extract_row_targets(row: dict[str, Any]) -> list[str]:
             continue
         seen.add(target_key)
         targets.append(target)
-        break
     return targets
 
 

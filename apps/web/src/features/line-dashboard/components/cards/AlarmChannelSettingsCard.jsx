@@ -4,13 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 const ALARM_CHANNELS = [
   { key: "jira", label: "Jira", description: "Jira 이슈 생성 채널" },
@@ -19,8 +12,6 @@ const ALARM_CHANNELS = [
 ]
 
 export function AlarmChannelSettingsCard({
-  lineId,
-  targets = [],
   selectedUserSdwtProd,
   jiraKeyDraft,
   channelEnabledDraft,
@@ -30,16 +21,14 @@ export function AlarmChannelSettingsCard({
   isJiraKeyLoading,
   isSavingJiraKey,
   canManage,
-  onSelectTarget,
   onJiraKeyDraftChange,
   onChannelEnabledChange,
   onSaveJiraKey,
 }) {
-  const hasTargets = targets.length > 0
   const showPermissionNotice = Boolean(selectedUserSdwtProd && !canManage)
 
   return (
-    <div className="flex min-w-0 shrink-0 flex-col gap-3 overflow-hidden rounded-lg border bg-background p-3 shadow-sm">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-lg border bg-background p-3 shadow-sm">
       <div className="shrink-0 space-y-1">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-medium">알람 채널 설정</h2>
@@ -64,25 +53,13 @@ export function AlarmChannelSettingsCard({
       <form className="flex min-h-0 flex-1 flex-col gap-2" onSubmit={onSaveJiraKey}>
         <div className="grid shrink-0 gap-2">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground" htmlFor="alarm-channel-target-select">
-              알림 Target
-            </label>
-            <Select
-              value={selectedUserSdwtProd || undefined}
-              onValueChange={onSelectTarget}
-              disabled={!lineId || !hasTargets || isJiraKeyLoading}
+            <p className="text-xs font-medium text-muted-foreground">선택된 알림 Target</p>
+            <div
+              className="min-h-9 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium"
+              aria-live="polite"
             >
-              <SelectTrigger id="alarm-channel-target-select" className="w-full">
-                <SelectValue placeholder="알림 Target 선택" />
-              </SelectTrigger>
-              <SelectContent className="max-h-64">
-                {targets.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {selectedUserSdwtProd || "알림 Target을 선택하세요."}
+            </div>
           </div>
 
           <div className="space-y-1">

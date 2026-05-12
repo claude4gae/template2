@@ -15,6 +15,7 @@ from django.utils import timezone
 from ...models import DroneSopDelivery
 from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
+    get_or_prepare_channel_delivery,
     mark_channel_delivery_status,
     normalize_positive_ids,
 )
@@ -101,6 +102,15 @@ def update_drone_sop_jira_status(
         rows=list(candidate_rows),
         channels=[DroneSopDelivery.Channels.JIRA],
     )
+    for row in candidate_rows:
+        sop_id = row.get("id")
+        target = _normalize_string_value(row.get("target_user_sdwt_prod")) or "__TARGET_MISSING__"
+        if isinstance(sop_id, int):
+            get_or_prepare_channel_delivery(
+                sop_id=sop_id,
+                target_user_sdwt_prod=target,
+                channel=DroneSopDelivery.Channels.JIRA,
+            )
     pending_delivery_rows = list(
         DroneSopDelivery.objects.filter(
             sop_id__in=normalized_done_ids,
@@ -110,27 +120,6 @@ def update_drone_sop_jira_status(
         .order_by("sop_id", "id")
         .values("id", "sop_id")
     )
-    if not pending_delivery_rows:
-        DroneSopDelivery.objects.bulk_create(
-            [
-                DroneSopDelivery(
-                    sop_id=sop_id,
-                    channel=DroneSopDelivery.Channels.JIRA,
-                    status=DroneSopDelivery.Statuses.PENDING,
-                )
-                for sop_id in normalized_done_ids
-            ],
-            ignore_conflicts=True,
-        )
-        pending_delivery_rows = list(
-            DroneSopDelivery.objects.filter(
-                sop_id__in=normalized_done_ids,
-                channel=DroneSopDelivery.Channels.JIRA,
-            )
-            .exclude(status=DroneSopDelivery.Statuses.SUCCESS)
-            .order_by("sop_id", "id")
-            .values("id", "sop_id")
-        )
     if not pending_delivery_rows:
         return 0
 
@@ -143,11 +132,13 @@ def update_drone_sop_jira_status(
         and isinstance(key_by_id.get(int(row["sop_id"])), str)
     }
     step_by_sop_id: dict[int, str] = {}
+    sent_comment_by_sop_id: dict[int, Any] = {}
     for row in candidate_rows:
         sop_id = int(row["id"])
         step = _normalize_string_value(row.get("metro_current_step"))
         if step:
             step_by_sop_id[sop_id] = step
+        sent_comment_by_sop_id[sop_id] = row.get("comment")
     step_by_delivery_id = {
         int(row["id"]): step_by_sop_id[int(row["sop_id"])]
         for row in pending_delivery_rows
@@ -155,11 +146,19 @@ def update_drone_sop_jira_status(
         and isinstance(row.get("sop_id"), int)
         and int(row["sop_id"]) in step_by_sop_id
     }
+    sent_comment_by_delivery_id = {
+        int(row["id"]): sent_comment_by_sop_id[int(row["sop_id"])]
+        for row in pending_delivery_rows
+        if isinstance(row.get("id"), int)
+        and isinstance(row.get("sop_id"), int)
+        and int(row["sop_id"]) in sent_comment_by_sop_id
+    }
 
     mark_channel_delivery_status(
         delivery_ids=delivery_ids,
         status=DroneSopDelivery.Statuses.SUCCESS,
         external_key_by_id=key_by_delivery_id,
+        sent_comment_by_id=sent_comment_by_delivery_id,
     )
     return update_drone_sop_jira_summary(
         delivery_ids=delivery_ids,

@@ -76,6 +76,8 @@ def delete_inactive_target_rows(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
+
     dependencies = [
         ("drone", "0015_remove_recipient_is_active"),
     ]

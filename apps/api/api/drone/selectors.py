@@ -505,11 +505,15 @@ def list_drone_sop_channel_delivery_rows_by_sop_ids(*, sop_ids: Sequence[int]) -
         .values(
             "id",
             "sop_id",
-            "sop__target_user_sdwt_prod",
+            "dispatch_id",
+            "dispatch__target_code_snapshot",
+            "dispatch__status",
+            "dispatch__comment_override",
             "channel",
             "status",
             "reason",
             "external_key",
+            "sent_comment",
             "sent_step",
             "sent_at",
             "updated_at",
@@ -520,27 +524,26 @@ def list_drone_sop_channel_delivery_rows_by_sop_ids(*, sop_ids: Sequence[int]) -
     # 3) API row에 붙이기 쉬운 camelCase payload로 변환
     # -----------------------------------------------------------------------------
     grouped: dict[int, list[dict[str, Any]]] = {}
-    primary_target_by_sop_id: dict[int, str] = {}
     for row in rows:
         sop_id = row.get("sop_id")
         if not isinstance(sop_id, int):
             continue
-        target_user_sdwt_prod = display_delivery_target(row.get("sop__target_user_sdwt_prod"))
+        target_user_sdwt_prod = display_delivery_target(row.get("dispatch__target_code_snapshot"))
         if not target_user_sdwt_prod:
-            continue
-        target_key = target_user_sdwt_prod.casefold()
-        primary_target_key = primary_target_by_sop_id.setdefault(sop_id, target_key)
-        if target_key != primary_target_key:
             continue
         grouped.setdefault(sop_id, []).append(
             {
                 "id": row.get("id"),
                 "sopId": sop_id,
+                "dispatchId": row.get("dispatch_id"),
                 "targetUserSdwtProd": target_user_sdwt_prod,
+                "dispatchStatus": row.get("dispatch__status"),
+                "commentOverride": row.get("dispatch__comment_override"),
                 "channel": row.get("channel"),
                 "status": row.get("status"),
                 "reason": row.get("reason"),
                 "externalKey": row.get("external_key"),
+                "sentComment": row.get("sent_comment"),
                 "sentStep": row.get("sent_step"),
                 "sentAt": row.get("sent_at"),
                 "updatedAt": row.get("updated_at"),

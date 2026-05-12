@@ -97,7 +97,7 @@ function TargetMappingSummary({
             disabled={isSelectDisabled}
           >
             <SelectTrigger className="h-8 min-w-0 text-[11px]">
-              <SelectValue placeholder="분임조원 선택" />
+              <SelectValue placeholder="엔지니어 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
               {userOptionValues.map((value) => (
@@ -116,7 +116,7 @@ function TargetMappingSummary({
             disabled={isSelectDisabled}
           >
             <SelectTrigger className="h-8 min-w-0 text-[11px]">
-              <SelectValue placeholder="분임조설비 선택" />
+              <SelectValue placeholder="설비소속 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
               {sdwtOptionValues.map((value) => (
@@ -157,11 +157,11 @@ function TargetMappingSummary({
               <Badge
                 key={`${sdwtProd}-${userSdwtProd}`}
                 variant="outline"
-                className="max-w-full gap-1 font-mono text-[10px]"
+                className="max-w-full gap-1 font-mono text-sm"
               >
-                <span className="truncate">{userSdwtProd} 분임조원</span>
+                <span className="truncate">{userSdwtProd}</span>
                 <span className="text-muted-foreground">-&gt;</span>
-                <span className="truncate">{sdwtProd} 분임조설비</span>
+                <span className="truncate">{sdwtProd}설비</span>
               </Badge>
             )
           })

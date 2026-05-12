@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from django.db import transaction
-
 from ...models import DroneSopDelivery
+from .delivery_state import get_or_prepare_channel_delivery, mark_channel_delivery_status
 
 # 채널 상태 사유 코드
 REASON_DISABLED_BY_POLICY = "disabled_by_policy"
@@ -77,30 +76,24 @@ def mark_missing_target_as_failed(
         return
 
     # -----------------------------------------------------------------------------
-    # 2) 누락 대상 delivery row 생성/갱신
+    # 2) 누락 대상 dispatch/delivery row 생성 후 실패 상태로 갱신
     # -----------------------------------------------------------------------------
-    with transaction.atomic():
-        delivery_rows = [
-            DroneSopDelivery(
+    delivery_ids: list[int] = []
+    for sop_id in sop_ids:
+        if not isinstance(sop_id, int) or sop_id <= 0:
+            continue
+        for channel in normalized_channels:
+            delivery = get_or_prepare_channel_delivery(
                 sop_id=sop_id,
+                target_user_sdwt_prod="__TARGET_MISSING__",
                 channel=channel,
-                status=DroneSopDelivery.Statuses.FAILED,
-                reason=REASON_TARGET_MISSING,
             )
-            for sop_id in sop_ids
-            if isinstance(sop_id, int) and sop_id > 0
-            for channel in normalized_channels
-        ]
-        if not delivery_rows:
-            return
-        DroneSopDelivery.objects.bulk_create(delivery_rows, ignore_conflicts=True)
-        DroneSopDelivery.objects.filter(
-            sop_id__in=[row.sop_id for row in delivery_rows],
-            channel__in=normalized_channels,
-        ).update(
-            status=DroneSopDelivery.Statuses.FAILED,
-            reason=REASON_TARGET_MISSING,
-        )
+            delivery_ids.append(int(delivery.id))
+    mark_channel_delivery_status(
+        delivery_ids=delivery_ids,
+        status=DroneSopDelivery.Statuses.FAILED,
+        reason=REASON_TARGET_MISSING,
+    )
 
 
 __all__ = [

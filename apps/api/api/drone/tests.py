@@ -290,6 +290,28 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "System")
         self.assertEqual(row["user_sdwt_prod"], "System")
 
+    def test_build_drone_sop_row_uses_automation_comment_when_actor_missing(self) -> None:
+        """자동화 comment는 작성자 fallback 값으로 사용하는지 확인합니다."""
+        cases = [
+            ("AUTO_SKEW", "AUTO_SKEW"),
+            ("SSB FULLAUTO", "SSB FULLAUTO"),
+            ("ISOP", "ISOP"),
+            ("  auto_skew  $@$ reserved", "AUTO_SKEW"),
+        ]
+
+        for comment, expected in cases:
+            with self.subTest(comment=comment):
+                html = f"""
+                <data>
+                  <comment>{comment}</comment>
+                </data>
+                """
+
+                row = build_drone_sop_row(html=html, early_inform_map={})
+                assert row is not None
+                self.assertEqual(row["knox_id"], expected)
+                self.assertEqual(row["user_sdwt_prod"], expected)
+
     def test_build_drone_sop_row_applies_needtosend_db_rule(self) -> None:
         """DB 규칙 키워드가 comment에 포함되면 needtosend가 1인지 확인합니다."""
         html = """
@@ -803,6 +825,52 @@ class DroneSopInstantInformTests(TestCase):
         refreshed = DroneSOP.objects.get(id=row.id)
         self.assertEqual(refreshed.comment, "updated")
         self.assertEqual(refreshed.instant_inform, 1)
+
+    def test_enqueue_instant_inform_does_not_copy_sop_status_to_delivery(self) -> None:
+        """즉시 인폼이 SOP 진행 상태를 delivery status로 복사하지 않는지 확인합니다."""
+
+        _ensure_target_mapping(
+            sdwt_prod="SDWT",
+            user_sdwt_prod="USER",
+            target_user_sdwt_prod="TARGET-A",
+        )
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT",
+            user_sdwt_prod="USER",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            status="ESOP_STARTED",
+            needtosend=0,
+            instant_inform=0,
+        )
+
+        result = services.enqueue_drone_sop_jira_instant_inform(sop_id=int(sop.id), comment="urgent")
+
+        self.assertTrue(result.queued)
+        delivery = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        self.assertEqual(delivery.status, DroneSopDelivery.Statuses.PENDING)
+
+
+class DroneSopDeliveryConstraintTests(TestCase):
+    """DroneSOP delivery 데이터 무결성을 검증합니다."""
+
+    def test_delivery_status_rejects_sop_lifecycle_status(self) -> None:
+        """SOP 진행 상태값이 delivery status에 저장되지 못하는지 확인합니다."""
+
+        sop = _create_drone_sop()
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            DroneSopDelivery.objects.create(
+                sop=sop,
+                channel=DroneSopDelivery.Channels.JIRA,
+                status="ESOP_STARTED",
+            )
 
 
 class DroneSopRetryChannelTests(TestCase):
@@ -2430,6 +2498,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             sdwt_prod="SDWT1",
             user_sdwt_prod="SDWT1",
             metro_current_step="ST001",
+            comment="jira comment $@$ rule",
         )
         sop2 = _create_drone_sop(
             line_id="L2",
@@ -2466,6 +2535,11 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         self.assertEqual(refreshed1.send_jira, 1)
         self.assertIsNone(refreshed1.jira_reason)
         self.assertEqual(refreshed1.jira_key, "PROJ1-1")
+        jira_delivery = DroneSopDelivery.objects.get(
+            sop=sop1,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        self.assertEqual(jira_delivery.sent_comment, "jira comment")
         self.assertEqual(refreshed2.send_jira, 1)
         self.assertIsNone(refreshed2.jira_reason)
         self.assertEqual(refreshed2.jira_key, "PROJ2-2")
@@ -3568,6 +3642,7 @@ class DroneSopInformPolicyTests(TestCase):
             lot_id="LOT.1",
             main_step="MS",
             status="COMPLETE",
+            comment="mail comment $@$ rule",
             target_user_sdwt_prod="SDWT1",
             needtosend=1,
             send_jira=-1,
@@ -3583,6 +3658,11 @@ class DroneSopInformPolicyTests(TestCase):
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_mail, 1)
         self.assertIsNotNone(refreshed.informed_at)
+        mail_delivery = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.MAIL,
+        )
+        self.assertEqual(mail_delivery.sent_comment, "mail comment")
 
     @override_settings(
         DRONE_JIRA_BASE_URL="http://example.local/jira",
@@ -5181,6 +5261,7 @@ class DroneTablesEndpointTests(TestCase):
             defaults={
                 "status": DroneSopDelivery.Statuses.SUCCESS,
                 "external_key": "PROJ-1",
+                "sent_comment": "sent snapshot",
                 "sent_at": datetime(2024, 1, 1, 1, 0, 0, tzinfo=dt_timezone.utc),
             },
         )
@@ -5200,9 +5281,17 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(row["jira_key"], "PROJ-1")
         self.assertIsNotNone(row["informed_at"])
         self.assertEqual(
-            [(delivery["targetUserSdwtProd"], delivery["channel"], delivery["status"]) for delivery in row["deliveryRows"]],
             [
-                ("TARGET-A", "jira", "success"),
+                (
+                    delivery["targetUserSdwtProd"],
+                    delivery["channel"],
+                    delivery["status"],
+                    delivery["sentComment"],
+                )
+                for delivery in row["deliveryRows"]
+            ],
+            [
+                ("TARGET-A", "jira", "success", "sent snapshot"),
             ],
         )
 

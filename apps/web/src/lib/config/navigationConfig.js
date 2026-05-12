@@ -32,12 +32,12 @@ const LINE_DASHBOARD_GROUP = Object.freeze({
       scope: "line",
     },
     {
-      title: "알림설정",
+      title: "알림 Step설정",
       url: "/ESOP_Dashboard/settings/notification",
       scope: "line",
     },
     {
-      title: "수신인설정",
+      title: "수신 설정",
       url: "/ESOP_Dashboard/settings/recipients",
       scope: "line",
     },

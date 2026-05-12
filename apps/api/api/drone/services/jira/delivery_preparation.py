@@ -54,7 +54,7 @@ def _extract_row_id(row: dict[str, Any]) -> int | None:
 
 
 def _extract_row_targets(row: dict[str, Any]) -> list[str]:
-    """row에서 단일 target_user_sdwt_prod 목록을 추출합니다."""
+    """row에서 target_user_sdwt_prod 목록을 추출합니다."""
 
     raw_targets = row.get("target_user_sdwt_prods")
     candidates: list[Any]
@@ -72,7 +72,6 @@ def _extract_row_targets(row: dict[str, Any]) -> list[str]:
             continue
         seen.add(target_key)
         targets.append(target)
-        break
     return targets
 
 

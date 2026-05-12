@@ -46,7 +46,7 @@ from .delivery_preparation import (
 from .status_helpers import (
     filter_rows_by_excluded_ids as _filter_rows_by_excluded_ids,
     mark_delivery_failed as _mark_delivery_failed,
-    mark_successful_deliveries as _mark_successful_deliveries,
+    mark_successful_deliveries_with_comments as _mark_successful_deliveries_with_comments,
     run_count_channel_safely as _run_count_channel_safely,
 )
 
@@ -141,7 +141,7 @@ def _run_messenger_inform(
         logger.info("Skip messenger send: KNOX_MESSENGER_API_BASE_URL/AUTHORIZATION/SYSTEM_ID 미설정")
         return 0
 
-    success_delivery_ids: list[int] = []
+    sent_comment_by_delivery_id: dict[int, Any] = {}
     sent_count = 0
     for delivery in ready_deliveries:
         messenger_template_key = _normalize_string_value(delivery.config.get("messenger_template_key"))
@@ -179,13 +179,13 @@ def _run_messenger_inform(
                 messenger_template_key=messenger_template_key,
                 config=messenger_config,
             )
-            success_delivery_ids.append(delivery.delivery_id)
+            sent_comment_by_delivery_id[delivery.delivery_id] = delivery_row.get("comment")
             sent_count += 1
         except Exception:
             logger.exception("Messenger send failed (sop_id=%s)", delivery.sop_id)
             _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_SEND_FAILED)
 
-    _mark_successful_deliveries(delivery_ids=success_delivery_ids)
+    _mark_successful_deliveries_with_comments(sent_comment_by_id=sent_comment_by_delivery_id)
     return sent_count
 
 
@@ -213,7 +213,7 @@ def _run_mail_inform(
         logger.info("Skip mail send: DRONE_MAIL_SENDER 미설정")
         return 0
 
-    success_delivery_ids: list[int] = []
+    sent_comment_by_delivery_id: dict[int, Any] = {}
     sent_count = 0
     for delivery in ready_deliveries:
         template_key = _normalize_string_value(delivery.config.get("mail_template_key"))
@@ -238,13 +238,13 @@ def _run_mail_inform(
                 receiver_emails=receiver_emails,
                 config=mail_config,
             )
-            success_delivery_ids.append(delivery.delivery_id)
+            sent_comment_by_delivery_id[delivery.delivery_id] = delivery_row.get("comment")
             sent_count += 1
         except Exception:
             logger.exception("Mail send failed (sop_id=%s)", delivery.sop_id)
             _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_SEND_FAILED)
 
-    _mark_successful_deliveries(delivery_ids=success_delivery_ids)
+    _mark_successful_deliveries_with_comments(sent_comment_by_id=sent_comment_by_delivery_id)
     return sent_count
 
 

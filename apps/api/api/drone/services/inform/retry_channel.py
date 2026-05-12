@@ -13,7 +13,11 @@ from django.db import transaction
 
 from ... import selectors
 from ...models import DroneSOP, DroneSopDelivery
-from ..shared.delivery_state import ensure_channel_delivery_snapshots_for_rows, mark_channel_delivery_status
+from ..shared.delivery_state import (
+    ensure_channel_delivery_snapshots_for_rows,
+    get_or_prepare_channel_delivery,
+    mark_channel_delivery_status,
+)
 from ..shared.notify_resolver import load_user_sdwt_prod_map_index, resolve_target_user_sdwt_prods
 from ..shared.policy import REASON_TARGET_MISSING
 from .retry_results import DroneSopRetryChannelResult, build_retry_channel_result
@@ -79,10 +83,18 @@ def _requeue_target_missing_delivery(
     if sop.target_user_sdwt_prod != resolved_target:
         sop.target_user_sdwt_prod = resolved_target
         sop.save(update_fields=["target_user_sdwt_prod", "updated_at"])
+    resolved_delivery = get_or_prepare_channel_delivery(
+        sop_id=int(sop.id),
+        target_user_sdwt_prod=resolved_target,
+        channel=channel,
+    )
     mark_channel_delivery_status(
-        delivery_ids=[int(delivery.id) for delivery in target_missing_deliveries if delivery.id],
+        delivery_ids=[int(resolved_delivery.id)],
         status=DroneSopDelivery.Statuses.PENDING,
     )
+    DroneSopDelivery.objects.filter(
+        id__in=[int(delivery.id) for delivery in target_missing_deliveries if delivery.id],
+    ).delete()
     return "queued"
 
 

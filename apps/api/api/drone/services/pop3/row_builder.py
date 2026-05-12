@@ -25,6 +25,13 @@ from .needtosend import (
 )
 from .utils import sanitize_url
 
+SYSTEM_ACTOR_FALLBACK = "System"
+AUTOMATION_COMMENT_ACTOR_FALLBACKS = {
+    "auto_skew": "AUTO_SKEW",
+    "ssb fullauto": "SSB FULLAUTO",
+    "isop": "ISOP",
+}
+
 
 def _normalize_blank(value: Any) -> Any:
     """빈 문자열을 None으로 정규화합니다.
@@ -47,6 +54,26 @@ def _normalize_blank(value: Any) -> Any:
     if isinstance(value, str) and not value.strip():
         return None
     return value
+
+
+def _resolve_missing_actor_fallback(comment: Any) -> str:
+    """작성자 정보가 없는 메일의 fallback 표시값을 결정합니다.
+
+    인자:
+        comment: 메일 본문에서 파싱한 comment 값.
+
+    반환:
+        자동화 문구 또는 기본 System 문자열.
+
+    부작용:
+        없음. 순수 문자열 판정입니다.
+    """
+
+    # -------------------------------------------------------------------------
+    # 1) 자동화 suffix 이전의 실제 comment 문구만 비교합니다.
+    # -------------------------------------------------------------------------
+    normalized_comment = str(comment or "").split("$@$", 1)[0].strip().casefold()
+    return AUTOMATION_COMMENT_ACTOR_FALLBACKS.get(normalized_comment, SYSTEM_ACTOR_FALLBACK)
 
 
 def _extract_first_data_tag(html: str) -> dict[str, str]:
@@ -151,8 +178,9 @@ def build_drone_sop_row(
     # 2-1) knox_id/user_sdwt_prod가 모두 없으면 기본값을 채웁니다.
     # -------------------------------------------------------------------------
     if not knox_value and not user_sdwt_prod:
-        knox_value = "System"
-        user_sdwt_prod = "System"
+        actor_fallback = _resolve_missing_actor_fallback(normalized.get("comment"))
+        knox_value = actor_fallback
+        user_sdwt_prod = actor_fallback
 
     defect_png_url_source = sanitize_url(normalized.get("defect_png_url"))
     defect_url = serialize_defect_json_entries(

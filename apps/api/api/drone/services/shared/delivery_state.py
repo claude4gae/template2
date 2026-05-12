@@ -14,7 +14,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from ...models import DroneSOP, DroneSopDelivery
+from ...models import DroneSOP, DroneSopDelivery, DroneSopTarget, DroneSopTargetDispatch
 from .delivery_snapshot import (
     DELIVERY_CHANNELS as _DELIVERY_CHANNELS,
     append_unique_target as _append_unique_target,
@@ -52,6 +52,98 @@ def normalize_positive_ids(values: Sequence[int]) -> list[int]:
     return normalized
 
 
+def normalize_sent_comment(value: Any) -> str | None:
+    """발송 시점에 실제 템플릿에 사용되는 comment 스냅샷을 정규화합니다."""
+
+    if value is None:
+        return None
+    comment = str(value).split("$@$", 1)[0].strip()
+    return comment or None
+
+
+def _get_target_by_code(*, target_code: str) -> DroneSopTarget | None:
+    """target code와 일치하는 설정 target을 조회합니다."""
+
+    return DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target_code).order_by("id").first()
+
+
+def _get_or_create_target_dispatch(
+    *,
+    sop_id: int,
+    target_user_sdwt_prod: str,
+    dispatch_type: str = DroneSopTargetDispatch.DispatchTypes.AUTO,
+) -> DroneSopTargetDispatch:
+    """SOP + target 단위 dispatch row를 생성하거나 반환합니다."""
+
+    cleaned_target = _normalize_string_value(target_user_sdwt_prod) or "__TARGET_MISSING__"
+    target = None if cleaned_target.startswith("__") else _get_target_by_code(target_code=cleaned_target)
+    dispatch, _ = DroneSopTargetDispatch.objects.get_or_create(
+        sop_id=sop_id,
+        target_code_snapshot=cleaned_target,
+        defaults={
+            "target": target,
+            "target_display_snapshot": cleaned_target,
+            "resolution_status": "target_missing" if cleaned_target.startswith("__") else "resolved",
+            "dispatch_type": dispatch_type,
+            "status": DroneSopTargetDispatch.Statuses.PENDING,
+        },
+    )
+    if target is not None and dispatch.target_id is None:
+        dispatch.target = target
+        dispatch.save(update_fields=["target", "updated_at"])
+    return dispatch
+
+
+def _summarize_dispatch_status(statuses: set[str]) -> str:
+    """채널 delivery 상태 집합을 dispatch 상태로 요약합니다."""
+
+    if not statuses:
+        return DroneSopTargetDispatch.Statuses.PENDING
+    if statuses <= {DroneSopDelivery.Statuses.DISABLED}:
+        return DroneSopTargetDispatch.Statuses.DISABLED
+    if DroneSopDelivery.Statuses.PENDING in statuses or DroneSopDelivery.Statuses.SENDING in statuses:
+        return DroneSopTargetDispatch.Statuses.DISPATCHING
+    if DroneSopDelivery.Statuses.FAILED in statuses and DroneSopDelivery.Statuses.SUCCESS in statuses:
+        return DroneSopTargetDispatch.Statuses.PARTIAL_FAILED
+    if DroneSopDelivery.Statuses.FAILED in statuses:
+        return DroneSopTargetDispatch.Statuses.FAILED
+    if DroneSopDelivery.Statuses.CANCELLED in statuses:
+        return DroneSopTargetDispatch.Statuses.CANCELLED
+    if DroneSopDelivery.Statuses.SUCCESS in statuses:
+        return DroneSopTargetDispatch.Statuses.SUCCESS
+    return DroneSopTargetDispatch.Statuses.PENDING
+
+
+def _refresh_dispatch_statuses_for_delivery_ids(*, delivery_ids: Sequence[int]) -> None:
+    """변경된 delivery가 속한 dispatch의 요약 상태를 갱신합니다."""
+
+    normalized_ids = normalize_positive_ids(delivery_ids)
+    if not normalized_ids:
+        return
+    dispatch_ids = normalize_positive_ids(
+        list(
+            DroneSopDelivery.objects.filter(id__in=normalized_ids).values_list(
+                "dispatch_id",
+                flat=True,
+            )
+        )
+    )
+    if not dispatch_ids:
+        return
+    now = timezone.now()
+    for dispatch_id in dispatch_ids:
+        statuses = set(
+            DroneSopDelivery.objects.filter(dispatch_id=dispatch_id).values_list(
+                "status",
+                flat=True,
+            )
+        )
+        DroneSopTargetDispatch.objects.filter(id=dispatch_id).update(
+            status=_summarize_dispatch_status(statuses),
+            updated_at=now,
+        )
+
+
 def get_or_prepare_channel_delivery(
     *,
     sop_id: int,
@@ -65,11 +157,21 @@ def get_or_prepare_channel_delivery(
         DroneSOP.objects.filter(id=sop_id).filter(
             Q(target_user_sdwt_prod__isnull=True) | Q(target_user_sdwt_prod="")
         ).update(target_user_sdwt_prod=cleaned_target)
-    delivery, _ = DroneSopDelivery.objects.get_or_create(
+    dispatch = _get_or_create_target_dispatch(
         sop_id=sop_id,
-        channel=channel,
-        defaults={"status": DroneSopDelivery.Statuses.PENDING},
+        target_user_sdwt_prod=cleaned_target or "__TARGET_MISSING__",
     )
+    delivery, _ = DroneSopDelivery.objects.get_or_create(
+        dispatch=dispatch,
+        channel=channel,
+        defaults={
+            "sop_id": sop_id,
+            "status": DroneSopDelivery.Statuses.PENDING,
+        },
+    )
+    if delivery.sop_id != sop_id:
+        delivery.sop_id = sop_id
+        delivery.save(update_fields=["sop", "updated_at"])
     return delivery
 
 
@@ -93,46 +195,22 @@ def ensure_channel_delivery_snapshots_for_rows(
     if not sop_ids:
         return DeliverySnapshotResult(target_user_sdwt_prods=set(), missing_sop_ids=[])
 
-    existing_rows = DroneSopDelivery.objects.filter(sop_id__in=sop_ids).values("sop_id", "channel")
-    existing_channels_by_sop: dict[int, set[str]] = {}
-    existing_targets_by_sop: dict[int, list[str]] = {}
-    for delivery_row in existing_rows:
-        sop_id = delivery_row.get("sop_id")
-        if not isinstance(sop_id, int):
-            continue
-        channel = _normalize_string_value(delivery_row.get("channel"))
-        if channel not in _DELIVERY_CHANNELS:
-            continue
-        existing_channels_by_sop.setdefault(sop_id, set()).add(channel)
-
-    sop_target_rows = DroneSOP.objects.filter(id__in=sop_ids).values("id", "target_user_sdwt_prod")
-    for sop_row in sop_target_rows:
-        sop_id = sop_row.get("id")
-        if not isinstance(sop_id, int):
-            continue
-        target = _normalize_string_value(sop_row.get("target_user_sdwt_prod"))
-        if target:
-            _append_unique_target(target_list=existing_targets_by_sop.setdefault(sop_id, []), target=target)
-
     if index is None:
         index = load_user_sdwt_prod_map_index()
 
     target_values: set[str] = set()
     missing_ids: list[int] = []
-    create_rows: list[DroneSopDelivery] = []
+    created_count = 0
 
     for row in rows:
         sop_id = _extract_sop_id(row)
         if sop_id is None:
             continue
 
-        snapshot_targets = list(existing_targets_by_sop.get(sop_id) or [])
+        snapshot_targets = _extract_row_targets(row)
         if not snapshot_targets and _is_sop_delivery_eligible(row):
-            snapshot_targets = _extract_row_targets(row)
-            if not snapshot_targets:
-                snapshot_targets = resolve_target_user_sdwt_prods(row=row, index=index)
+            snapshot_targets = resolve_target_user_sdwt_prods(row=row, index=index)
 
-        snapshot_targets = snapshot_targets[:1]
         row["target_user_sdwt_prods"] = snapshot_targets
         row["target_user_sdwt_prod"] = snapshot_targets[0] if snapshot_targets else None
 
@@ -152,25 +230,18 @@ def ensure_channel_delivery_snapshots_for_rows(
                     Q(target_user_sdwt_prod__isnull=True) | Q(target_user_sdwt_prod="")
                 ).update(target_user_sdwt_prod=target)
             for channel in normalized_channels:
-                if channel in existing_channels_by_sop.setdefault(sop_id, set()):
-                    continue
-                create_rows.append(
-                    DroneSopDelivery(
-                        sop_id=sop_id,
-                        channel=channel,
-                        status=DroneSopDelivery.Statuses.PENDING,
-                    )
-                )
-                existing_channels_by_sop[sop_id].add(channel)
-
-    if create_rows:
-        with transaction.atomic():
-            DroneSopDelivery.objects.bulk_create(create_rows, ignore_conflicts=True)
+                before_id = get_or_prepare_channel_delivery(
+                    sop_id=sop_id,
+                    target_user_sdwt_prod=target,
+                    channel=channel,
+                ).id
+                if before_id:
+                    created_count += 1
 
     return DeliverySnapshotResult(
         target_user_sdwt_prods=target_values,
         missing_sop_ids=normalize_positive_ids(missing_ids),
-        created_count=len(create_rows),
+        created_count=created_count,
     )
 
 
@@ -180,6 +251,7 @@ def mark_channel_delivery_status(
     status: str,
     reason: str | None = None,
     external_key_by_id: dict[int, str] | None = None,
+    sent_comment_by_id: dict[int, Any] | None = None,
 ) -> None:
     """target/channel 발송 상태를 일괄 갱신합니다."""
 
@@ -194,6 +266,7 @@ def mark_channel_delivery_status(
         "sent_at": None,
         "sent_step": None,
         "external_key": None,
+        "sent_comment": None,
         "updated_at": now,
     }
     if status == DroneSopDelivery.Statuses.SUCCESS:
@@ -201,9 +274,11 @@ def mark_channel_delivery_status(
         base_updates["sent_at"] = now
 
     normalized_external_key_by_id = external_key_by_id or {}
-    if not normalized_external_key_by_id:
+    normalized_sent_comment_by_id = sent_comment_by_id or {}
+    if not normalized_external_key_by_id and not normalized_sent_comment_by_id:
         with transaction.atomic():
             DroneSopDelivery.objects.filter(id__in=normalized_ids).update(**base_updates)
+            _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=normalized_ids)
         return
 
     with transaction.atomic():
@@ -212,7 +287,12 @@ def mark_channel_delivery_status(
             external_key = normalized_external_key_by_id.get(delivery_id)
             if isinstance(external_key, str) and external_key.strip():
                 updates["external_key"] = external_key.strip()
+            if delivery_id in normalized_sent_comment_by_id:
+                updates["sent_comment"] = normalize_sent_comment(
+                    normalized_sent_comment_by_id.get(delivery_id)
+                )
             DroneSopDelivery.objects.filter(id=delivery_id).update(**updates)
+        _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=normalized_ids)
 
 
 def filter_delivery_ids_for_config_failure(*, delivery_ids: Sequence[int]) -> list[int]:
@@ -235,5 +315,6 @@ __all__ = [
     "filter_delivery_ids_for_config_failure",
     "get_or_prepare_channel_delivery",
     "mark_channel_delivery_status",
+    "normalize_sent_comment",
     "normalize_positive_ids",
 ]

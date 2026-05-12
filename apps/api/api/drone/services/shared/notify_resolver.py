@@ -143,14 +143,14 @@ def resolve_target_user_sdwt_prods(
     row: dict[str, Any],
     index: UserSdwtProdMapIndex,
 ) -> list[str]:
-    """단일 row에 대한 단일 target_user_sdwt_prod 목록을 해석합니다.
+    """단일 row에 대한 target_user_sdwt_prod 목록을 해석합니다.
 
     인자:
         row: Drone SOP 행 dict.
         index: 매핑 인덱스.
 
     반환:
-        매핑된 target_user_sdwt_prod 단일 목록.
+        우선순위가 가장 높은 매핑 tier의 target_user_sdwt_prod 목록.
 
     부작용:
         없음. 순수 해석입니다.
@@ -170,15 +170,15 @@ def resolve_target_user_sdwt_prods(
     if sdwt and user:
         mapped_targets = _merge_unique_targets(index.pair_map.get((sdwt, user), []))
         if mapped_targets:
-            return mapped_targets[:1]
+            return mapped_targets
     if sdwt:
         mapped_targets = _merge_unique_targets(index.sdwt_only_map.get(sdwt, []))
         if mapped_targets:
-            return mapped_targets[:1]
+            return mapped_targets
     if user:
         mapped_targets = _merge_unique_targets(index.user_only_map.get(user, []))
         if mapped_targets:
-            return mapped_targets[:1]
+            return mapped_targets
 
     # -----------------------------------------------------------------------------
     # 3) 신규 매핑이 없으면 기존 저장 target을 호환값으로 사용

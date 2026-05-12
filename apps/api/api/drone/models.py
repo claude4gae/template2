@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: 드론 SOP/조기 알림 모델
-# 주요 구성: DroneSOP, DroneSopTarget, DroneSopDelivery, DroneEarlyInform
+# 주요 구성: DroneSOP, DroneSopTarget, DroneSopTargetDispatch, DroneSopDelivery, DroneEarlyInform
 # 주요 가정: sop_key는 필드 조합으로 생성합니다.
 # =============================================================================
 from __future__ import annotations
@@ -167,6 +167,19 @@ class DroneSOP(models.Model):
         if not self.target_user_sdwt_prod:
             self.target_user_sdwt_prod = targets[0]
             type(self).objects.filter(pk=self.pk).update(target_user_sdwt_prod=targets[0])
+        target_code = targets[0]
+        target = DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target_code).order_by("id").first()
+        dispatch, _ = DroneSopTargetDispatch.objects.get_or_create(
+            sop_id=int(self.pk),
+            target_code_snapshot=target_code,
+            defaults={
+                "target": target,
+                "target_display_snapshot": target_code,
+                "resolution_status": "resolved",
+                "dispatch_type": DroneSopTargetDispatch.DispatchTypes.AUTO,
+                "status": DroneSopTargetDispatch.Statuses.PENDING,
+            },
+        )
 
         channel_specs = (
             (DroneSopDelivery.Channels.JIRA, "send_jira", "jira_reason"),
@@ -194,9 +207,10 @@ class DroneSOP(models.Model):
                 reason = seed.get(reason_key) or "send_failed"
 
             DroneSopDelivery.objects.update_or_create(
-                sop_id=int(self.pk),
+                dispatch=dispatch,
                 channel=channel,
                 defaults={
+                    "sop_id": int(self.pk),
                     "status": status,
                     "reason": reason,
                     "external_key": external_key,
@@ -570,8 +584,92 @@ class DroneSopTargetRecipient(models.Model):
         return f"{self.target_user_sdwt_prod} / {self.channel} / {self.user_id}"
 
 
+class DroneSopTargetDispatch(models.Model):
+    """Drone SOP와 target 1개를 묶은 발송 작업 단위입니다.
+
+    DroneSOP는 POP3 upsert로 계속 갱신되는 현재 상태를 보관하고, 이 모델은
+    화면/발송 기준의 target별 row 역할을 담당합니다.
+    """
+
+    class DispatchTypes(models.TextChoices):
+        AUTO = "auto", "Auto"
+        INSTANT = "instant", "Instant"
+        MANUAL = "manual", "Manual"
+        RETRY = "retry", "Retry"
+
+    class Statuses(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DISPATCHING = "dispatching", "Dispatching"
+        SUCCESS = "success", "Success"
+        PARTIAL_FAILED = "partial_failed", "Partial failed"
+        FAILED = "failed", "Failed"
+        DISABLED = "disabled", "Disabled"
+        CANCELLED = "cancelled", "Cancelled"
+
+    sop = models.ForeignKey(
+        DroneSOP,
+        on_delete=models.CASCADE,
+        related_name="target_dispatches",
+    )
+    target = models.ForeignKey(
+        DroneSopTarget,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sop_dispatches",
+    )
+    target_code_snapshot = models.CharField(max_length=64)
+    target_display_snapshot = models.CharField(max_length=128, null=True, blank=True)
+    resolution_status = models.CharField(max_length=32, default="resolved")
+    dispatch_type = models.CharField(max_length=16, choices=DispatchTypes.choices, default=DispatchTypes.AUTO)
+    status = models.CharField(max_length=24, choices=Statuses.choices, default=Statuses.PENDING)
+    comment_override = models.TextField(null=True, blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="drone_sop_dispatch_requests",
+    )
+    requested_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_target_dispatch"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sop", "target_code_snapshot"],
+                name="uniq_dro_sop_tgt_dsp",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    status__in=[
+                        "pending",
+                        "dispatching",
+                        "success",
+                        "partial_failed",
+                        "failed",
+                        "disabled",
+                        "cancelled",
+                    ]
+                ),
+                name="chk_dro_sop_tgt_dsp_st",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["sop", "status"], name="idx_dro_sop_tgt_dsp_sop"),
+            models.Index(fields=["target_code_snapshot"], name="idx_dro_sop_tgt_dsp_cd"),
+        ]
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        return f"{self.sop_id} / {self.target_code_snapshot} / {self.status}"
+
+
 class DroneSopDelivery(models.Model):
-    """Drone SOP별 channel 발송 결과를 저장하는 모델입니다."""
+    """target dispatch별 channel 최종 발송 결과를 저장하는 모델입니다."""
 
     class Channels(models.TextChoices):
         JIRA = "jira", "Jira"
@@ -580,21 +678,33 @@ class DroneSopDelivery(models.Model):
 
     class Statuses(models.TextChoices):
         PENDING = "pending", "Pending"
+        SENDING = "sending", "Sending"
         SUCCESS = "success", "Success"
         FAILED = "failed", "Failed"
         DISABLED = "disabled", "Disabled"
+        CANCELLED = "cancelled", "Cancelled"
 
     sop = models.ForeignKey(
         DroneSOP,
         on_delete=models.CASCADE,
         related_name="channel_deliveries",
     )
+    dispatch = models.ForeignKey(
+        DroneSopTargetDispatch,
+        on_delete=models.CASCADE,
+        related_name="deliveries",
+    )
     channel = models.CharField(max_length=16, choices=Channels.choices)
     status = models.CharField(max_length=16, choices=Statuses.choices, default=Statuses.PENDING)
     reason = models.CharField(max_length=64, null=True, blank=True)
     external_key = models.CharField(max_length=128, null=True, blank=True)
+    sent_comment = models.TextField(null=True, blank=True)
     sent_step = models.CharField(max_length=50, null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    template_key_snapshot = models.CharField(max_length=50, null=True, blank=True)
+    channel_config_snapshot = models.JSONField(null=True, blank=True)
+    recipient_snapshot = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 
@@ -602,11 +712,16 @@ class DroneSopDelivery(models.Model):
         db_table = "drone_sop_delivery"
         constraints = [
             models.UniqueConstraint(
-                fields=["sop", "channel"],
-                name="uniq_dro_sop_delivery",
+                fields=["dispatch", "channel"],
+                name="uniq_dro_sop_dlv_dsp_ch",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=["pending", "sending", "success", "failed", "disabled", "cancelled"]),
+                name="chk_dro_sop_dlv_sts",
             ),
         ]
         indexes = [
+            models.Index(fields=["dispatch", "channel"], name="idx_dro_sop_dlv_dsp"),
             models.Index(fields=["sop", "channel"], name="idx_dro_sop_dlv_sop"),
             models.Index(fields=["channel", "status"], name="idx_dro_sop_dlv_sts"),
         ]
@@ -615,6 +730,79 @@ class DroneSopDelivery(models.Model):
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.sop_id} / {self.channel} / {self.status}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """legacy 직접 생성 경로에서 dispatch가 없으면 자동 보강합니다."""
+
+        if not self.dispatch_id and self.sop_id:
+            target_code = "__TARGET_MISSING__"
+            if self.sop_id and getattr(self, "sop", None) is not None:
+                target_code = (self.sop.target_user_sdwt_prod or "").strip() or target_code
+            target = None
+            if not target_code.startswith("__"):
+                target = DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target_code).order_by("id").first()
+            dispatch, _ = DroneSopTargetDispatch.objects.get_or_create(
+                sop_id=self.sop_id,
+                target_code_snapshot=target_code,
+                defaults={
+                    "target": target,
+                    "target_display_snapshot": target_code,
+                    "resolution_status": "target_missing" if target_code.startswith("__") else "resolved",
+                    "dispatch_type": DroneSopTargetDispatch.DispatchTypes.AUTO,
+                    "status": DroneSopTargetDispatch.Statuses.PENDING,
+                },
+            )
+            self.dispatch = dispatch
+        super().save(*args, **kwargs)
+
+
+class DroneSopDeliveryAttempt(models.Model):
+    """Drone SOP delivery의 실제 외부 발송 시도 1회를 기록하는 모델입니다."""
+
+    class Statuses(models.TextChoices):
+        SENDING = "sending", "Sending"
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+
+    delivery = models.ForeignKey(
+        DroneSopDelivery,
+        on_delete=models.CASCADE,
+        related_name="attempts",
+    )
+    attempt_no = models.PositiveIntegerField()
+    status = models.CharField(max_length=16, choices=Statuses.choices, default=Statuses.SENDING)
+    sent_comment_snapshot = models.TextField(null=True, blank=True)
+    sent_step_snapshot = models.CharField(max_length=50, null=True, blank=True)
+    request_snapshot = models.JSONField(null=True, blank=True)
+    response_snapshot = models.JSONField(null=True, blank=True)
+    error_code = models.CharField(max_length=64, null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_delivery_attempt"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["delivery", "attempt_no"],
+                name="uniq_dro_sop_dlv_att_no",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=["sending", "success", "failed"]),
+                name="chk_dro_sop_dlv_att_st",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["delivery", "attempt_no"], name="idx_dro_sop_dlv_att_dlv"),
+            models.Index(fields=["status", "started_at"], name="idx_dro_sop_dlv_att_st"),
+        ]
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        return f"{self.delivery_id} / #{self.attempt_no} / {self.status}"
 
 
 class DroneEarlyInform(models.Model):
@@ -645,8 +833,10 @@ class DroneEarlyInform(models.Model):
 __all__ = [
     "DroneEarlyInform",
     "DroneSOP",
+    "DroneSopDeliveryAttempt",
     "DroneSopDelivery",
     "DroneSopTarget",
+    "DroneSopTargetDispatch",
     "DroneSopTargetMapping",
     "DroneSopTargetRecipient",
     "build_sop_key",

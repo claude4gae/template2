@@ -103,6 +103,23 @@ def _run_jira_create_api(
         session.close()
 
 
+def _collect_sent_comment_by_delivery_id(
+    *,
+    rows: Sequence[dict[str, Any]],
+    delivery_ids: Sequence[int],
+) -> dict[int, Any]:
+    """성공 delivery ID별 발송 comment 스냅샷 원본값을 수집합니다."""
+
+    done_id_set = set(_normalize_delivery_ids(delivery_ids))
+    sent_comment_by_delivery_id: dict[int, Any] = {}
+    for row in rows:
+        delivery_id = row.get("delivery_id")
+        if not isinstance(delivery_id, int) or delivery_id not in done_id_set:
+            continue
+        sent_comment_by_delivery_id[delivery_id] = row.get("comment")
+    return sent_comment_by_delivery_id
+
+
 def _run_drone_sop_jira_create_with_rows(
     *,
     rows: list[dict[str, Any]],
@@ -211,6 +228,10 @@ def _run_drone_sop_jira_create_with_rows(
         delivery_ids=normalized_done_delivery_ids,
         status=DroneSopDelivery.Statuses.SUCCESS,
         external_key_by_id=key_by_delivery_id,
+        sent_comment_by_id=_collect_sent_comment_by_delivery_id(
+            rows=prepared.rows_to_send,
+            delivery_ids=normalized_done_delivery_ids,
+        ),
     )
 
     # ---------------------------------------------------------------------

@@ -8,7 +8,7 @@ from typing import Any
 from django.db import transaction
 
 from ... import selectors
-from ...models import DroneSopDelivery
+from ...models import DroneSopDelivery, DroneSopTargetDispatch
 from ..shared.delivery_state import ensure_channel_delivery_snapshots_for_rows
 
 
@@ -110,6 +110,9 @@ def enqueue_drone_sop_jira_instant_inform(
                     "instant_inform": sop.instant_inform,
                 }
             ]
+        )
+        DroneSopTargetDispatch.objects.filter(sop=sop).update(
+            dispatch_type=DroneSopTargetDispatch.DispatchTypes.INSTANT,
         )
 
     return DroneSopInstantInformResult(

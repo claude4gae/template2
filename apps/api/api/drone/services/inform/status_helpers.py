@@ -45,6 +45,19 @@ def mark_successful_deliveries(*, delivery_ids: Sequence[int]) -> None:
     )
 
 
+def mark_successful_deliveries_with_comments(
+    *,
+    sent_comment_by_id: dict[int, Any],
+) -> None:
+    """성공 delivery ID별 발송 comment 스냅샷을 함께 기록합니다."""
+
+    mark_channel_delivery_status(
+        delivery_ids=list(sent_comment_by_id.keys()),
+        status=DroneSopDelivery.Statuses.SUCCESS,
+        sent_comment_by_id=sent_comment_by_id,
+    )
+
+
 def run_count_channel_safely(*, channel_label: str, runner: Callable[[], int]) -> int:
     """채널별 예외를 격리하고 실패 시 0건 처리로 이어갑니다."""
 
@@ -59,5 +72,6 @@ __all__ = [
     "filter_rows_by_excluded_ids",
     "mark_delivery_failed",
     "mark_successful_deliveries",
+    "mark_successful_deliveries_with_comments",
     "run_count_channel_safely",
 ]
