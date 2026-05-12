@@ -1340,7 +1340,7 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
         - JsonResponse: 갱신된 수신인 목록
 
         부작용:
-        - 수신인 생성/재활성화/비활성화
+        - 수신인 생성/삭제
 
         오류:
         - 400: 입력 오류

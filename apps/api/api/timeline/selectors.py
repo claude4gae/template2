@@ -15,14 +15,6 @@ from django.conf import settings
 from django.db import connections
 
 TIMELINE_DB_ALIAS = "timeline"
-TIMELINE_DB_ENGINE = "django.db.backends.postgresql"
-TIMELINE_DB_NAME = "timeline"
-TIMELINE_DB_USER = "airflow"
-TIMELINE_DB_PASSWORD = "airflow"
-TIMELINE_DB_HOST = "10.172.117.91"
-TIMELINE_DB_PORT = "8010"
-TIMELINE_DB_CONN_MAX_AGE = 60
-TIMELINE_QUERY_DAYS = 30
 
 Row = Dict[str, object]
 LogRows = List[Dict[str, object]]
@@ -39,29 +31,17 @@ def _safe_text(value: object) -> str:
     return "" if value is None else str(value)
 
 
-def _period_date(days: int = TIMELINE_QUERY_DAYS) -> str:
+def _period_date(days: int | None = None) -> str:
     """조회 기준일(YYYY-MM-DD)을 반환합니다."""
 
-    return datetime.strftime(datetime.now() - timedelta(days=days), "%Y-%m-%d")
+    query_days = days if days is not None else settings.TIMELINE_QUERY_DAYS
+    return datetime.strftime(datetime.now() - timedelta(days=query_days), "%Y-%m-%d")
 
 
 def _get_timeline_connection():
-    """타임라인 DB 연결 설정을 갱신하고 연결 객체를 반환합니다."""
+    """타임라인 DB 연결 객체를 반환합니다."""
 
-    desired = {
-        "ENGINE": TIMELINE_DB_ENGINE,
-        "NAME": TIMELINE_DB_NAME,
-        "USER": TIMELINE_DB_USER,
-        "PASSWORD": TIMELINE_DB_PASSWORD,
-        "HOST": TIMELINE_DB_HOST,
-        "PORT": TIMELINE_DB_PORT,
-        "CONN_MAX_AGE": TIMELINE_DB_CONN_MAX_AGE,
-    }
-    connection = connections[TIMELINE_DB_ALIAS]
-    if any(connection.settings_dict.get(key) != value for key, value in desired.items()):
-        connection.close()
-        connection.settings_dict.update(desired)
-    return connection
+    return connections[TIMELINE_DB_ALIAS]
 
 
 def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Row]:

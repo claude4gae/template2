@@ -15,9 +15,9 @@ from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.db import connection, IntegrityError, transaction
 from django.test import SimpleTestCase, TestCase
-from django.test.utils import override_settings
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 
 import api.account.services as account_services
@@ -1283,14 +1283,13 @@ class DroneSopChannelRecipientTests(TestCase):
             ).exists()
         )
 
-    def test_replace_reactivates_and_deactivates_recipient_rows(self) -> None:
-        """수신인 저장이 기존 row를 soft replace 방식으로 갱신하는지 확인합니다."""
+    def test_replace_hard_deletes_removed_recipient_rows(self) -> None:
+        """수신인 저장이 제외된 기존 row를 삭제하는지 확인합니다."""
 
         recipient = DroneSopChannelRecipient.objects.create(
             target_user_sdwt_prod="ETCH_A",
             channel=DroneSopChannelRecipient.Channels.MAIL,
             user=self.same_group_user,
-            is_active=True,
         )
 
         result = services.replace_drone_sop_channel_recipients(
@@ -1301,8 +1300,7 @@ class DroneSopChannelRecipientTests(TestCase):
             actor=self.actor,
         )
 
-        recipient.refresh_from_db()
-        self.assertFalse(recipient.is_active)
+        self.assertFalse(DroneSopChannelRecipient.objects.filter(id=recipient.id).exists())
         self.assertEqual(len(result["recipients"]), 1)
         self.assertEqual(result["recipients"][0]["userId"], self.mail_user.id)
 
@@ -1314,10 +1312,55 @@ class DroneSopChannelRecipientTests(TestCase):
             actor=self.actor,
         )
 
-        recipient.refresh_from_db()
-        self.assertTrue(recipient.is_active)
+        self.assertFalse(DroneSopChannelRecipient.objects.filter(id=recipient.id).exists())
+        new_recipient = DroneSopChannelRecipient.objects.get(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopChannelRecipient.Channels.MAIL,
+            user=self.same_group_user,
+        )
+        self.assertNotEqual(new_recipient.id, recipient.id)
         self.assertEqual(len(result["recipients"]), 1)
         self.assertEqual(result["recipients"][0]["userId"], self.same_group_user.id)
+
+    def test_lock_recipient_target_for_replace_uses_row_lock(self) -> None:
+        """수신인 교체용 target 잠금이 SELECT FOR UPDATE를 사용하는지 확인합니다."""
+
+        if not connection.features.has_select_for_update:
+            self.skipTest("이 DB backend는 SELECT FOR UPDATE를 지원하지 않습니다.")
+
+        target = DroneSopUserSdwtChannel.objects.create(
+            line_id="L1",
+            target_user_sdwt_prod="LOCK_TARGET",
+        )
+
+        with transaction.atomic(), CaptureQueriesContext(connection) as captured_queries:
+            locked_target = recipient_services._lock_recipient_target_for_replace(target_id=target.id)
+
+        self.assertEqual(locked_target.id, target.id)
+        sql = "\n".join(query["sql"] for query in captured_queries.captured_queries)
+        self.assertIn('FROM "drone_sop_target"', sql)
+        self.assertIn("FOR UPDATE", sql)
+
+    @patch(
+        "api.drone.services.channels.recipients._lock_recipient_target_for_replace",
+        wraps=recipient_services._lock_recipient_target_for_replace,
+    )
+    def test_replace_locks_target_row_before_replacing_recipients(self, mock_lock_target: Mock) -> None:
+        """수신인 교체가 target row 잠금을 기준으로 수행되는지 확인합니다."""
+
+        services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        target = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(target_user_sdwt_prod="ETCH_A")
+        self.assertIsNotNone(target)
+        if target is None:
+            return
+        mock_lock_target.assert_called_once_with(target_id=target.id)
 
     def test_replace_rejects_invalid_user_ids_in_service_layer(self) -> None:
         """서비스 직접 호출도 잘못된 user_ids를 명시적으로 거부해야 합니다."""
@@ -1381,15 +1424,13 @@ class DroneSopChannelRecipientTests(TestCase):
             target_user_sdwt_prod="ETCH_A",
             channel=DroneSopChannelRecipient.Channels.MAIL,
             user=self.mail_user,
-            is_active=False,
         )
 
         with patch(
             "api.drone.services.channels.recipients.DroneSopChannelRecipient.objects.create",
             side_effect=IntegrityError("duplicate key"),
         ):
-            recipient, created = recipient_services._get_or_create_recipient_row(
-                line_id="L1",
+            recipient = recipient_services._get_or_create_recipient_row(
                 target_user_sdwt_prod="ETCH_A",
                 channel=DroneSopChannelRecipient.Channels.MAIL,
                 user_id=self.mail_user.id,
@@ -1397,7 +1438,6 @@ class DroneSopChannelRecipientTests(TestCase):
             )
 
         self.assertEqual(recipient.id, existing.id)
-        self.assertFalse(created)
 
     def test_get_or_create_reraises_integrity_error_without_duplicate_row(self) -> None:
         """동시 생성 row가 없으면 원래 IntegrityError를 숨기지 않아야 합니다."""
@@ -1408,7 +1448,6 @@ class DroneSopChannelRecipientTests(TestCase):
         ):
             with self.assertRaisesMessage(IntegrityError, "foreign key failure"):
                 recipient_services._get_or_create_recipient_row(
-                    line_id="L1",
                     target_user_sdwt_prod="ETCH_A",
                     channel=DroneSopChannelRecipient.Channels.MAIL,
                     user_id=self.mail_user.id,
@@ -1417,16 +1456,14 @@ class DroneSopChannelRecipientTests(TestCase):
 
     @patch("api.drone.services.channels.recipients._get_or_create_recipient_row")
     def test_replace_handles_concurrent_create_fallback_result(self, mock_get_or_create: Mock) -> None:
-        """public service도 동시 생성 fallback 결과를 받아 row를 재활성화해야 합니다."""
+        """public service도 동시 생성 fallback 결과를 받아 기존 row로 처리해야 합니다."""
 
-        def return_existing_row(**kwargs: object) -> tuple[DroneSopChannelRecipient, bool]:
-            row = DroneSopChannelRecipient.objects.create(
+        def return_existing_row(**kwargs: object) -> DroneSopChannelRecipient:
+            return DroneSopChannelRecipient.objects.create(
                 target_user_sdwt_prod=str(kwargs["target_user_sdwt_prod"]),
                 channel=str(kwargs["channel"]),
                 user_id=int(kwargs["user_id"]),
-                is_active=False,
             )
-            return row, False
 
         mock_get_or_create.side_effect = return_existing_row
 
@@ -1443,9 +1480,7 @@ class DroneSopChannelRecipientTests(TestCase):
             channel=DroneSopChannelRecipient.Channels.MAIL,
             user=self.mail_user,
         )
-        self.assertTrue(recipient.is_active)
-        self.assertEqual(result["created"], 0)
-        self.assertEqual(result["reactivated"], 1)
+        self.assertEqual(recipient.user_id, self.mail_user.id)
         self.assertEqual([row["userId"] for row in result["recipients"]], [self.mail_user.id])
 
     def test_notification_recipient_endpoint_replaces_mail_recipients(self) -> None:
@@ -1473,7 +1508,7 @@ class DroneSopChannelRecipientTests(TestCase):
         self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
 
     def test_notification_recipient_endpoint_returns_mail_recipients(self) -> None:
-        """수신인 API가 target/channel의 활성 메일 수신인을 반환하는지 확인합니다."""
+        """수신인 API가 target/channel의 등록된 메일 수신인을 반환하는지 확인합니다."""
 
         DroneSopChannelRecipient.objects.create(
             target_user_sdwt_prod="ETCH_A",
@@ -1534,7 +1569,6 @@ class DroneSopChannelRecipientTests(TestCase):
             DroneSopChannelRecipient.objects.filter(
                 target_user_sdwt_prod="ETCH_A",
                 channel=DroneSopChannelRecipient.Channels.MAIL,
-                is_active=True,
             ).exists()
         )
 
@@ -1570,7 +1604,6 @@ class DroneSopChannelRecipientTests(TestCase):
             DroneSopChannelRecipient.objects.filter(
                 target_user_sdwt_prod="ETCH_A",
                 channel=DroneSopChannelRecipient.Channels.MAIL,
-                is_active=True,
             ).exists()
         )
 
@@ -1842,8 +1875,8 @@ class DroneSopChannelRecipientTests(TestCase):
         self.assertEqual(response.json()["error"], "line_id must be an existing line")
         self.assertFalse(DroneSopUserSdwtChannel.objects.filter(line_id="CUSTOM_LINE").exists())
 
-    def test_notification_recipient_endpoint_empty_list_deactivates_recipients(self) -> None:
-        """빈 userIds 저장은 기존 활성 수신인을 모두 비활성화해야 합니다."""
+    def test_notification_recipient_endpoint_empty_list_deletes_recipients(self) -> None:
+        """빈 userIds 저장은 기존 수신인을 모두 삭제해야 합니다."""
 
         recipient = DroneSopChannelRecipient.objects.create(
             target_user_sdwt_prod="ETCH_A",
@@ -1866,8 +1899,7 @@ class DroneSopChannelRecipientTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        recipient.refresh_from_db()
-        self.assertFalse(recipient.is_active)
+        self.assertFalse(DroneSopChannelRecipient.objects.filter(id=recipient.id).exists())
         self.assertEqual(response.json()["recipients"], [])
 
     def test_notification_recipient_endpoint_rejects_boolean_user_id(self) -> None:
@@ -1893,7 +1925,6 @@ class DroneSopChannelRecipientTests(TestCase):
             DroneSopChannelRecipient.objects.filter(
                 target_user_sdwt_prod="ETCH_A",
                 channel=DroneSopChannelRecipient.Channels.MAIL,
-                is_active=True,
             ).exists()
         )
 

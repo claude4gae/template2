@@ -11,7 +11,6 @@ from collections.abc import Iterable
 from typing import Any
 
 from django.db import IntegrityError, transaction
-from django.utils import timezone
 
 import api.account.selectors as account_selectors
 
@@ -29,13 +28,12 @@ from .user_sdwt_channel import ensure_drone_sop_notification_target
 
 def _get_or_create_recipient_row(
     *,
-    line_id: str | None = None,
     target: DroneSopTarget | None = None,
     target_user_sdwt_prod: str | None = None,
     channel: str,
     user_id: int,
     actor: Any | None,
-) -> tuple[DroneSopChannelRecipient, bool]:
+) -> DroneSopChannelRecipient:
     """동시 생성 충돌을 흡수하며 수신인 row를 조회 또는 생성합니다."""
 
     if target is None:
@@ -52,7 +50,7 @@ def _get_or_create_recipient_row(
                 channel=channel,
                 user_id=user_id,
                 created_by=created_by,
-            ), True
+            )
     except IntegrityError:
         existing = (
             DroneSopChannelRecipient.objects.select_for_update()
@@ -66,7 +64,13 @@ def _get_or_create_recipient_row(
         )
         if existing is None:
             raise
-        return existing, False
+        return existing
+
+
+def _lock_recipient_target_for_replace(*, target_id: int) -> DroneSopTarget:
+    """수신인 교체 작업을 target 단위로 직렬화하기 위해 target row를 잠급니다."""
+
+    return DroneSopTarget.objects.select_for_update().get(id=target_id)
 
 
 def replace_drone_sop_channel_recipients(
@@ -93,7 +97,7 @@ def replace_drone_sop_channel_recipients(
     - dict[str, object]: 갱신 결과와 최신 수신인 목록
 
     부작용:
-    - DroneSopChannelRecipient 생성/재활성화/비활성화
+    - DroneSopChannelRecipient 생성/삭제
 
     오류:
     - ValueError: target/channel/user_ids가 유효하지 않을 때
@@ -133,51 +137,42 @@ def replace_drone_sop_channel_recipients(
     )
 
     # -----------------------------------------------------------------------------
-    # 2) 기존 행 잠금 후 soft replace 수행
+    # 2) 기존 행 잠금 후 삭제 기반 교체 수행
     # -----------------------------------------------------------------------------
-    now = timezone.now()
     with transaction.atomic():
+        locked_target = _lock_recipient_target_for_replace(target_id=target.id)
         existing_rows = list(
             DroneSopChannelRecipient.objects.select_for_update().filter(
-                target=target,
+                target=locked_target,
                 channel=normalized_channel,
             )
         )
-        existing_by_user_id = {row.user_id: row for row in existing_rows}
-
         target_user_id_set = set(normalized_user_ids)
-        deactivate_ids = [
+        delete_ids = [
             row.id
             for row in existing_rows
-            if row.user_id not in target_user_id_set and row.is_active
+            if row.user_id not in target_user_id_set
         ]
-        if deactivate_ids:
-            DroneSopChannelRecipient.objects.filter(id__in=deactivate_ids).update(
-                is_active=False,
-                updated_at=now,
-            )
+        if delete_ids:
+            DroneSopChannelRecipient.objects.filter(id__in=delete_ids).delete()
 
-        created_count = 0
-        reactivated_count = 0
+        existing_user_ids = {
+            row.user_id
+            for row in existing_rows
+            if row.user_id in target_user_id_set and row.id not in delete_ids
+        }
+
         for user_id in normalized_user_ids:
-            existing = existing_by_user_id.get(user_id)
-            if existing is None:
-                existing, created = _get_or_create_recipient_row(
-                    line_id=normalized_line_id,
-                    target=target,
-                    target_user_sdwt_prod=normalized_target,
-                    channel=normalized_channel,
-                    user_id=user_id,
-                    actor=actor,
-                )
-                existing_by_user_id[user_id] = existing
-                if created:
-                    created_count += 1
-                    continue
-            if not existing.is_active:
-                existing.is_active = True
-                existing.save(update_fields=["is_active", "updated_at"])
-                reactivated_count += 1
+            if user_id in existing_user_ids:
+                continue
+            _get_or_create_recipient_row(
+                target=locked_target,
+                target_user_sdwt_prod=normalized_target,
+                channel=normalized_channel,
+                user_id=user_id,
+                actor=actor,
+            )
+            existing_user_ids.add(user_id)
 
     # -----------------------------------------------------------------------------
     # 3) 최신 조회 결과 반환
@@ -192,9 +187,6 @@ def replace_drone_sop_channel_recipients(
         "targetUserSdwtProd": normalized_target,
         "channel": normalized_channel,
         "recipients": recipients,
-        "created": created_count,
-        "reactivated": reactivated_count,
-        "deactivated": len(deactivate_ids),
     }
 
 

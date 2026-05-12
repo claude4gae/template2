@@ -198,6 +198,8 @@ DATABASES = {
     },
 }
 
+TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 30) or 30
+
 
 # ===========================
 # 비밀번호 검증 (기본 정책 유지)

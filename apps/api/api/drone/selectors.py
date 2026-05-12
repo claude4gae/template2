@@ -1001,7 +1001,7 @@ def list_mail_receiver_emails_for_user_sdwt_prod(*, line_id: str, user_sdwt_prod
         없음. 읽기 전용 조회입니다.
     """
 
-    return _list_active_recipient_contact_values(
+    return _list_recipient_contact_values(
         target_user_sdwt_prod=user_sdwt_prod,
         channel=DroneSopChannelRecipient.Channels.MAIL,
         contact_field="email",
@@ -1022,14 +1022,14 @@ def list_messenger_receiver_knox_ids_for_user_sdwt_prod(*, line_id: str, user_sd
         없음. 읽기 전용 조회입니다.
     """
 
-    return _list_active_recipient_contact_values(
+    return _list_recipient_contact_values(
         target_user_sdwt_prod=user_sdwt_prod,
         channel=DroneSopChannelRecipient.Channels.MESSENGER,
         contact_field="knox_id",
     )
 
 
-def _list_active_recipient_contact_values(
+def _list_recipient_contact_values(
     *,
     target_user_sdwt_prod: str,
     channel: str,
@@ -1045,7 +1045,6 @@ def _list_active_recipient_contact_values(
         DroneSopChannelRecipient.objects.filter(
             target__target_user_sdwt_prod__iexact=normalized,
             channel=channel,
-            is_active=True,
             user__is_active=True,
         )
         .exclude(**{f"user__{contact_field}__isnull": True})
@@ -1072,7 +1071,7 @@ def list_drone_sop_channel_recipients(
     target_user_sdwt_prod: str,
     channel: str,
 ) -> list[dict[str, object]]:
-    """Drone SOP target/channel에 등록된 활성 수신인을 조회합니다.
+    """Drone SOP target/channel에 등록된 수신인을 조회합니다.
 
     커스텀 target_user_sdwt_prod를 허용하므로 account_affiliation 매핑은 요구하지 않습니다.
 
@@ -1099,7 +1098,6 @@ def list_drone_sop_channel_recipients(
         DroneSopChannelRecipient.objects.filter(
             target__target_user_sdwt_prod__iexact=normalized,
             channel=channel,
-            is_active=True,
             user__is_active=True,
         )
         .select_related("target", "user")

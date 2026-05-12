@@ -697,7 +697,6 @@ class DroneSopTargetRecipient(LegacyTargetNameMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="drone_sop_recipients",
     )
-    is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
