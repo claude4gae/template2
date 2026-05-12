@@ -12,16 +12,16 @@ from typing import Any
 from django.db import transaction
 
 from ... import selectors
-from ...models import DroneSOP, DroneSopChannelDelivery, DroneSopTarget
+from ...models import DroneSOP, DroneSopDelivery
 from ..shared.delivery_state import ensure_channel_delivery_snapshots_for_rows, mark_channel_delivery_status
 from ..shared.notify_resolver import load_user_sdwt_prod_map_index, resolve_target_user_sdwt_prods
-from ..shared.policy import REASON_TARGET_MISSING, TARGET_MISSING_DELIVERY_TARGET
+from ..shared.policy import REASON_TARGET_MISSING
 from .retry_results import DroneSopRetryChannelResult, build_retry_channel_result
 
 _DELIVERY_CHANNEL_BY_CHANNEL = {
-    "jira": DroneSopChannelDelivery.Channels.JIRA,
-    "messenger": DroneSopChannelDelivery.Channels.MESSENGER,
-    "mail": DroneSopChannelDelivery.Channels.MAIL,
+    "jira": DroneSopDelivery.Channels.JIRA,
+    "messenger": DroneSopDelivery.Channels.MESSENGER,
+    "mail": DroneSopDelivery.Channels.MAIL,
 }
 _CHANNEL_KEYS_TEXT = ", ".join(_DELIVERY_CHANNEL_BY_CHANNEL.keys())
 
@@ -33,17 +33,17 @@ def _build_resolution_row(*, sop: DroneSOP) -> dict[str, Any]:
         "id": int(sop.id),
         "sdwt_prod": sop.sdwt_prod,
         "user_sdwt_prod": sop.user_sdwt_prod,
+        "target_user_sdwt_prod": sop.target_user_sdwt_prod,
         "status": sop.status,
         "needtosend": sop.needtosend,
         "instant_inform": sop.instant_inform,
     }
 
 
-def _is_target_missing_delivery(delivery: DroneSopChannelDelivery) -> bool:
+def _is_target_missing_delivery(delivery: DroneSopDelivery) -> bool:
     """target 미확정 실패 delivery인지 확인합니다."""
 
-    target_name = str(getattr(delivery, "target_user_sdwt_prod", "") or "").strip()
-    return delivery.reason == REASON_TARGET_MISSING or target_name == TARGET_MISSING_DELIVERY_TARGET
+    return delivery.reason == REASON_TARGET_MISSING
 
 
 def _resolve_current_target_for_sop(*, sop: DroneSOP) -> str | None:
@@ -64,7 +64,7 @@ def _requeue_target_missing_delivery(
     *,
     sop: DroneSOP,
     channel: str,
-    failed_deliveries: list[DroneSopChannelDelivery],
+    failed_deliveries: list[DroneSopDelivery],
 ) -> str | None:
     """target 미확정 실패 row를 현재 mapping target의 pending row로 전환합니다."""
 
@@ -76,51 +76,13 @@ def _requeue_target_missing_delivery(
     if not resolved_target:
         raise ValueError("target mapping is still missing")
 
-    target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=resolved_target)
-    existing_delivery = (
-        DroneSopChannelDelivery.objects.filter(
-            sop_id=int(sop.id),
-            target=target,
-            channel=channel,
-        )
-        .order_by("id")
-        .first()
+    if sop.target_user_sdwt_prod != resolved_target:
+        sop.target_user_sdwt_prod = resolved_target
+        sop.save(update_fields=["target_user_sdwt_prod", "updated_at"])
+    mark_channel_delivery_status(
+        delivery_ids=[int(delivery.id) for delivery in target_missing_deliveries if delivery.id],
+        status=DroneSopDelivery.Statuses.PENDING,
     )
-    stale_ids = [int(delivery.id) for delivery in target_missing_deliveries if delivery.id]
-
-    if existing_delivery is not None:
-        DroneSopChannelDelivery.objects.filter(id__in=stale_ids).exclude(id=existing_delivery.id).delete()
-        if existing_delivery.status == DroneSopChannelDelivery.Statuses.SUCCESS:
-            return "success"
-        if existing_delivery.status == DroneSopChannelDelivery.Statuses.PENDING:
-            return "pending"
-        mark_channel_delivery_status(
-            delivery_ids=[int(existing_delivery.id)],
-            status=DroneSopChannelDelivery.Statuses.PENDING,
-        )
-        return "queued"
-
-    primary_delivery = target_missing_deliveries[0]
-    primary_delivery.target = target
-    primary_delivery.status = DroneSopChannelDelivery.Statuses.PENDING
-    primary_delivery.reason = None
-    primary_delivery.sent_at = None
-    primary_delivery.sent_step = None
-    primary_delivery.external_key = None
-    primary_delivery.save(
-        update_fields=[
-            "target",
-            "status",
-            "reason",
-            "sent_at",
-            "sent_step",
-            "external_key",
-            "updated_at",
-        ]
-    )
-    extra_stale_ids = [int(delivery.id) for delivery in target_missing_deliveries[1:] if delivery.id]
-    if extra_stale_ids:
-        DroneSopChannelDelivery.objects.filter(id__in=extra_stale_ids).delete()
     return "queued"
 
 
@@ -168,12 +130,11 @@ def retry_drone_sop_channel(
         ensure_channel_delivery_snapshots_for_rows(rows=[_build_resolution_row(sop=sop)])
 
         failed_deliveries = list(
-            DroneSopChannelDelivery.objects.filter(
+            DroneSopDelivery.objects.filter(
                 sop_id=sop_id,
                 channel=delivery_channel,
-                status=DroneSopChannelDelivery.Statuses.FAILED,
+                status=DroneSopDelivery.Statuses.FAILED,
             )
-            .select_related("target")
             .order_by("id")
         )
         target_missing_result = _requeue_target_missing_delivery(
@@ -185,21 +146,21 @@ def retry_drone_sop_channel(
             return build_retry_channel_result(channel=normalized_channel, state=target_missing_result)
 
         failed_delivery_ids = [int(delivery.id) for delivery in failed_deliveries if delivery.id]
-        pending_exists = DroneSopChannelDelivery.objects.filter(
+        pending_exists = DroneSopDelivery.objects.filter(
             sop_id=sop_id,
             channel=delivery_channel,
-            status=DroneSopChannelDelivery.Statuses.PENDING,
+            status=DroneSopDelivery.Statuses.PENDING,
         ).exists()
-        success_exists = DroneSopChannelDelivery.objects.filter(
+        success_exists = DroneSopDelivery.objects.filter(
             sop_id=sop_id,
             channel=delivery_channel,
-            status=DroneSopChannelDelivery.Statuses.SUCCESS,
+            status=DroneSopDelivery.Statuses.SUCCESS,
         ).exists()
 
         if failed_delivery_ids:
             mark_channel_delivery_status(
                 delivery_ids=[int(delivery_id) for delivery_id in failed_delivery_ids],
-                status=DroneSopChannelDelivery.Statuses.PENDING,
+                status=DroneSopDelivery.Statuses.PENDING,
             )
             return build_retry_channel_result(channel=normalized_channel, state="queued")
 

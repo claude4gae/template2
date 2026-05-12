@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...models import DroneSopUserSdwtChannel
-
 UNSET = object()
-VALID_TARGET_SOURCES = {
-    DroneSopUserSdwtChannel.Sources.AFFILIATION,
-    DroneSopUserSdwtChannel.Sources.CUSTOM,
-}
 
 
 def normalize_optional_text(value: Any) -> str:
@@ -35,17 +29,6 @@ def normalize_required_mapping_value(value: Any, field_name: str) -> str:
         raise ValueError(f"{field_name} is required")
     if len(normalized) > 64:
         raise ValueError(f"{field_name} must be 64 characters or fewer")
-    return normalized
-
-
-def normalize_target_source(value: str | object) -> str | object:
-    """target source 값을 허용된 값으로 정규화합니다."""
-
-    if value is UNSET:
-        return value
-    normalized = normalize_optional_text(value)
-    if normalized not in VALID_TARGET_SOURCES:
-        raise ValueError("source must be affiliation or custom")
     return normalized
 
 
@@ -82,7 +65,6 @@ __all__ = [
     "normalize_optional_template_key",
     "normalize_optional_text",
     "normalize_required_mapping_value",
-    "normalize_target_source",
     "same_text",
     "validate_optional_chatroom_id",
     "validate_optional_str",

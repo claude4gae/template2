@@ -8,7 +8,7 @@ from typing import Any
 from django.db import transaction
 
 from ... import selectors
-from ...models import DroneSopChannelDelivery
+from ...models import DroneSopDelivery
 from ..shared.delivery_state import ensure_channel_delivery_snapshots_for_rows
 
 
@@ -67,8 +67,8 @@ def enqueue_drone_sop_jira_instant_inform(
             update_fields.append("comment")
 
         success_delivery = sop.channel_deliveries.filter(
-            channel=DroneSopChannelDelivery.Channels.JIRA,
-            status=DroneSopChannelDelivery.Statuses.SUCCESS,
+            channel=DroneSopDelivery.Channels.JIRA,
+            status=DroneSopDelivery.Statuses.SUCCESS,
         ).order_by("id").first()
         if success_delivery is not None:
             if sop.instant_inform is None or int(sop.instant_inform) != 1:

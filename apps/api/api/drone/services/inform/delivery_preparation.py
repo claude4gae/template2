@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ...models import DroneSopChannelDelivery
+from ...models import DroneSopDelivery
 from ..shared.delivery_state import (
     get_or_prepare_channel_delivery as _get_or_prepare_delivery,
     mark_channel_delivery_status as _mark_delivery_status,
@@ -120,9 +120,9 @@ def collect_pending_channel_deliveries(
             )
             delivery_ids.append(delivery.id)
             if delivery.status in {
-                DroneSopChannelDelivery.Statuses.SUCCESS,
-                DroneSopChannelDelivery.Statuses.FAILED,
-                DroneSopChannelDelivery.Statuses.DISABLED,
+                DroneSopDelivery.Statuses.SUCCESS,
+                DroneSopDelivery.Statuses.FAILED,
+                DroneSopDelivery.Statuses.DISABLED,
             }:
                 continue
 
@@ -130,14 +130,14 @@ def collect_pending_channel_deliveries(
             if not config_row:
                 _mark_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopChannelDelivery.Statuses.FAILED,
+                    status=DroneSopDelivery.Statuses.FAILED,
                     reason=REASON_CHANNEL_CONFIG_MISSING,
                 )
                 continue
             if not bool(config_row.get(enabled_field, True)):
                 _mark_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopChannelDelivery.Statuses.DISABLED,
+                    status=DroneSopDelivery.Statuses.DISABLED,
                     reason=REASON_DISABLED_BY_POLICY,
                 )
                 continue

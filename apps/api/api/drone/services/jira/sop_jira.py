@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from ... import selectors
-from ...models import DroneSopChannelDelivery
+from ...models import DroneSopDelivery
 from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
     filter_delivery_ids_for_config_failure,
@@ -136,7 +136,7 @@ def _run_drone_sop_jira_create_with_rows(
     if missing_ids:
         mark_missing_target_as_failed(
             sop_ids=missing_ids,
-            channels=[DroneSopChannelDelivery.Channels.JIRA],
+            channels=[DroneSopDelivery.Channels.JIRA],
         )
         missing_id_set = set(missing_ids)
         rows = [
@@ -171,7 +171,7 @@ def _run_drone_sop_jira_create_with_rows(
     if not config.base_url:
         mark_channel_delivery_status(
             delivery_ids=filter_delivery_ids_for_config_failure(delivery_ids=prepared.delivery_ids),
-            status=DroneSopChannelDelivery.Statuses.FAILED,
+            status=DroneSopDelivery.Statuses.FAILED,
             reason=REASON_CONFIG_MISSING,
         )
         return DroneSopJiraCreateResult(
@@ -204,12 +204,12 @@ def _run_drone_sop_jira_create_with_rows(
     )
     mark_channel_delivery_status(
         delivery_ids=failed_delivery_ids,
-        status=DroneSopChannelDelivery.Statuses.FAILED,
+        status=DroneSopDelivery.Statuses.FAILED,
         reason=REASON_SEND_FAILED,
     )
     mark_channel_delivery_status(
         delivery_ids=normalized_done_delivery_ids,
-        status=DroneSopChannelDelivery.Statuses.SUCCESS,
+        status=DroneSopDelivery.Statuses.SUCCESS,
         external_key_by_id=key_by_delivery_id,
     )
 

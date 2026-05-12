@@ -12,7 +12,7 @@ from typing import Any
 from django.db import transaction
 
 from ... import selectors
-from ...models import DroneSopUserSdwtChannel
+from ...models import DroneSopTarget
 from .normalization import UNSET as _UNSET, same_text as _same_text
 from .user_sdwt_upsert import (
     apply_user_sdwt_channel_field_updates,
@@ -38,14 +38,14 @@ def upsert_drone_sop_user_sdwt_channel(
     needtosend_comment_last_at: str | None | object = _UNSET,
     needtosend_ignore_sample_type: bool | object = _UNSET,
     needtosend_enabled: bool | object = _UNSET,
-) -> tuple[DroneSopUserSdwtChannel, int]:
+) -> tuple[DroneSopTarget, int]:
     """target_user_sdwt_prod에 대한 알림 target/채널 설정을 생성 또는 갱신합니다.
 
     입력:
     - target_user_sdwt_prod: 최종 소속 식별자
     - line_id: target 소유 라인(없으면 기존 값을 유지)
-    - source: affiliation/custom 중 target 생성 출처
-    - actor: target을 생성한 사용자
+    - source: 기존 API 호환용 입력(저장하지 않음)
+    - actor: 기존 API 호환용 입력(저장하지 않음)
     - jira_key: Jira 프로젝트 키(없으면 None, 미지정 시 _UNSET)
     - chatroom_id: 채팅룸 ID(없으면 None, 미지정 시 _UNSET)
     - jira_template_key: Jira 템플릿 키(없으면 None, 미지정 시 _UNSET)
@@ -60,10 +60,10 @@ def upsert_drone_sop_user_sdwt_channel(
     - needtosend_enabled: 자동 예약 규칙 활성 여부(미지정 시 _UNSET)
 
     반환:
-    - (DroneSopUserSdwtChannel, int): (갱신된 엔티티, 갱신 여부)
+    - (DroneSopTarget, int): (갱신된 엔티티, 갱신 여부)
 
     부작용:
-    - DroneSopUserSdwtChannel upsert 수행
+    - DroneSopTarget upsert 수행
 
     오류:
     - ValueError: 필수 입력 누락 또는 갱신 대상 없음
@@ -75,7 +75,6 @@ def upsert_drone_sop_user_sdwt_channel(
     normalized_target = normalize_user_sdwt_channel_target(target_user_sdwt_prod)
     fields = normalize_user_sdwt_channel_upsert_fields(
         line_id=line_id,
-        source=source,
         jira_key=jira_key,
         chatroom_id=chatroom_id,
         jira_template_key=jira_template_key,
@@ -102,7 +101,7 @@ def upsert_drone_sop_user_sdwt_channel(
     # -----------------------------------------------------------------------------
     with transaction.atomic():
         channel = (
-            DroneSopUserSdwtChannel.objects.select_for_update()
+            DroneSopTarget.objects.select_for_update()
             .filter(target_user_sdwt_prod__iexact=normalized_target)
             .order_by("id")
             .first()
@@ -111,7 +110,7 @@ def upsert_drone_sop_user_sdwt_channel(
         if channel is None:
             if fields.line_id is _UNSET:
                 raise ValueError("line_id is required for new target")
-            channel = DroneSopUserSdwtChannel(target_user_sdwt_prod=normalized_target)
+            channel = DroneSopTarget(target_user_sdwt_prod=normalized_target)
         update_fields: list[str] = []
 
         if fields.line_id is not _UNSET:
@@ -123,21 +122,11 @@ def upsert_drone_sop_user_sdwt_channel(
                 if channel.line_id != fields.line_id:
                     channel.line_id = fields.line_id
                     update_fields.append("line_id")
-        if fields.source is not _UNSET and (created or not channel.source) and channel.source != fields.source:
-            channel.source = fields.source
-            update_fields.append("source")
-        if created and getattr(actor, "is_authenticated", False):
-            channel.created_by = actor
-            update_fields.append("created_by")
-
         apply_user_sdwt_channel_field_updates(
             channel=channel,
             fields=fields,
             update_fields=update_fields,
         )
-        if not channel.is_active:
-            channel.is_active = True
-            update_fields.append("is_active")
 
         if update_fields:
             if created:
@@ -158,21 +147,21 @@ def ensure_drone_sop_notification_target(
     line_id: str,
     target_user_sdwt_prod: str,
     actor: Any | None = None,
-    source: str = DroneSopUserSdwtChannel.Sources.CUSTOM,
-) -> tuple[DroneSopUserSdwtChannel, int]:
+    source: str = DroneSopTarget.Sources.CUSTOM,
+) -> tuple[DroneSopTarget, int]:
     """라인별 Drone SOP 알림 target을 생성하거나 기존 target을 반환합니다.
 
     입력:
     - line_id: target 소유 라인
     - target_user_sdwt_prod: 알림 target 식별자
-    - actor: 생성 요청 사용자
-    - source: affiliation/custom 중 생성 출처
+    - actor: 기존 API 호환용 입력(저장하지 않음)
+    - source: 기존 API 호환용 입력(저장하지 않음)
 
     반환:
-    - (DroneSopUserSdwtChannel, int): (target row, 변경 여부)
+    - (DroneSopTarget, int): (target row, 변경 여부)
 
     부작용:
-    - target이 없으면 DroneSopUserSdwtChannel row를 생성합니다.
+    - target이 없으면 DroneSopTarget row를 생성합니다.
 
     오류:
     - ValueError: line/target/source가 유효하지 않거나 target이 다른 line에 속할 때

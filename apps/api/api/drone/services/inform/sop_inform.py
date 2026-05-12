@@ -14,7 +14,7 @@ from typing import Any
 import api.common.services as messenger_services
 
 from ... import selectors
-from ...models import DroneSopChannelDelivery, DroneSopChannelRecipient
+from ...models import DroneSopDelivery, DroneSopTargetRecipient
 from ..jira.config import DroneCtttmConfig
 from ..jira.delivery import _enrich_rows_with_ctttm_urls
 from ..jira.sop_jira import run_drone_sop_jira_create_from_rows
@@ -53,9 +53,9 @@ from .status_helpers import (
 logger = logging.getLogger(__name__)
 
 _PIPELINE_CHANNELS: tuple[str, ...] = (
-    DroneSopChannelDelivery.Channels.JIRA,
-    DroneSopChannelDelivery.Channels.MESSENGER,
-    DroneSopChannelDelivery.Channels.MAIL,
+    DroneSopDelivery.Channels.JIRA,
+    DroneSopDelivery.Channels.MESSENGER,
+    DroneSopDelivery.Channels.MAIL,
 )
 
 
@@ -129,13 +129,13 @@ def _run_messenger_inform(
         rows=rows,
         channel_by_target=channel_by_target,
         enabled_field="messenger_enabled",
-        channel=DroneSopChannelRecipient.Channels.MESSENGER,
+        channel=DroneSopTargetRecipient.Channels.MESSENGER,
     )
 
     if not messenger_config.is_ready():
         _mark_delivery_status(
             delivery_ids=_filter_delivery_ids_for_config_failure(delivery_ids=delivery_ids),
-            status=DroneSopChannelDelivery.Statuses.FAILED,
+            status=DroneSopDelivery.Statuses.FAILED,
             reason=REASON_CONFIG_MISSING,
         )
         logger.info("Skip messenger send: KNOX_MESSENGER_API_BASE_URL/AUTHORIZATION/SYSTEM_ID 미설정")
@@ -201,13 +201,13 @@ def _run_mail_inform(
         rows=rows,
         channel_by_target=channel_by_target,
         enabled_field="mail_enabled",
-        channel=DroneSopChannelRecipient.Channels.MAIL,
+        channel=DroneSopTargetRecipient.Channels.MAIL,
     )
 
     if not mail_config.sender_email:
         _mark_delivery_status(
             delivery_ids=_filter_delivery_ids_for_config_failure(delivery_ids=delivery_ids),
-            status=DroneSopChannelDelivery.Statuses.FAILED,
+            status=DroneSopDelivery.Statuses.FAILED,
             reason=REASON_CONFIG_MISSING,
         )
         logger.info("Skip mail send: DRONE_MAIL_SENDER 미설정")

@@ -719,7 +719,7 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
 
     @staticmethod
     def _serialize_target(target: Any, *, fallback_line_id: str) -> dict[str, object]:
-        """DroneSopUserSdwtChannel row를 API 응답 형태로 변환합니다."""
+        """DroneSopTarget row를 API 응답 형태로 변환합니다."""
 
         return {
             "lineId": getattr(target, "line_id", None) or fallback_line_id,
@@ -786,7 +786,7 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
         - JsonResponse: 생성/조회된 target
 
         부작용:
-        - DroneSopUserSdwtChannel target row 생성 또는 재활성화
+        - DroneSopTarget target row 생성 또는 재활성화
 
         오류:
         - 400: 입력 오류

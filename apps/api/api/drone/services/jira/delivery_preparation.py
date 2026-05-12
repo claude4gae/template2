@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from ...models import DroneSopChannelDelivery
+from ...models import DroneSopDelivery
 from ..shared.delivery_state import (
     get_or_prepare_channel_delivery,
     mark_channel_delivery_status,
@@ -111,7 +111,7 @@ def collect_jira_delivery_rows(
             delivery = get_or_prepare_channel_delivery(
                 sop_id=row_id,
                 target_user_sdwt_prod=target,
-                channel=DroneSopChannelDelivery.Channels.JIRA,
+                channel=DroneSopDelivery.Channels.JIRA,
             )
             delivery_ids.append(delivery.id)
             sop_id_by_delivery_id[delivery.id] = row_id
@@ -121,9 +121,9 @@ def collect_jira_delivery_rows(
                 step_by_delivery_id[delivery.id] = step
 
             if delivery.status in {
-                DroneSopChannelDelivery.Statuses.SUCCESS,
-                DroneSopChannelDelivery.Statuses.FAILED,
-                DroneSopChannelDelivery.Statuses.DISABLED,
+                DroneSopDelivery.Statuses.SUCCESS,
+                DroneSopDelivery.Statuses.FAILED,
+                DroneSopDelivery.Statuses.DISABLED,
             }:
                 continue
 
@@ -131,14 +131,14 @@ def collect_jira_delivery_rows(
             if not config_row:
                 mark_channel_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopChannelDelivery.Statuses.FAILED,
+                    status=DroneSopDelivery.Statuses.FAILED,
                     reason=REASON_CHANNEL_CONFIG_MISSING,
                 )
                 continue
             if not bool(config_row.get("jira_enabled", True)):
                 mark_channel_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopChannelDelivery.Statuses.DISABLED,
+                    status=DroneSopDelivery.Statuses.DISABLED,
                     reason=REASON_DISABLED_BY_POLICY,
                 )
                 continue
@@ -148,7 +148,7 @@ def collect_jira_delivery_rows(
             if not jira_key or not template_key or template_key not in TEMPLATE_SOURCES:
                 mark_channel_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopChannelDelivery.Statuses.FAILED,
+                    status=DroneSopDelivery.Statuses.FAILED,
                     reason=REASON_CHANNEL_CONFIG_INVALID,
                 )
                 continue

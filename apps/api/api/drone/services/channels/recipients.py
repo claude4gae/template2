@@ -15,7 +15,7 @@ from django.db import IntegrityError, transaction
 import api.account.selectors as account_selectors
 
 from ... import selectors
-from ...models import DroneSopChannelRecipient, DroneSopTarget
+from ...models import DroneSopTargetRecipient, DroneSopTarget
 from .recipient_normalization import (
     CONTACT_FIELD_BY_CHANNEL,
     normalize_line_id as _normalize_line_id,
@@ -33,7 +33,7 @@ def _get_or_create_recipient_row(
     channel: str,
     user_id: int,
     actor: Any | None,
-) -> DroneSopChannelRecipient:
+) -> DroneSopTargetRecipient:
     """동시 생성 충돌을 흡수하며 수신인 row를 조회 또는 생성합니다."""
 
     if target is None:
@@ -42,18 +42,16 @@ def _get_or_create_recipient_row(
             raise ValueError("targetUserSdwtProd is required")
         target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=normalized_target)
 
-    created_by = actor if getattr(actor, "is_authenticated", False) else None
     try:
         with transaction.atomic():
-            return DroneSopChannelRecipient.objects.create(
+            return DroneSopTargetRecipient.objects.create(
                 target=target,
                 channel=channel,
                 user_id=user_id,
-                created_by=created_by,
             )
     except IntegrityError:
         existing = (
-            DroneSopChannelRecipient.objects.select_for_update()
+            DroneSopTargetRecipient.objects.select_for_update()
             .filter(
                 target=target,
                 channel=channel,
@@ -97,7 +95,7 @@ def replace_drone_sop_channel_recipients(
     - dict[str, object]: 갱신 결과와 최신 수신인 목록
 
     부작용:
-    - DroneSopChannelRecipient 생성/삭제
+    - DroneSopTargetRecipient 생성/삭제
 
     오류:
     - ValueError: target/channel/user_ids가 유효하지 않을 때
@@ -126,7 +124,7 @@ def replace_drone_sop_channel_recipients(
     )
     missing_contact_user_ids = sorted(active_user_ids - contact_user_ids)
     if missing_contact_user_ids:
-        if normalized_channel == DroneSopChannelRecipient.Channels.MAIL:
+        if normalized_channel == DroneSopTargetRecipient.Channels.MAIL:
             raise ValueError("mail recipients require email")
         raise ValueError("messenger recipients require knox_id")
 
@@ -142,7 +140,7 @@ def replace_drone_sop_channel_recipients(
     with transaction.atomic():
         locked_target = _lock_recipient_target_for_replace(target_id=target.id)
         existing_rows = list(
-            DroneSopChannelRecipient.objects.select_for_update().filter(
+            DroneSopTargetRecipient.objects.select_for_update().filter(
                 target=locked_target,
                 channel=normalized_channel,
             )
@@ -154,7 +152,7 @@ def replace_drone_sop_channel_recipients(
             if row.user_id not in target_user_id_set
         ]
         if delete_ids:
-            DroneSopChannelRecipient.objects.filter(id__in=delete_ids).delete()
+            DroneSopTargetRecipient.objects.filter(id__in=delete_ids).delete()
 
         existing_user_ids = {
             row.user_id

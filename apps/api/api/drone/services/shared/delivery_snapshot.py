@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from ...models import DroneSopChannelDelivery
+from ...models import DroneSopDelivery
 
 DELIVERY_CHANNELS: tuple[str, ...] = (
-    DroneSopChannelDelivery.Channels.JIRA,
-    DroneSopChannelDelivery.Channels.MESSENGER,
-    DroneSopChannelDelivery.Channels.MAIL,
+    DroneSopDelivery.Channels.JIRA,
+    DroneSopDelivery.Channels.MESSENGER,
+    DroneSopDelivery.Channels.MAIL,
 )
 
 

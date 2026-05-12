@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: Drone SOP 알림 정책
 # 주요 기능: target_user_sdwt_prod 누락 행의 delivery 실패 처리
-# 주요 가정: 누락된 대상도 delivery row로 기록해 자동 재처리 후보에서 제외합니다.
+# 주요 가정: 누락된 대상은 channel delivery 실패 사유로 기록해 자동 재처리 후보에서 제외합니다.
 # =============================================================================
 """Drone SOP 알림 정책 유틸리티."""
 
@@ -11,7 +11,7 @@ from typing import Sequence
 
 from django.db import transaction
 
-from ...models import DroneSopChannelDelivery, DroneSopTarget
+from ...models import DroneSopDelivery
 
 # 채널 상태 사유 코드
 REASON_DISABLED_BY_POLICY = "disabled_by_policy"
@@ -22,13 +22,12 @@ REASON_CHANNEL_CONFIG_INVALID = "channel_config_invalid"
 REASON_TEMPLATE_MISSING = "template_missing"
 REASON_RECEIVER_NOT_FOUND = "receiver_not_found"
 REASON_SEND_FAILED = "send_failed"
-TARGET_MISSING_DELIVERY_TARGET = "__target_missing__"
 
 _ALLOWED_CHANNELS = frozenset(
     {
-        DroneSopChannelDelivery.Channels.JIRA,
-        DroneSopChannelDelivery.Channels.MESSENGER,
-        DroneSopChannelDelivery.Channels.MAIL,
+        DroneSopDelivery.Channels.JIRA,
+        DroneSopDelivery.Channels.MESSENGER,
+        DroneSopDelivery.Channels.MAIL,
     }
 )
 
@@ -64,7 +63,7 @@ def mark_missing_target_as_failed(
         없음.
 
     부작용:
-        누락 대상용 delivery row를 실패 상태로 생성/갱신합니다.
+        누락 대상용 delivery snapshot을 실패 상태로 생성/갱신합니다.
     """
 
     # -----------------------------------------------------------------------------
@@ -81,13 +80,11 @@ def mark_missing_target_as_failed(
     # 2) 누락 대상 delivery row 생성/갱신
     # -----------------------------------------------------------------------------
     with transaction.atomic():
-        missing_target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=TARGET_MISSING_DELIVERY_TARGET)
         delivery_rows = [
-            DroneSopChannelDelivery(
+            DroneSopDelivery(
                 sop_id=sop_id,
-                target=missing_target,
                 channel=channel,
-                status=DroneSopChannelDelivery.Statuses.FAILED,
+                status=DroneSopDelivery.Statuses.FAILED,
                 reason=REASON_TARGET_MISSING,
             )
             for sop_id in sop_ids
@@ -96,13 +93,12 @@ def mark_missing_target_as_failed(
         ]
         if not delivery_rows:
             return
-        DroneSopChannelDelivery.objects.bulk_create(delivery_rows, ignore_conflicts=True)
-        DroneSopChannelDelivery.objects.filter(
+        DroneSopDelivery.objects.bulk_create(delivery_rows, ignore_conflicts=True)
+        DroneSopDelivery.objects.filter(
             sop_id__in=[row.sop_id for row in delivery_rows],
-            target=missing_target,
             channel__in=normalized_channels,
         ).update(
-            status=DroneSopChannelDelivery.Statuses.FAILED,
+            status=DroneSopDelivery.Statuses.FAILED,
             reason=REASON_TARGET_MISSING,
         )
 
@@ -116,6 +112,5 @@ __all__ = [
     "REASON_RECEIVER_NOT_FOUND",
     "REASON_SEND_FAILED",
     "REASON_TEMPLATE_MISSING",
-    "TARGET_MISSING_DELIVERY_TARGET",
     "mark_missing_target_as_failed",
 ]

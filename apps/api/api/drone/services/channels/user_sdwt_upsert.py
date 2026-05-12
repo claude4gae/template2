@@ -5,12 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ...models import DroneSopUserSdwtChannel
+from ...models import DroneSopTarget
 from .normalization import (
     UNSET as _UNSET,
     normalize_optional_template_key,
     normalize_optional_text,
-    normalize_target_source,
     validate_optional_chatroom_id,
     validate_optional_str,
 )
@@ -21,7 +20,6 @@ class UserSdwtChannelUpsertFields:
     """정규화된 Drone SOP 채널 upsert 필드 묶음."""
 
     line_id: str | object
-    source: str | object
     jira_key: str | None | object
     chatroom_id: int | None | object
     jira_template_key: str | None | object
@@ -41,7 +39,6 @@ class UserSdwtChannelUpsertFields:
             value is not _UNSET
             for value in (
                 self.line_id,
-                self.source,
                 self.jira_key,
                 self.chatroom_id,
                 self.jira_template_key,
@@ -75,7 +72,6 @@ def _validate_optional_bool(value: object, field_name: str) -> None:
 def normalize_user_sdwt_channel_upsert_fields(
     *,
     line_id: Any,
-    source: str | object,
     jira_key: str | None | object,
     chatroom_id: int | None | object,
     jira_template_key: str | None | object,
@@ -104,7 +100,6 @@ def normalize_user_sdwt_channel_upsert_fields(
 
     return UserSdwtChannelUpsertFields(
         line_id=normalize_optional_text(line_id) if line_id is not _UNSET else _UNSET,
-        source=normalize_target_source(source),
         jira_key=jira_key,
         chatroom_id=chatroom_id,
         jira_template_key=normalize_optional_template_key(jira_template_key),
@@ -121,7 +116,7 @@ def normalize_user_sdwt_channel_upsert_fields(
 
 def set_channel_field_if_changed(
     *,
-    channel: DroneSopUserSdwtChannel,
+    channel: DroneSopTarget,
     update_fields: list[str],
     field_name: str,
     value: Any,
@@ -137,7 +132,7 @@ def set_channel_field_if_changed(
 
 def apply_user_sdwt_channel_field_updates(
     *,
-    channel: DroneSopUserSdwtChannel,
+    channel: DroneSopTarget,
     fields: UserSdwtChannelUpsertFields,
     update_fields: list[str],
 ) -> None:

@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Sequence
 
-from ...models import DroneSopChannelDelivery
+from ...models import DroneSopDelivery
 from ..shared.delivery_state import mark_channel_delivery_status, normalize_positive_ids
 from .delivery_preparation import extract_row_id
 
@@ -31,7 +31,7 @@ def mark_delivery_failed(*, delivery_id: int, reason: str) -> None:
 
     mark_channel_delivery_status(
         delivery_ids=[delivery_id],
-        status=DroneSopChannelDelivery.Statuses.FAILED,
+        status=DroneSopDelivery.Statuses.FAILED,
         reason=reason,
     )
 
@@ -41,7 +41,7 @@ def mark_successful_deliveries(*, delivery_ids: Sequence[int]) -> None:
 
     mark_channel_delivery_status(
         delivery_ids=delivery_ids,
-        status=DroneSopChannelDelivery.Statuses.SUCCESS,
+        status=DroneSopDelivery.Statuses.SUCCESS,
     )
 
 

@@ -11,9 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from ...models import DroneSopChannelDelivery, DroneSopTarget
+from ...models import DroneSOP, DroneSopDelivery
 from .delivery_snapshot import (
     DELIVERY_CHANNELS as _DELIVERY_CHANNELS,
     append_unique_target as _append_unique_target,
@@ -56,15 +57,18 @@ def get_or_prepare_channel_delivery(
     sop_id: int,
     target_user_sdwt_prod: str,
     channel: str,
-) -> DroneSopChannelDelivery:
+) -> DroneSopDelivery:
     """target/channel 발송 row를 생성하거나 현재 상태로 반환합니다."""
 
-    target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=target_user_sdwt_prod)
-    delivery, _ = DroneSopChannelDelivery.objects.get_or_create(
+    cleaned_target = _normalize_string_value(target_user_sdwt_prod)
+    if cleaned_target and not cleaned_target.startswith("__"):
+        DroneSOP.objects.filter(id=sop_id).filter(
+            Q(target_user_sdwt_prod__isnull=True) | Q(target_user_sdwt_prod="")
+        ).update(target_user_sdwt_prod=cleaned_target)
+    delivery, _ = DroneSopDelivery.objects.get_or_create(
         sop_id=sop_id,
-        target=target,
         channel=channel,
-        defaults={"status": DroneSopChannelDelivery.Statuses.PENDING},
+        defaults={"status": DroneSopDelivery.Statuses.PENDING},
     )
     return delivery
 
@@ -89,31 +93,33 @@ def ensure_channel_delivery_snapshots_for_rows(
     if not sop_ids:
         return DeliverySnapshotResult(target_user_sdwt_prods=set(), missing_sop_ids=[])
 
-    existing_rows = DroneSopChannelDelivery.objects.filter(sop_id__in=sop_ids).values(
-        "sop_id",
-        "target__target_user_sdwt_prod",
-        "channel",
-    )
-    existing_pairs_by_sop: dict[int, set[tuple[str, str]]] = {}
+    existing_rows = DroneSopDelivery.objects.filter(sop_id__in=sop_ids).values("sop_id", "channel")
+    existing_channels_by_sop: dict[int, set[str]] = {}
     existing_targets_by_sop: dict[int, list[str]] = {}
     for delivery_row in existing_rows:
         sop_id = delivery_row.get("sop_id")
         if not isinstance(sop_id, int):
             continue
-        target = _normalize_string_value(delivery_row.get("target__target_user_sdwt_prod"))
-        target_key = _normalize_lookup_key(target)
         channel = _normalize_string_value(delivery_row.get("channel"))
-        if not target or not target_key or channel not in _DELIVERY_CHANNELS:
+        if channel not in _DELIVERY_CHANNELS:
             continue
-        existing_pairs_by_sop.setdefault(sop_id, set()).add((target_key, channel))
-        _append_unique_target(target_list=existing_targets_by_sop.setdefault(sop_id, []), target=target)
+        existing_channels_by_sop.setdefault(sop_id, set()).add(channel)
+
+    sop_target_rows = DroneSOP.objects.filter(id__in=sop_ids).values("id", "target_user_sdwt_prod")
+    for sop_row in sop_target_rows:
+        sop_id = sop_row.get("id")
+        if not isinstance(sop_id, int):
+            continue
+        target = _normalize_string_value(sop_row.get("target_user_sdwt_prod"))
+        if target:
+            _append_unique_target(target_list=existing_targets_by_sop.setdefault(sop_id, []), target=target)
 
     if index is None:
         index = load_user_sdwt_prod_map_index()
 
     target_values: set[str] = set()
     missing_ids: list[int] = []
-    create_rows: list[DroneSopChannelDelivery] = []
+    create_rows: list[DroneSopDelivery] = []
 
     for row in rows:
         sop_id = _extract_sop_id(row)
@@ -140,24 +146,26 @@ def ensure_channel_delivery_snapshots_for_rows(
             if not target_key:
                 continue
             target_values.add(target)
+            if not _normalize_string_value(row.get("target_user_sdwt_prod")) and not target.startswith("__"):
+                row["target_user_sdwt_prod"] = target
+                DroneSOP.objects.filter(id=sop_id).filter(
+                    Q(target_user_sdwt_prod__isnull=True) | Q(target_user_sdwt_prod="")
+                ).update(target_user_sdwt_prod=target)
             for channel in normalized_channels:
-                pair = (target_key, channel)
-                if pair in existing_pairs_by_sop.setdefault(sop_id, set()):
+                if channel in existing_channels_by_sop.setdefault(sop_id, set()):
                     continue
-                target_row = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=target)
                 create_rows.append(
-                    DroneSopChannelDelivery(
+                    DroneSopDelivery(
                         sop_id=sop_id,
-                        target=target_row,
                         channel=channel,
-                        status=DroneSopChannelDelivery.Statuses.PENDING,
+                        status=DroneSopDelivery.Statuses.PENDING,
                     )
                 )
-                existing_pairs_by_sop[sop_id].add(pair)
+                existing_channels_by_sop[sop_id].add(channel)
 
     if create_rows:
         with transaction.atomic():
-            DroneSopChannelDelivery.objects.bulk_create(create_rows, ignore_conflicts=True)
+            DroneSopDelivery.objects.bulk_create(create_rows, ignore_conflicts=True)
 
     return DeliverySnapshotResult(
         target_user_sdwt_prods=target_values,
@@ -188,14 +196,14 @@ def mark_channel_delivery_status(
         "external_key": None,
         "updated_at": now,
     }
-    if status == DroneSopChannelDelivery.Statuses.SUCCESS:
+    if status == DroneSopDelivery.Statuses.SUCCESS:
         base_updates["reason"] = None
         base_updates["sent_at"] = now
 
     normalized_external_key_by_id = external_key_by_id or {}
     if not normalized_external_key_by_id:
         with transaction.atomic():
-            DroneSopChannelDelivery.objects.filter(id__in=normalized_ids).update(**base_updates)
+            DroneSopDelivery.objects.filter(id__in=normalized_ids).update(**base_updates)
         return
 
     with transaction.atomic():
@@ -204,7 +212,7 @@ def mark_channel_delivery_status(
             external_key = normalized_external_key_by_id.get(delivery_id)
             if isinstance(external_key, str) and external_key.strip():
                 updates["external_key"] = external_key.strip()
-            DroneSopChannelDelivery.objects.filter(id=delivery_id).update(**updates)
+            DroneSopDelivery.objects.filter(id=delivery_id).update(**updates)
 
 
 def filter_delivery_ids_for_config_failure(*, delivery_ids: Sequence[int]) -> list[int]:
@@ -214,8 +222,8 @@ def filter_delivery_ids_for_config_failure(*, delivery_ids: Sequence[int]) -> li
     if not normalized_ids:
         return []
     rows = (
-        DroneSopChannelDelivery.objects.filter(id__in=normalized_ids)
-        .exclude(status__in=[DroneSopChannelDelivery.Statuses.SUCCESS, DroneSopChannelDelivery.Statuses.DISABLED])
+        DroneSopDelivery.objects.filter(id__in=normalized_ids)
+        .exclude(status__in=[DroneSopDelivery.Statuses.SUCCESS, DroneSopDelivery.Statuses.DISABLED])
         .values_list("id", flat=True)
     )
     return normalize_positive_ids(list(rows))

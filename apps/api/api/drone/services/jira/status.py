@@ -12,7 +12,7 @@ from typing import Any, Sequence
 from django.db import transaction
 from django.utils import timezone
 
-from ...models import DroneSopChannelDelivery, DroneSopTarget
+from ...models import DroneSopDelivery
 from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
     mark_channel_delivery_status,
@@ -45,7 +45,7 @@ def update_drone_sop_jira_summary(
         return 0
 
     delivery_rows = list(
-        DroneSopChannelDelivery.objects.filter(id__in=normalized_delivery_ids).values("id", "sop_id")
+        DroneSopDelivery.objects.filter(id__in=normalized_delivery_ids).values("id", "sop_id")
     )
     if not delivery_rows:
         return 0
@@ -74,7 +74,7 @@ def update_drone_sop_jira_summary(
     # -------------------------------------------------------------------------
     with transaction.atomic():
         for delivery_id, sent_step in step_by_id.items():
-            DroneSopChannelDelivery.objects.filter(id=delivery_id).update(
+            DroneSopDelivery.objects.filter(id=delivery_id).update(
                 sent_step=sent_step,
                 updated_at=timezone.now(),
             )
@@ -99,37 +99,35 @@ def update_drone_sop_jira_status(
 
     ensure_channel_delivery_snapshots_for_rows(
         rows=list(candidate_rows),
-        channels=[DroneSopChannelDelivery.Channels.JIRA],
+        channels=[DroneSopDelivery.Channels.JIRA],
     )
     pending_delivery_rows = list(
-        DroneSopChannelDelivery.objects.filter(
+        DroneSopDelivery.objects.filter(
             sop_id__in=normalized_done_ids,
-            channel=DroneSopChannelDelivery.Channels.JIRA,
+            channel=DroneSopDelivery.Channels.JIRA,
         )
-        .exclude(status=DroneSopChannelDelivery.Statuses.SUCCESS)
+        .exclude(status=DroneSopDelivery.Statuses.SUCCESS)
         .order_by("sop_id", "id")
         .values("id", "sop_id")
     )
     if not pending_delivery_rows:
-        legacy_target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod="__legacy_target__")
-        DroneSopChannelDelivery.objects.bulk_create(
+        DroneSopDelivery.objects.bulk_create(
             [
-                DroneSopChannelDelivery(
+                DroneSopDelivery(
                     sop_id=sop_id,
-                    target=legacy_target,
-                    channel=DroneSopChannelDelivery.Channels.JIRA,
-                    status=DroneSopChannelDelivery.Statuses.PENDING,
+                    channel=DroneSopDelivery.Channels.JIRA,
+                    status=DroneSopDelivery.Statuses.PENDING,
                 )
                 for sop_id in normalized_done_ids
             ],
             ignore_conflicts=True,
         )
         pending_delivery_rows = list(
-            DroneSopChannelDelivery.objects.filter(
+            DroneSopDelivery.objects.filter(
                 sop_id__in=normalized_done_ids,
-                channel=DroneSopChannelDelivery.Channels.JIRA,
+                channel=DroneSopDelivery.Channels.JIRA,
             )
-            .exclude(status=DroneSopChannelDelivery.Statuses.SUCCESS)
+            .exclude(status=DroneSopDelivery.Statuses.SUCCESS)
             .order_by("sop_id", "id")
             .values("id", "sop_id")
         )
@@ -160,7 +158,7 @@ def update_drone_sop_jira_status(
 
     mark_channel_delivery_status(
         delivery_ids=delivery_ids,
-        status=DroneSopChannelDelivery.Statuses.SUCCESS,
+        status=DroneSopDelivery.Statuses.SUCCESS,
         external_key_by_id=key_by_delivery_id,
     )
     return update_drone_sop_jira_summary(

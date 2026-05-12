@@ -36,6 +36,7 @@ def _ensure_snapshots_for_upserted_rows(*, source_by_sop_key: dict[str, dict[str
         "sop_key",
         "sdwt_prod",
         "user_sdwt_prod",
+        "target_user_sdwt_prod",
         "status",
         "needtosend",
         "instant_inform",
@@ -94,6 +95,7 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
         "status",
         "knox_id",
         "user_sdwt_prod",
+        "target_user_sdwt_prod",
         "comment",
         "defect_url",
         "instant_inform",
@@ -114,6 +116,9 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
             continue
         if col == "defect_url":
             update_parts.append(f'"{col}" = EXCLUDED."{col}"')
+            continue
+        if col == "target_user_sdwt_prod":
+            update_parts.append(f'"{col}" = COALESCE({quoted_table}."{col}", EXCLUDED."{col}")')
             continue
         update_parts.append(f'"{col}" = COALESCE(EXCLUDED."{col}", {quoted_table}."{col}")')
     update_clause = ", ".join(update_parts)

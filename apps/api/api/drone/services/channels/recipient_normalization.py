@@ -5,16 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from ...models import DroneSopChannelRecipient
+from ...models import DroneSopTargetRecipient
 
 VALID_RECIPIENT_CHANNELS = {
-    DroneSopChannelRecipient.Channels.MAIL,
-    DroneSopChannelRecipient.Channels.MESSENGER,
+    DroneSopTargetRecipient.Channels.MAIL,
+    DroneSopTargetRecipient.Channels.MESSENGER,
 }
 
 CONTACT_FIELD_BY_CHANNEL = {
-    DroneSopChannelRecipient.Channels.MAIL: "email",
-    DroneSopChannelRecipient.Channels.MESSENGER: "knox_id",
+    DroneSopTargetRecipient.Channels.MAIL: "email",
+    DroneSopTargetRecipient.Channels.MESSENGER: "knox_id",
 }
 
 
