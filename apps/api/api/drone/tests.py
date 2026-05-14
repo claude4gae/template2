@@ -8,17 +8,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
+from io import StringIO
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.db import connection, IntegrityError, transaction
 from django.test import SimpleTestCase, TestCase
 from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 import api.account.services as account_services
 from api.drone import selectors, services
@@ -4757,6 +4760,90 @@ class DroneTriggerAuthTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn("channels", resp.json())
         mock_service.assert_called_once_with()
+
+
+class DroneSopPruneTests(TestCase):
+    """DroneSOP 보관 기간 정리 정책을 검증합니다."""
+
+    def test_prune_deletes_rows_older_than_days_regardless_status(self) -> None:
+        """보관 기간 초과 데이터는 상태와 무관하게 삭제합니다."""
+
+        old_sop = _create_drone_sop(
+            lot_id="LOT-OLD",
+            status="IN_PROGRESS",
+            needtosend=1,
+            instant_inform=1,
+        )
+        recent_sop = _create_drone_sop(lot_id="LOT-RECENT")
+        old_created_at = timezone.now() - timedelta(days=181)
+        recent_created_at = timezone.now() - timedelta(days=179)
+        DroneSOP.objects.filter(id=old_sop.id).update(created_at=old_created_at)
+        DroneSOP.objects.filter(id=recent_sop.id).update(created_at=recent_created_at)
+
+        from api.drone.services.pop3.persistence import prune_old_drone_sop_rows
+
+        deleted = prune_old_drone_sop_rows(days=180, batch_size=10)
+
+        self.assertEqual(deleted, 1)
+        self.assertFalse(DroneSOP.objects.filter(id=old_sop.id).exists())
+        self.assertTrue(DroneSOP.objects.filter(id=recent_sop.id).exists())
+        self.assertFalse(DroneSopDelivery.objects.filter(sop_id=old_sop.id).exists())
+
+    def test_prune_command_dry_run_keeps_rows(self) -> None:
+        """dry-run은 삭제 후보 수만 출력하고 실제 데이터를 유지합니다."""
+
+        old_sop = _create_drone_sop(lot_id="LOT-DRY-RUN")
+        DroneSOP.objects.filter(id=old_sop.id).update(
+            created_at=timezone.now() - timedelta(days=181)
+        )
+        output = StringIO()
+
+        call_command(
+            "prune_drone_sop",
+            "--days",
+            "180",
+            "--batch-size",
+            "10",
+            "--dry-run",
+            stdout=output,
+        )
+
+        self.assertIn("matched=1", output.getvalue())
+        self.assertTrue(DroneSOP.objects.filter(id=old_sop.id).exists())
+
+    def test_purge_command_requires_confirm_delete_all(self) -> None:
+        """전체 삭제 커맨드는 확인 옵션 없이는 삭제하지 않습니다."""
+
+        sop = _create_drone_sop(lot_id="LOT-PURGE-DRY")
+        output = StringIO()
+
+        call_command("purge_drone_sop", stdout=output)
+
+        self.assertIn("dry-run", output.getvalue())
+        self.assertTrue(DroneSOP.objects.filter(id=sop.id).exists())
+
+    def test_purge_command_deletes_all_sop_rows_with_confirm(self) -> None:
+        """확인 옵션이 있으면 DroneSOP와 cascade 이력을 모두 삭제합니다."""
+
+        first = _create_drone_sop(lot_id="LOT-PURGE-1")
+        second = _create_drone_sop(lot_id="LOT-PURGE-2")
+        dispatch = DroneSopTargetDispatch.objects.create(
+            sop=first,
+            target_code_snapshot="TARGET-PURGE",
+        )
+        delivery = DroneSopDelivery.objects.create(
+            sop=first,
+            dispatch=dispatch,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        output = StringIO()
+
+        call_command("purge_drone_sop", "--confirm-delete-all", stdout=output)
+
+        self.assertIn("deleted=", output.getvalue())
+        self.assertFalse(DroneSOP.objects.exists())
+        self.assertFalse(DroneSopTargetDispatch.objects.filter(id=dispatch.id).exists())
+        self.assertFalse(DroneSopDelivery.objects.filter(id=delivery.id).exists())
 
 
 class DroneEarlyInformAuthTests(TestCase):

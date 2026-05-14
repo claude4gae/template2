@@ -130,6 +130,8 @@ class DroneSopPop3Config:
     dummy_mail_messages_url: str = ""
     # 임시 부가기능(sidecar) endpoint: 비어 있으면 전송을 수행하지 않습니다.
     defectmap_url: str = ""
+    retention_days: int = 180
+    prune_batch_size: int = 1000
 
     @classmethod
     def from_settings(cls) -> "DroneSopPop3Config":
@@ -173,6 +175,20 @@ class DroneSopPop3Config:
             or os.getenv("DRONE_SOP_DEFECTMAP_URL")
             or ""
         ).strip()
+        retention_days = _parse_int(
+            _first_defined(
+                getattr(settings, "DRONE_SOP_RETENTION_DAYS", None),
+                os.getenv("DRONE_SOP_RETENTION_DAYS"),
+            ),
+            180,
+        ) or 180
+        prune_batch_size = _parse_int(
+            _first_defined(
+                getattr(settings, "DRONE_SOP_PRUNE_BATCH_SIZE", None),
+                os.getenv("DRONE_SOP_PRUNE_BATCH_SIZE"),
+            ),
+            1000,
+        ) or 1000
 
         # ---------------------------------------------------------------------
         # 3) 설정 객체 반환
@@ -188,6 +204,8 @@ class DroneSopPop3Config:
             dummy_mode=dummy_mode,
             dummy_mail_messages_url=dummy_mail_messages_url,
             defectmap_url=defectmap_url,
+            retention_days=retention_days,
+            prune_batch_size=prune_batch_size,
         )
 
 

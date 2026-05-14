@@ -180,7 +180,12 @@ def _run_dummy_mode_ingest(
             pruned_rows=0,
         )
 
-    pruned = _safe_prune_rows(days=90, only_when_upserted=False, upserted_rows=upserted)
+    pruned = _safe_prune_rows(
+        days=config.retention_days,
+        batch_size=config.prune_batch_size,
+        only_when_upserted=False,
+        upserted_rows=upserted,
+    )
     deleted = 0
     if delete_targets:
         deleted = _delete_dummy_mail_messages(
@@ -249,7 +254,12 @@ def _run_pop3_mode_ingest(
             except Exception:
                 logger.exception("Failed to mark POP3 message #%s for deletion", msg_num)
 
-        pruned = _safe_prune_rows(days=90, only_when_upserted=True, upserted_rows=upserted)
+        pruned = _safe_prune_rows(
+            days=config.retention_days,
+            batch_size=config.prune_batch_size,
+            only_when_upserted=True,
+            upserted_rows=upserted,
+        )
         return DroneSopPop3IngestResult(
             matched_mails=matched,
             upserted_rows=upserted,
@@ -279,7 +289,7 @@ def run_drone_sop_pop3_ingest_from_env() -> DroneSopPop3IngestResult:
     부작용:
         - POP3(또는 더미 메일 API)에서 메일을 읽고 삭제합니다.
         - drone_sop 테이블에 upsert 합니다.
-        - 90일 초과 데이터는 정리합니다.
+        - 보관 일수 초과 데이터는 상태와 무관하게 정리합니다.
 
     오류:
         설정 누락 또는 POP3 오류 시 예외가 발생할 수 있습니다.

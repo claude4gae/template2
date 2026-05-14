@@ -176,31 +176,68 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     return len(rows)
 
 
-def prune_old_drone_sop_rows(*, days: int) -> int:
-    """지정 일수보다 오래된 DroneSOP 레코드를 정리합니다.
+def prune_old_drone_sop_rows(
+    *,
+    days: int,
+    batch_size: int = 1000,
+    dry_run: bool = False,
+    max_batches: int | None = None,
+) -> int:
+    """지정 일수보다 오래된 DroneSOP 레코드를 상태와 무관하게 정리합니다.
 
     인자:
         days: 보관 일수.
+        batch_size: 한 번에 삭제할 DroneSOP 행 수.
+        dry_run: True이면 삭제하지 않고 후보 수만 반환합니다.
+        max_batches: 최대 배치 횟수. None이면 후보가 없어질 때까지 수행합니다.
 
     반환:
-        삭제된 레코드 수.
+        삭제 또는 삭제 예정인 DroneSOP 레코드 수.
 
     부작용:
-        DB 삭제가 발생합니다.
+        dry_run=False이면 DB 삭제가 발생합니다.
     """
 
+    if days <= 0:
+        raise ValueError("days must be greater than 0")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than 0")
+    if max_batches is not None and max_batches <= 0:
+        raise ValueError("max_batches must be greater than 0")
+
     cutoff = timezone.now() - timedelta(days=days)
-    deleted, _ = DroneSOP.objects.filter(created_at__lt=cutoff).delete()
-    return int(deleted or 0)
+    base_queryset = DroneSOP.objects.filter(created_at__lt=cutoff)
+    if dry_run:
+        return int(base_queryset.count())
+
+    deleted_total = 0
+    batches = 0
+    while max_batches is None or batches < max_batches:
+        ids = list(
+            base_queryset.order_by("created_at", "id")
+            .values_list("id", flat=True)[:batch_size]
+        )
+        if not ids:
+            break
+        DroneSOP.objects.filter(id__in=ids).delete()
+        deleted_total += len(ids)
+        batches += 1
+    return deleted_total
 
 
-def safe_prune_rows(*, days: int, only_when_upserted: bool, upserted_rows: int) -> int:
+def safe_prune_rows(
+    *,
+    days: int,
+    only_when_upserted: bool,
+    upserted_rows: int,
+    batch_size: int = 1000,
+) -> int:
     """오래된 DroneSOP 행 정리를 안전하게 수행합니다."""
 
     if only_when_upserted and upserted_rows <= 0:
         return 0
     try:
-        return prune_old_drone_sop_rows(days=days)
+        return prune_old_drone_sop_rows(days=days, batch_size=batch_size)
     except Exception:
         logger.exception("Failed to prune old DroneSOP rows")
         return 0
