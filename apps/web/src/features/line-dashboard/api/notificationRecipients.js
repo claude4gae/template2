@@ -14,16 +14,29 @@ const NOTIFICATION_TARGET_MAPPINGS_PATH = "/api/v1/line-dashboard/notification-t
 
 function normalizeUser(rawUser) {
   if (!rawUser || typeof rawUser !== "object") return null
+  const recipientType = rawUser.recipientType === "external" ? "external" : "user"
   const userId = Number.parseInt(rawUser.userId ?? rawUser.id, 10)
-  if (!Number.isFinite(userId) || userId <= 0) return null
+  const knoxId = typeof rawUser.knoxId === "string" ? rawUser.knoxId : ""
+  const externalKnoxId = typeof rawUser.externalKnoxId === "string" ? rawUser.externalKnoxId : knoxId
+  if (recipientType === "user" && (!Number.isFinite(userId) || userId <= 0)) return null
+  if (recipientType === "external" && !externalKnoxId) return null
+  const recipientKey =
+    typeof rawUser.recipientKey === "string" && rawUser.recipientKey.trim()
+      ? rawUser.recipientKey.trim()
+      : recipientType === "external"
+        ? `external:${externalKnoxId.toLowerCase()}`
+        : `user:${userId}`
 
   return {
-    id: userId,
-    userId,
+    id: recipientType === "external" ? recipientKey : userId,
+    userId: recipientType === "external" ? null : userId,
+    recipientType,
+    recipientKey,
+    externalKnoxId,
     username: typeof rawUser.username === "string" ? rawUser.username : "",
     displayName: typeof rawUser.displayName === "string" ? rawUser.displayName : "",
     sabun: typeof rawUser.sabun === "string" ? rawUser.sabun : "",
-    knoxId: typeof rawUser.knoxId === "string" ? rawUser.knoxId : "",
+    knoxId,
     email: typeof rawUser.email === "string" ? rawUser.email : "",
     department: typeof rawUser.department === "string" ? rawUser.department : "",
     line: typeof rawUser.line === "string" ? rawUser.line : "",
@@ -264,7 +277,13 @@ export async function fetchNotificationRecipientPermissions() {
   }
 }
 
-export async function updateNotificationRecipients({ lineId, targetUserSdwtProd, channel = "mail", userIds = [] }) {
+export async function updateNotificationRecipients({
+  lineId,
+  targetUserSdwtProd,
+  channel = "mail",
+  userIds = [],
+  externalKnoxIds = [],
+}) {
   const response = await fetch(buildBackendUrl(RECIPIENTS_PATH), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -274,6 +293,7 @@ export async function updateNotificationRecipients({ lineId, targetUserSdwtProd,
       targetUserSdwtProd,
       channel,
       userIds,
+      externalKnoxIds,
     }),
   })
   const payload = await safeParseJson(response)

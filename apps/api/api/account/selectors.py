@@ -452,11 +452,11 @@ def list_active_user_ids_with_contact_by_ids(*, user_ids: Iterable[int], contact
     return valid_ids
 
 
-def list_distinct_active_user_sdwt_prod_values() -> list[str]:
+def list_distinct_active_user_sdwt_prod_values(*, include_external_snapshots: bool = False) -> list[str]:
     """활성 사용자 pool에 존재하는 user_sdwt_prod 목록을 반환합니다.
 
     입력:
-    - 없음
+    - include_external_snapshots: 외부 소속 스냅샷의 예측 소속 포함 여부
 
     반환:
     - list[str]: 정렬된 user_sdwt_prod 목록
@@ -484,7 +484,112 @@ def list_distinct_active_user_sdwt_prod_values() -> list[str]:
     # -----------------------------------------------------------------------------
     # 2) 공백 제거 및 대소문자 비구분 중복 제거
     # -----------------------------------------------------------------------------
-    return sorted(_collapse_user_sdwt_prod_values(values))
+    collapsed_values = set(_collapse_user_sdwt_prod_values(values))
+    if include_external_snapshots:
+        external_values = ExternalAffiliationSnapshot.objects.exclude(
+            predicted_user_sdwt_prod__exact=""
+        ).values_list("predicted_user_sdwt_prod", flat=True)
+        collapsed_values.update(_collapse_user_sdwt_prod_values(external_values))
+    return sorted(collapsed_values)
+
+
+def _build_external_snapshot_email(*, knox_id: str) -> str:
+    """외부 스냅샷 사용자의 표준 Samsung 메일 주소를 생성합니다."""
+
+    return f"{knox_id}@samsung.com"
+
+
+def _list_active_user_knox_lookup_keys() -> set[str]:
+    """활성 account_user의 knox_id lookup key 집합을 반환합니다."""
+
+    User = get_user_model()
+    return {
+        str(value or "").strip().lower()
+        for value in (
+            User.objects.filter(is_active=True)
+            .exclude(knox_id__isnull=True)
+            .exclude(knox_id__exact="")
+            .annotate(knox_lookup=Lower("knox_id"))
+            .values_list("knox_lookup", flat=True)
+        )
+        if str(value or "").strip()
+    }
+
+
+def list_active_user_knox_lookup_keys_by_knox_ids(*, knox_ids: list[str]) -> set[str]:
+    """입력 knox_id 중 활성 account_user에 존재하는 lookup key 집합을 반환합니다."""
+
+    lookup_keys = sorted({value.lower() for value in _normalize_text_list(knox_ids)})
+    if not lookup_keys:
+        return set()
+
+    User = get_user_model()
+    return {
+        str(value or "").strip().lower()
+        for value in (
+            User.objects.filter(is_active=True)
+            .exclude(knox_id__isnull=True)
+            .exclude(knox_id__exact="")
+            .annotate(knox_lookup=Lower("knox_id"))
+            .filter(knox_lookup__in=lookup_keys)
+            .values_list("knox_lookup", flat=True)
+        )
+        if str(value or "").strip()
+    }
+
+
+def _list_external_affiliation_pool(
+    *,
+    search: str = "",
+    user_sdwt_prod: str = "",
+    limit: int | None = 50,
+) -> list[dict[str, object]]:
+    """수신인 선택 UI에 표시할 미가입 외부 스냅샷 사용자 목록을 조회합니다."""
+
+    safe_limit = None if limit is None else max(1, min(int(limit or 50), 500))
+    normalized_search = _normalize_text(search) or ""
+    normalized_user_sdwt = _normalize_text(user_sdwt_prod) or ""
+    active_knox_lookup_keys = _list_active_user_knox_lookup_keys()
+
+    queryset = ExternalAffiliationSnapshot.objects.all()
+    if normalized_user_sdwt:
+        queryset = queryset.filter(predicted_user_sdwt_prod__iexact=normalized_user_sdwt)
+    if normalized_search:
+        queryset = queryset.filter(
+            Q(knox_id__icontains=normalized_search)
+            | Q(department__icontains=normalized_search)
+            | Q(predicted_user_sdwt_prod__icontains=normalized_search)
+        )
+
+    rows = queryset.order_by("predicted_user_sdwt_prod", "knox_id")
+    if safe_limit is not None:
+        rows = rows[:safe_limit]
+
+    results: list[dict[str, object]] = []
+    for snapshot in rows:
+        knox_id = _normalize_text(snapshot.knox_id) or ""
+        knox_lookup_key = knox_id.lower()
+        if not knox_id or knox_lookup_key in active_knox_lookup_keys:
+            continue
+        recipient_key = f"external:{knox_lookup_key}"
+        results.append(
+            {
+                "id": recipient_key,
+                "userId": None,
+                "recipientType": "external",
+                "recipientKey": recipient_key,
+                "externalKnoxId": knox_id,
+                "username": "",
+                "displayName": knox_id,
+                "sabun": "",
+                "knoxId": knox_id,
+                "email": _build_external_snapshot_email(knox_id=knox_id),
+                "department": snapshot.department or "",
+                "line": "",
+                "userSdwtProd": snapshot.predicted_user_sdwt_prod or "",
+            }
+        )
+    return results
 
 
 def list_active_user_pool(
@@ -493,6 +598,7 @@ def list_active_user_pool(
     user_sdwt_prod: str = "",
     contact_field: str = "",
     limit: int | None = 50,
+    include_external_snapshots: bool = False,
 ) -> list[dict[str, object]]:
     """수신인 선택 UI에서 사용할 활성 사용자 pool을 조회합니다.
 
@@ -501,6 +607,7 @@ def list_active_user_pool(
     - user_sdwt_prod: 특정 소속 필터
     - contact_field: email 또는 knox_id 보유 사용자 필터
     - limit: 최대 반환 개수(None이면 제한 없음)
+    - include_external_snapshots: 미가입 외부 스냅샷 사용자 포함 여부
 
     반환:
     - list[dict[str, object]]: 사용자 선택 옵션 목록
@@ -577,6 +684,9 @@ def list_active_user_pool(
         results.append(
             {
                 "id": user.id,
+                "userId": user.id,
+                "recipientType": "user",
+                "recipientKey": f"user:{user.id}",
                 "username": getattr(user, "username", None) or "",
                 "displayName": display_name,
                 "sabun": getattr(user, "sabun", None) or "",
@@ -587,6 +697,24 @@ def list_active_user_pool(
                 "userSdwtProd": getattr(affiliation, "user_sdwt_prod", "") or "",
             }
         )
+    if include_external_snapshots:
+        results.extend(
+            _list_external_affiliation_pool(
+                search=normalized_search,
+                user_sdwt_prod=normalized_user_sdwt,
+                limit=limit,
+            )
+        )
+        results = sorted(
+            results,
+            key=lambda item: (
+                str(item.get("userSdwtProd") or "").casefold(),
+                str(item.get("displayName") or item.get("knoxId") or "").casefold(),
+                str(item.get("recipientKey") or "").casefold(),
+            ),
+        )
+        if safe_limit is not None:
+            results = results[:safe_limit]
     return results
 
 
@@ -934,6 +1062,42 @@ def get_external_affiliation_snapshots_by_knox_ids(
         return {}
 
     return ExternalAffiliationSnapshot.objects.in_bulk(normalized_ids, field_name="knox_id")
+
+
+def get_external_affiliation_snapshots_by_knox_lookup_keys(
+    *,
+    knox_ids: list[str],
+) -> dict[str, ExternalAffiliationSnapshot]:
+    """knox_id 목록을 대소문자 비구분 lookup key 기준으로 조회합니다.
+
+    입력:
+    - knox_ids: knox_id 목록
+
+    반환:
+    - dict[str, ExternalAffiliationSnapshot]: 소문자 knox_id → 스냅샷 매핑
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    lookup_keys = sorted({value.lower() for value in _normalize_text_list(knox_ids)})
+    if not lookup_keys:
+        return {}
+
+    snapshots = (
+        ExternalAffiliationSnapshot.objects.annotate(knox_lookup=Lower("knox_id"))
+        .filter(knox_lookup__in=lookup_keys)
+        .order_by("knox_lookup", "id")
+    )
+    result: dict[str, ExternalAffiliationSnapshot] = {}
+    for snapshot in snapshots:
+        lookup_key = (snapshot.knox_id or "").strip().lower()
+        if lookup_key and lookup_key not in result:
+            result[lookup_key] = snapshot
+    return result
 
 
 def get_current_user_sdwt_prod_change(*, user: Any) -> UserSdwtProdChange | None:

@@ -157,8 +157,9 @@ def _run_messenger_inform(
 
         delivery_row = delivery.as_delivery_row()
         chatroom_id = _normalize_chatroom_id(delivery.config.get("chatroom_id"))
+        force_new_chatroom = bool(delivery.config.get("force_new_chatroom"))
         create_reason: str | None = None
-        if not chatroom_id:
+        if not chatroom_id or force_new_chatroom:
             try:
                 chatroom_id, create_reason = _get_or_create_chatroom_id(
                     row=delivery_row,

@@ -87,8 +87,34 @@ def normalize_user_ids(user_ids: Iterable[Any]) -> list[int]:
     return normalized
 
 
+def normalize_external_knox_ids(knox_ids: Iterable[Any] | None) -> list[str]:
+    """외부 수신인 knox_id 목록을 소문자 기준으로 중복 제거합니다."""
+
+    if knox_ids is None:
+        return []
+    if isinstance(knox_ids, (str, bytes)) or isinstance(knox_ids, Mapping):
+        raise ValueError("external_knox_ids must be a list")
+    if not isinstance(knox_ids, Iterable):
+        raise ValueError("external_knox_ids must be a list")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in knox_ids:
+        if not isinstance(value, str):
+            raise ValueError("external_knox_ids must contain only strings")
+        knox_id = value.strip().lower()
+        if not knox_id:
+            raise ValueError("external_knox_ids must contain non-empty strings")
+        if knox_id in seen:
+            continue
+        seen.add(knox_id)
+        normalized.append(knox_id)
+    return normalized
+
+
 __all__ = [
     "CONTACT_FIELD_BY_CHANNEL",
+    "normalize_external_knox_ids",
     "normalize_line_id",
     "normalize_recipient_channel",
     "normalize_target_user_sdwt_prod",

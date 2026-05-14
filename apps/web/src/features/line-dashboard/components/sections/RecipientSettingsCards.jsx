@@ -15,6 +15,9 @@ export function RecipientSettingsCards({
   onOpenPicker,
   isRecipientDraftCurrent,
   isSavingRecipients,
+  messengerForceNewChatroom,
+  isSavingMessengerForceNewChatroom,
+  onMessengerForceNewChatroomChange,
   recipientActionErrors,
   messengerRecipientsError,
   mailRecipientsError,
@@ -57,6 +60,9 @@ export function RecipientSettingsCards({
             onOpenPicker={onOpenPicker}
             isDraftCurrent={Boolean(isRecipientDraftCurrent[config.channel])}
             isSavingRecipients={Boolean(isSavingRecipients[config.channel])}
+            forceNewChatroom={isMessenger ? messengerForceNewChatroom : false}
+            isSavingForceNewChatroom={isMessenger ? isSavingMessengerForceNewChatroom : false}
+            onForceNewChatroomChange={isMessenger ? onMessengerForceNewChatroomChange : undefined}
             error={channelError}
           />
         </div>

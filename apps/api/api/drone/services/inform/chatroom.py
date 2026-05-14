@@ -56,7 +56,7 @@ def get_or_create_chatroom_id(
     messenger_config: DroneMessengerConfig,
     messenger_services_module: Any,
 ) -> tuple[int | None, str | None]:
-    """chatroom_id가 비어 있을 때 채팅방을 생성하고 ID를 저장합니다.
+    """chatroom_id가 비어 있거나 새 채팅방 생성 요청이 있을 때 채팅방을 생성하고 ID를 저장합니다.
 
     인자:
         row: Drone SOP 행 dict.
@@ -81,7 +81,8 @@ def get_or_create_chatroom_id(
         return None, REASON_CHANNEL_CONFIG_MISSING
 
     existing_chatroom_id = normalize_chatroom_id(config_row.get("chatroom_id"))
-    if existing_chatroom_id:
+    force_new_chatroom = bool(config_row.get("force_new_chatroom"))
+    if existing_chatroom_id and not force_new_chatroom:
         # target_user_sdwt_prod는 운영상 라인별 고유값으로 관리되므로,
         # 기존 chatroom_id는 target 단위로 재사용합니다.
         return existing_chatroom_id, None
@@ -126,10 +127,12 @@ def get_or_create_chatroom_id(
     upsert_drone_sop_user_sdwt_channel(
         target_user_sdwt_prod=target,
         chatroom_id=chatroom_id,
+        force_new_chatroom=False,
     )
     # ready_rows가 기존 config_row 참조를 들고 있으므로, 같은 target 재처리 시
     # 즉시 재사용되도록 in-place 갱신합니다.
     config_row["chatroom_id"] = chatroom_id
+    config_row["force_new_chatroom"] = False
     target_lookup = _normalize_target_lookup_key(target)
     if target_lookup:
         channel_by_target[target_lookup] = config_row

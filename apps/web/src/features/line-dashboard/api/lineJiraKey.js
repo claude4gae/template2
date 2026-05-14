@@ -14,6 +14,7 @@ const DEFAULT_NEED_TO_SEND_RULE = {
   enabled: false,
   ignoreSampleType: false,
 }
+const DEFAULT_MESSENGER_FORCE_NEW_CHATROOM = false
 
 function normalizeChannelEnabled(payload) {
   return {
@@ -47,6 +48,7 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
       jiraKey: "",
       channelEnabled: DEFAULT_CHANNEL_ENABLED,
       needToSendRule: DEFAULT_NEED_TO_SEND_RULE,
+      messengerForceNewChatroom: DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
     }
   }
 
@@ -69,6 +71,10 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
     jiraKey: typeof payload?.jiraKey === "string" ? payload.jiraKey : "",
     channelEnabled: normalizeChannelEnabled(payload),
     needToSendRule: normalizeNeedToSendRule(payload),
+    messengerForceNewChatroom:
+      typeof payload?.messengerForceNewChatroom === "boolean"
+        ? payload.messengerForceNewChatroom
+        : DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
   }
 }
 
@@ -94,6 +100,9 @@ export async function updateUserSdwtJiraKey(options) {
     requestBody.needtosendEnabled = Boolean(needToSendRule.enabled)
     requestBody.needtosendIgnoreSampleType = Boolean(needToSendRule.ignoreSampleType)
   }
+  if (Object.prototype.hasOwnProperty.call(options, "messengerForceNewChatroom")) {
+    requestBody.messengerForceNewChatroom = Boolean(options.messengerForceNewChatroom)
+  }
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -114,5 +123,9 @@ export async function updateUserSdwtJiraKey(options) {
     jiraKey: typeof payload?.jiraKey === "string" ? payload.jiraKey : "",
     channelEnabled: normalizeChannelEnabled(payload),
     needToSendRule: normalizeNeedToSendRule(payload),
+    messengerForceNewChatroom:
+      typeof payload?.messengerForceNewChatroom === "boolean"
+        ? payload.messengerForceNewChatroom
+        : DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
   }
 }

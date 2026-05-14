@@ -48,16 +48,29 @@ async function unwrap(response, defaultMessage) {
 
 function normalizeUser(rawUser) {
   if (!rawUser || typeof rawUser !== "object") return null
+  const recipientType = rawUser.recipientType === "external" ? "external" : "user"
   const userId = Number.parseInt(rawUser.userId ?? rawUser.id, 10)
-  if (!Number.isFinite(userId) || userId <= 0) return null
+  const knoxId = typeof rawUser.knoxId === "string" ? rawUser.knoxId : ""
+  const externalKnoxId = typeof rawUser.externalKnoxId === "string" ? rawUser.externalKnoxId : knoxId
+  if (recipientType === "user" && (!Number.isFinite(userId) || userId <= 0)) return null
+  if (recipientType === "external" && !externalKnoxId) return null
+  const recipientKey =
+    typeof rawUser.recipientKey === "string" && rawUser.recipientKey.trim()
+      ? rawUser.recipientKey.trim()
+      : recipientType === "external"
+        ? `external:${externalKnoxId.toLowerCase()}`
+        : `user:${userId}`
 
   return {
-    id: userId,
-    userId,
+    id: recipientType === "external" ? recipientKey : userId,
+    userId: recipientType === "external" ? null : userId,
+    recipientType,
+    recipientKey,
+    externalKnoxId,
     username: typeof rawUser.username === "string" ? rawUser.username : "",
     displayName: typeof rawUser.displayName === "string" ? rawUser.displayName : "",
     sabun: typeof rawUser.sabun === "string" ? rawUser.sabun : "",
-    knoxId: typeof rawUser.knoxId === "string" ? rawUser.knoxId : "",
+    knoxId,
     email: typeof rawUser.email === "string" ? rawUser.email : "",
     department: typeof rawUser.department === "string" ? rawUser.department : "",
     line: typeof rawUser.line === "string" ? rawUser.line : "",
@@ -80,11 +93,13 @@ export async function fetchAccountUserPool({
   userSdwtProd = "",
   contactField = "",
   limit = 50,
+  includeExternalSnapshots = false,
 } = {}) {
   const params = new URLSearchParams()
   if (search) params.set("search", search)
   if (userSdwtProd) params.set("userSdwtProd", userSdwtProd)
   if (contactField) params.set("contactField", contactField)
+  if (includeExternalSnapshots) params.set("includeExternalSnapshots", "true")
   params.set("limit", String(limit))
 
   const url = buildBackendUrl(`${endpoints.users}?${params.toString()}`)

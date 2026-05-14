@@ -42,6 +42,8 @@ import {
 } from "../utils/lineSettingsToasts"
 import { validateStepDraft } from "../utils/lineSettingsValidation"
 import {
+  getRecipientExternalKnoxId,
+  getRecipientKey,
   getRecipientPickerUsers,
   getRecipientUserId,
   isDuplicateMessage,
@@ -63,6 +65,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     jiraKey,
     channelEnabled,
     needToSendRule,
+    messengerForceNewChatroom,
     mailRecipients,
     mailRecipientsTargetUserSdwtProd,
     messengerRecipients,
@@ -83,6 +86,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     deleteEntry,
     updateJiraKey,
     updateNeedToSendRule,
+    updateMessengerForceNewChatroom,
     createTarget,
     createTargetMapping,
     updateMailRecipients,
@@ -114,6 +118,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [isSavingJiraKey, setIsSavingJiraKey] = React.useState(false)
   const [needToSendRuleFormError, setNeedToSendRuleFormError] = React.useState(null)
   const [isSavingNeedToSendRule, setIsSavingNeedToSendRule] = React.useState(false)
+  const [isSavingMessengerForceNewChatroom, setIsSavingMessengerForceNewChatroom] = React.useState(false)
   const [recipientDrafts, setRecipientDrafts] = React.useState({ mail: [], messenger: [] })
   const [recipientDraftTargets, setRecipientDraftTargets] = React.useState({ mail: "", messenger: "" })
   const [recipientSearches, setRecipientSearches] = React.useState({ mail: "", messenger: "" })
@@ -252,13 +257,13 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     [canManageRecipients, selectedUserSdwtProd],
   )
 
-  const handleRecipientPickerUserToggle = React.useCallback((channel, userId, checked) => {
+  const handleRecipientPickerUserToggle = React.useCallback((channel, recipientKey, checked) => {
     setRecipientPickerSelectedIds((prev) => {
       const current = new Set(prev[channel] || [])
       if (checked) {
-        current.add(userId)
+        current.add(recipientKey)
       } else {
-        current.delete(userId)
+        current.delete(recipientKey)
       }
       return { ...prev, [channel]: Array.from(current) }
     })
@@ -268,12 +273,12 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setRecipientPickerSelectedIds((prev) => {
       const current = new Set(prev[channel] || [])
       for (const user of users || []) {
-        const userId = getRecipientUserId(user)
-        if (!userId) continue
+        const recipientKey = getRecipientKey(user)
+        if (!recipientKey) continue
         if (checked) {
-          current.add(userId)
+          current.add(recipientKey)
         } else {
-          current.delete(userId)
+          current.delete(recipientKey)
         }
       }
       return { ...prev, [channel]: Array.from(current) }
@@ -357,7 +362,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     async function loadRecipientOptions() {
       try {
         const [{ userSdwtProds }, permissionContext] = await Promise.all([
-          fetchAccountUserPool({ limit: 1 }),
+          fetchAccountUserPool({ limit: 1, includeExternalSnapshots: true }),
           fetchNotificationRecipientPermissions(),
         ])
         if (isActive) {
@@ -668,9 +673,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           search: normalized,
           contactField: config.contactField,
           limit: 20,
+          includeExternalSnapshots: true,
         })
         const previousSearchIds = new Set(
-          (recipientPickerResults[channel]?.search || []).map(getRecipientUserId).filter(Boolean),
+          (recipientPickerResults[channel]?.search || []).map(getRecipientKey).filter(Boolean),
         )
         setRecipientPickerResults((prev) => ({
           ...prev,
@@ -701,11 +707,11 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       setRecipientActionErrors((prev) => ({ ...prev, [channel]: config.permissionErrorText }))
       return
     }
-    const removeId = Number.parseInt(userToRemove?.userId ?? userToRemove?.id, 10)
-    if (!Number.isFinite(removeId)) return
+    const removeKey = getRecipientKey(userToRemove)
+    if (!removeKey) return
     setRecipientDrafts((prev) => ({
       ...prev,
-      [channel]: prev[channel].filter((item) => Number.parseInt(item?.userId ?? item?.id, 10) !== removeId),
+      [channel]: prev[channel].filter((item) => getRecipientKey(item) !== removeKey),
     }))
   }, [canManageRecipients])
 
@@ -729,7 +735,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     const requestTarget = selectedUserSdwtProd
     const requestSourceSdwt = sourceSdwt
     const previousGroupIds = new Set(
-      (recipientPickerResults[channel]?.group || []).map(getRecipientUserId).filter(Boolean),
+      (recipientPickerResults[channel]?.group || []).map(getRecipientKey).filter(Boolean),
     )
     const isCurrentLoad = () =>
       sourceLoadRequestRef.current[channel] === requestId &&
@@ -739,6 +745,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         userSdwtProd: requestSourceSdwt,
         contactField: config.contactField,
         limit: "all",
+        includeExternalSnapshots: true,
       })
       if (!isCurrentLoad()) {
         return
@@ -749,10 +756,12 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         [channel]: { ...(prev[channel] || { group: [], search: [] }), group: loadedUsers },
       }))
       setRecipientPickerSelectedIds((prev) => {
-        const current = new Set((prev[channel] || []).filter((userId) => !previousGroupIds.has(userId)))
+        const current = new Set(
+          (prev[channel] || []).filter((recipientKey) => !previousGroupIds.has(recipientKey)),
+        )
         for (const user of loadedUsers) {
-          const userId = getRecipientUserId(user)
-          if (userId) current.add(userId)
+          const recipientKey = getRecipientKey(user)
+          if (recipientKey) current.add(recipientKey)
         }
         return { ...prev, [channel]: Array.from(current) }
       })
@@ -790,8 +799,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
 
     const selectedIds = new Set(recipientPickerSelectedIds[channel] || [])
     const selectedUsers = getRecipientPickerUsers(recipientPickerResults[channel]).filter((user) => {
-      const userId = getRecipientUserId(user)
-      return userId && selectedIds.has(userId)
+      const recipientKey = getRecipientKey(user)
+      return recipientKey && selectedIds.has(recipientKey)
     })
     if (selectedUsers.length === 0) {
       setRecipientActionErrors((prev) => ({ ...prev, [channel]: "적용할 인원을 선택하세요." }))
@@ -825,10 +834,13 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     const requestTarget = selectedUserSdwtProd
     try {
       const userIds = currentRecipientDrafts[channel]
-        .map((item) => Number.parseInt(item?.userId ?? item?.id, 10))
-        .filter((value) => Number.isFinite(value) && value > 0)
+        .map(getRecipientUserId)
+        .filter(Boolean)
+      const externalKnoxIds = currentRecipientDrafts[channel]
+        .map(getRecipientExternalKnoxId)
+        .filter(Boolean)
       const updater = channel === "messenger" ? updateMessengerRecipients : updateMailRecipients
-      const result = await updater({ userIds })
+      const result = await updater({ userIds, externalKnoxIds })
       if (result?.stale) {
         return
       }
@@ -856,6 +868,57 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     selectedUserSdwtProd,
     updateMailRecipients,
     updateMessengerRecipients,
+  ])
+
+  const handleMessengerForceNewChatroomChange = React.useCallback(async (checked) => {
+    if (!selectedUserSdwtProd) {
+      setRecipientActionErrors((prev) => ({ ...prev, messenger: "알림 Target을 선택하세요." }))
+      return
+    }
+    if (!canManageRecipients) {
+      setRecipientActionErrors((prev) => ({
+        ...prev,
+        messenger: RECIPIENT_CHANNEL_CONFIG.messenger.permissionErrorText,
+      }))
+      return
+    }
+    if (
+      checked &&
+      !window.confirm(
+        "다음 메신저 발송 시 현재 저장된 메신저 수신인 기준으로 새 대화방을 생성해 전송합니다.\n동의하면 새 대화방 생성 옵션이 체크됩니다.",
+      )
+    ) {
+      return
+    }
+
+    const requestLineId = lineId
+    const requestTarget = selectedUserSdwtProd
+    setIsSavingMessengerForceNewChatroom(true)
+    setRecipientActionErrors((prev) => ({ ...prev, messenger: null }))
+    try {
+      await updateMessengerForceNewChatroom({ forceNewChatroom: checked })
+      showUpdateToast()
+    } catch (requestError) {
+      if (!isCurrentRecipientContext(requestLineId, requestTarget)) {
+        return
+      }
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to update messenger chatroom option"
+      setRecipientActionErrors((prev) => ({ ...prev, messenger: message }))
+      showRequestErrorToast(message)
+    } finally {
+      if (isCurrentRecipientContext(requestLineId, requestTarget)) {
+        setIsSavingMessengerForceNewChatroom(false)
+      }
+    }
+  }, [
+    canManageRecipients,
+    isCurrentRecipientContext,
+    lineId,
+    selectedUserSdwtProd,
+    updateMessengerForceNewChatroom,
   ])
 
   const startEditing = React.useCallback((entry) => {
@@ -1116,6 +1179,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
                 onOpenPicker={handleOpenRecipientPicker}
                 isRecipientDraftCurrent={isRecipientDraftCurrent}
                 isSavingRecipients={isSavingRecipients}
+                messengerForceNewChatroom={messengerForceNewChatroom}
+                isSavingMessengerForceNewChatroom={isSavingMessengerForceNewChatroom}
+                onMessengerForceNewChatroomChange={handleMessengerForceNewChatroomChange}
                 recipientActionErrors={recipientActionErrors}
                 messengerRecipientsError={messengerRecipientsError}
                 mailRecipientsError={mailRecipientsError}

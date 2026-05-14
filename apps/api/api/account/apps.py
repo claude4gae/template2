@@ -43,11 +43,11 @@ class AccountConfig(AppConfig):
         from api.account.services import ensure_user_profile
 
         def create_profile(sender, instance, created: bool, **kwargs) -> None:
-            """사용자 생성 시 프로필을 보장합니다.
+            """사용자 생성/knox_id 갱신 시 계정 부가 데이터를 보장합니다.
 
             입력:
             - sender: Django 시그널 발신 모델
-            - instance: 생성된 사용자 인스턴스
+            - instance: 저장된 사용자 인스턴스
             - created: 신규 생성 여부
             - **kwargs: 시그널 추가 인자
 
@@ -56,12 +56,22 @@ class AccountConfig(AppConfig):
 
             부작용:
             - 사용자 프로필 생성 가능
+            - 외부 Drone SOP 수신인 row 승격 가능
 
             오류:
             - 없음
             """
             if created:
                 ensure_user_profile(instance)
+            update_fields = kwargs.get("update_fields")
+            if not created and update_fields is not None and "knox_id" not in update_fields:
+                return
+            try:
+                from api.drone import services as drone_services
+
+                drone_services.promote_drone_sop_external_recipients_for_user(user=instance)
+            except (OperationalError, ProgrammingError):
+                return
 
         post_save.connect(
             create_profile,

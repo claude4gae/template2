@@ -135,10 +135,17 @@ def _apply_single_channel_config(
     template_key: str | None | object = _UNSET,
     jira_project_key: str | None | object = _UNSET,
     chatroom_id: int | None | object = _UNSET,
+    force_new_chatroom: bool | object = _UNSET,
 ) -> bool:
     """채널별 설정 필드를 별도 config row에 반영합니다."""
 
-    if enabled is _UNSET and template_key is _UNSET and jira_project_key is _UNSET and chatroom_id is _UNSET:
+    if (
+        enabled is _UNSET
+        and template_key is _UNSET
+        and jira_project_key is _UNSET
+        and chatroom_id is _UNSET
+        and force_new_chatroom is _UNSET
+    ):
         return False
 
     config, created = _get_or_create_channel_config(target=target, channel=channel)
@@ -152,6 +159,12 @@ def _apply_single_channel_config(
         update_fields=update_fields,
     )
     _set_value_if_changed(instance=config, field_name="chatroom_id", value=chatroom_id, update_fields=update_fields)
+    _set_value_if_changed(
+        instance=config,
+        field_name="force_new_chatroom",
+        value=force_new_chatroom,
+        update_fields=update_fields,
+    )
     if update_fields:
         config.save(update_fields=[*update_fields, "updated_at"])
     return created or bool(update_fields)
@@ -188,6 +201,7 @@ def _apply_channel_config_updates(
         enabled=fields.messenger_enabled,
         template_key=messenger_template_key,
         chatroom_id=fields.chatroom_id,
+        force_new_chatroom=fields.force_new_chatroom,
     ) or changed
     changed = _apply_single_channel_config(
         target=target,
@@ -245,6 +259,7 @@ def upsert_drone_sop_user_sdwt_channel(
     actor: Any | None = None,
     jira_key: str | None | object = _UNSET,
     chatroom_id: int | None | object = _UNSET,
+    force_new_chatroom: bool | object = _UNSET,
     jira_template_key: str | None | object = _UNSET,
     mail_template_key: str | None | object = _UNSET,
     messenger_template_key: str | None | object = _UNSET,
@@ -264,6 +279,7 @@ def upsert_drone_sop_user_sdwt_channel(
     - actor: 기존 API 호환용 입력(저장하지 않음)
     - jira_key: Jira 프로젝트 키(없으면 None, 미지정 시 _UNSET)
     - chatroom_id: 채팅룸 ID(없으면 None, 미지정 시 _UNSET)
+    - force_new_chatroom: 다음 메신저 발송 시 새 채팅방 생성 여부(미지정 시 _UNSET)
     - jira_template_key: Jira 템플릿 키(없으면 None, 미지정 시 _UNSET)
     - mail_template_key: 메일 템플릿 키(없으면 None, 미지정 시 _UNSET)
     - messenger_template_key: 메신저 템플릿 키(없으면 None, 미지정 시 _UNSET)
@@ -293,6 +309,7 @@ def upsert_drone_sop_user_sdwt_channel(
         line_id=line_id,
         jira_key=jira_key,
         chatroom_id=chatroom_id,
+        force_new_chatroom=force_new_chatroom,
         jira_template_key=jira_template_key,
         mail_template_key=mail_template_key,
         messenger_template_key=messenger_template_key,

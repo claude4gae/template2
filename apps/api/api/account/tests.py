@@ -284,6 +284,44 @@ class AccountEndpointTests(TestCase):
         self.assertIn(email_user.id, user_ids)
         self.assertNotIn(no_email_user.id, user_ids)
 
+    def test_account_user_pool_can_include_external_snapshot_users(self) -> None:
+        """수신인 선택용 사용자 pool이 미가입 외부 스냅샷 사용자를 함께 반환하는지 확인합니다."""
+
+        now = timezone.now()
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="external-50008",
+            department="ExtDept",
+            predicted_user_sdwt_prod="external-group",
+            source_updated_at=now,
+            last_seen_at=now,
+        )
+
+        self.client.force_login(self.user)
+        default_response = self.client.get(reverse("account-users"), {"search": "external-50008"})
+        include_response = self.client.get(
+            reverse("account-users"),
+            {
+                "search": "external-50008",
+                "contactField": "email",
+                "includeExternalSnapshots": "true",
+            },
+        )
+
+        self.assertEqual(default_response.status_code, 200)
+        self.assertEqual(default_response.json()["results"], [])
+
+        self.assertEqual(include_response.status_code, 200)
+        payload = include_response.json()
+        self.assertIn("external-group", payload["userSdwtProds"])
+        self.assertEqual(len(payload["results"]), 1)
+        row = payload["results"][0]
+        self.assertEqual(row["recipientType"], "external")
+        self.assertEqual(row["recipientKey"], "external:external-50008")
+        self.assertIsNone(row["userId"])
+        self.assertEqual(row["knoxId"], "external-50008")
+        self.assertEqual(row["email"], "external-50008@samsung.com")
+        self.assertEqual(row["userSdwtProd"], "external-group")
+
     def test_account_user_pool_rejects_unknown_contact_field(self) -> None:
         """지원하지 않는 연락처 필드는 명시적으로 거부해야 합니다."""
 

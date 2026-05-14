@@ -75,6 +75,7 @@ from .serializers import (
     parse_optional_bool_field,
     parse_optional_comment,
     parse_optional_text_field,
+    parse_external_knox_id_list,
     parse_positive_int,
     parse_required_channel,
     parse_user_id_list,
@@ -992,6 +993,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 "templateKey": template_key,
                 "jiraEnabled": bool(entry.jira_enabled) if entry else True,
                 "messengerEnabled": bool(entry.messenger_enabled) if entry else True,
+                "messengerForceNewChatroom": bool(entry.messenger_force_new_chatroom) if entry else False,
                 "mailEnabled": bool(entry.mail_enabled) if entry else True,
                 "needtosendCommentLastAt": entry.needtosend_comment_last_at if entry else None,
                 "needtosendEnabled": bool(entry.needtosend_enabled) if entry else False,
@@ -1074,6 +1076,10 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 payload,
                 field_name="messengerEnabled",
             )
+            messenger_force_new_chatroom_provided, messenger_force_new_chatroom = parse_optional_bool_field(
+                payload,
+                field_name="messengerForceNewChatroom",
+            )
             mail_enabled_provided, mail_enabled = parse_optional_bool_field(
                 payload,
                 field_name="mailEnabled",
@@ -1099,6 +1105,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             or template_key_provided
             or jira_enabled_provided
             or messenger_enabled_provided
+            or messenger_force_new_chatroom_provided
             or mail_enabled_provided
             or needtosend_comment_provided
             or needtosend_enabled_provided
@@ -1121,6 +1128,8 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             payload_kwargs["jira_enabled"] = jira_enabled
         if messenger_enabled_provided:
             payload_kwargs["messenger_enabled"] = messenger_enabled
+        if messenger_force_new_chatroom_provided:
+            payload_kwargs["force_new_chatroom"] = messenger_force_new_chatroom
         if mail_enabled_provided:
             payload_kwargs["mail_enabled"] = mail_enabled
         if needtosend_comment_provided:
@@ -1143,6 +1152,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 "templateKey": template.jira_template_key,
                 "jiraEnabled": template.jira_enabled,
                 "messengerEnabled": template.messenger_enabled,
+                "messengerForceNewChatroom": template.messenger_force_new_chatroom,
                 "mailEnabled": template.mail_enabled,
                 "needtosendCommentLastAt": template.needtosend_comment_last_at,
                 "needtosendEnabled": template.needtosend_enabled,
@@ -1349,10 +1359,11 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
 
         예시 요청:
         - 예시 요청: PUT /api/v1/line-dashboard/notification-recipients
-          요청 바디 예시: {"lineId":"L1","targetUserSdwtProd":"ETCH_A","channel":"mail","userIds":[1,2,3]}
+          요청 바디 예시:
+          {"lineId":"L1","targetUserSdwtProd":"ETCH_A","channel":"mail","userIds":[1],"externalKnoxIds":["ext1"]}
 
         snake/camel 호환:
-        - 요청 본문은 lineId/targetUserSdwtProd/channel/userIds(camelCase)만 지원합니다.
+        - 요청 본문은 lineId/targetUserSdwtProd/channel/userIds/externalKnoxIds(camelCase)만 지원합니다.
         """
 
         # -----------------------------------------------------------------------------
@@ -1385,6 +1396,7 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
             return target_line_error
         try:
             user_ids = parse_user_id_list(payload.get("userIds"))
+            external_knox_ids = parse_external_knox_id_list(payload.get("externalKnoxIds"))
         except DroneRequestValidationError as exc:
             return _validation_error_response(exc)
 
@@ -1400,6 +1412,7 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
                 target_user_sdwt_prod=target_user_sdwt_prod,
                 channel=channel,
                 user_ids=user_ids,
+                external_knox_ids=external_knox_ids,
                 actor=request.user,
             )
         except ValueError as exc:

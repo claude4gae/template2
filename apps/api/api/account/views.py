@@ -778,6 +778,12 @@ class AccountUserPoolView(APIView):
             return JsonResponse({"error": "contactField must be email or knox_id"}, status=400)
         raw_limit = normalize_text(request.GET.get("limit"))
         limit = None if raw_limit == "all" and user_sdwt_prod else min(_parse_int(raw_limit, 50), 500)
+        include_external_param = (normalize_text(request.GET.get("includeExternalSnapshots")) or "").lower()
+        include_external_snapshots = include_external_param in {
+            "1",
+            "true",
+            "yes",
+        }
 
         # -----------------------------------------------------------------------------
         # 3) 사용자 pool 및 소속 옵션 조회
@@ -787,8 +793,11 @@ class AccountUserPoolView(APIView):
             user_sdwt_prod=user_sdwt_prod,
             contact_field=contact_field,
             limit=limit,
+            include_external_snapshots=include_external_snapshots,
         )
-        user_sdwt_prods = selectors.list_distinct_active_user_sdwt_prod_values()
+        user_sdwt_prods = selectors.list_distinct_active_user_sdwt_prod_values(
+            include_external_snapshots=include_external_snapshots
+        )
         return JsonResponse(
             {
                 "results": results,

@@ -219,6 +219,7 @@ class DroneSopTargetChannelServiceTests(TestCase):
             mail_template_key="mail",
             messenger_template_key="messenger",
             chatroom_id=12345,
+            force_new_chatroom=True,
         )
         target = DroneSopTarget.objects.get(target_user_sdwt_prod="SDWT")
 
@@ -228,6 +229,7 @@ class DroneSopTargetChannelServiceTests(TestCase):
             self.assertEqual(target.mail_template_key, "mail")
             self.assertEqual(target.messenger_template_key, "messenger")
             self.assertEqual(target.chatroom_id, 12345)
+            self.assertTrue(target.messenger_force_new_chatroom)
 
         self.assertEqual(len(captured), 1)
 
@@ -1628,6 +1630,132 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(receiver_emails, ["mail-user@example.com"])
         self.assertNotIn("same-group@example.com", receiver_emails)
 
+    def test_replace_allows_external_snapshot_recipients(self) -> None:
+        """외부 소속 스냅샷 사용자를 메일/메신저 수신인으로 저장할 수 있어야 합니다."""
+
+        account_services.sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "external-71003",
+                    "department": "ExtDept",
+                    "user_sdwt_prod": "ETCH_A",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+        mail_result = services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            external_knox_ids=["external-71003"],
+            actor=self.actor,
+        )
+        services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="messenger",
+            user_ids=[],
+            external_knox_ids=["EXTERNAL-71003"],
+            actor=self.actor,
+        )
+
+        self.assertEqual(
+            selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+                line_id="L1",
+                user_sdwt_prod="ETCH_A",
+            ),
+            ["mail-user@example.com", "external-71003@samsung.com"],
+        )
+        self.assertEqual(
+            selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+                line_id="L1",
+                user_sdwt_prod="ETCH_A",
+            ),
+            ["external-71003"],
+        )
+        external_rows = [row for row in mail_result["recipients"] if row["recipientType"] == "external"]
+        self.assertEqual(len(external_rows), 1)
+        self.assertEqual(external_rows[0]["recipientKey"], "external:external-71003")
+        self.assertEqual(external_rows[0]["email"], "external-71003@samsung.com")
+
+    def test_replace_rejects_unknown_external_snapshot_recipient(self) -> None:
+        """외부 스냅샷에 없는 knox_id는 수신인으로 저장할 수 없어야 합니다."""
+
+        with self.assertRaisesMessage(ValueError, "external recipients not found"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="L1",
+                target_user_sdwt_prod="ETCH_A",
+                channel="mail",
+                user_ids=[],
+                external_knox_ids=["missing-71004"],
+                actor=self.actor,
+            )
+
+    def test_user_creation_promotes_external_recipient_rows(self) -> None:
+        """가입 사용자의 knox_id가 기존 외부 수신인과 같으면 user FK row로 승격되어야 합니다."""
+
+        _create_target_recipient(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            external_knox_id="external-71007",
+        )
+
+        User = get_user_model()
+        joined_user = User.objects.create_user(
+            sabun="S71007",
+            password="test-password",
+            knox_id="external-71007",
+            email="external-71007@samsung.com",
+        )
+
+        recipient = DroneSopTargetRecipient.objects.get(
+            target__target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+        )
+        self.assertEqual(recipient.user_id, joined_user.id)
+        self.assertEqual(recipient.external_knox_id, "")
+        self.assertEqual(
+            selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+                line_id="L1",
+                user_sdwt_prod="ETCH_A",
+            ),
+            ["external-71007@samsung.com"],
+        )
+
+    def test_user_knox_id_update_promotes_external_recipient_rows(self) -> None:
+        """가입 후 knox_id가 채워지는 흐름도 외부 수신인 승격을 수행해야 합니다."""
+
+        _create_target_recipient(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopTargetRecipient.Channels.MESSENGER,
+            external_knox_id="external-71008",
+        )
+
+        User = get_user_model()
+        joined_user = User.objects.create_user(
+            sabun="S71008",
+            password="test-password",
+            email="external-71008@samsung.com",
+        )
+        joined_user.knox_id = "external-71008"
+        joined_user.save(update_fields=["knox_id"])
+
+        recipient = DroneSopTargetRecipient.objects.get(
+            target__target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopTargetRecipient.Channels.MESSENGER,
+        )
+        self.assertEqual(recipient.user_id, joined_user.id)
+        self.assertEqual(recipient.external_knox_id, "")
+        self.assertEqual(
+            selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+                line_id="L1",
+                user_sdwt_prod="ETCH_A",
+            ),
+            ["external-71008"],
+        )
+
     def test_same_target_cannot_be_reused_by_another_line(self) -> None:
         """같은 target_user_sdwt_prod는 다른 line 수신인 설정에 재사용할 수 없어야 합니다."""
 
@@ -1986,6 +2114,47 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(payload["targetUserSdwtProd"], "ETCH_A")
         self.assertEqual(payload["channel"], "mail")
         self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
+
+    def test_notification_recipient_endpoint_replaces_external_recipients(self) -> None:
+        """수신인 API가 externalKnoxIds 스냅샷을 함께 저장하는지 확인합니다."""
+
+        account_services.sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "external-71006",
+                    "department": "ExtDept",
+                    "user_sdwt_prod": "ETCH_A",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [self.mail_user.id],
+                    "externalKnoxIds": ["external-71006"],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        recipient_keys = [row["recipientKey"] for row in payload["recipients"]]
+        self.assertCountEqual(recipient_keys, [f"user:{self.mail_user.id}", "external:external-71006"])
+        self.assertTrue(
+            DroneSopTargetRecipient.objects.filter(
+                target__target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopTargetRecipient.Channels.MAIL,
+                external_knox_id="external-71006",
+            ).exists()
+        )
 
     def test_notification_recipient_endpoint_returns_mail_recipients(self) -> None:
         """수신인 API가 target/channel의 등록된 메일 수신인을 반환하는지 확인합니다."""
@@ -2594,6 +2763,7 @@ class DroneJiraKeyEndpointTests(TestCase):
             jira_key="PROJ",
             jira_enabled=False,
             messenger_enabled=False,
+            force_new_chatroom=True,
             mail_enabled=True,
             needtosend_comment_last_at="$SETUP_EQP",
             needtosend_ignore_sample_type=True,
@@ -2607,6 +2777,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(response.json()["templateKey"], "common")
         self.assertFalse(response.json()["jiraEnabled"])
         self.assertFalse(response.json()["messengerEnabled"])
+        self.assertTrue(response.json()["messengerForceNewChatroom"])
         self.assertTrue(response.json()["mailEnabled"])
         self.assertEqual(response.json()["needtosendCommentLastAt"], "$SETUP_EQP")
         self.assertTrue(response.json()["needtosendIgnoreSampleType"])
@@ -2704,6 +2875,27 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertFalse(refreshed.jira_enabled)
         self.assertTrue(refreshed.messenger_enabled)
         self.assertFalse(refreshed.mail_enabled)
+
+    def test_jira_key_update_saves_messenger_force_new_chatroom(self) -> None:
+        """다음 메신저 발송 시 새 채팅방 생성 옵션을 저장하는지 확인합니다."""
+        payload = {
+            "lineId": "L1",
+            "userSdwtProd": "SDWT",
+            "messengerForceNewChatroom": True,
+        }
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["messengerForceNewChatroom"])
+
+        refreshed = DroneSopTarget.objects.get(target_user_sdwt_prod="SDWT")
+        self.assertTrue(refreshed.messenger_force_new_chatroom)
 
     def test_jira_key_update_saves_needtosend_rule(self) -> None:
         """자동 예약 코멘트 포함 규칙을 함께 저장하는지 확인합니다."""
@@ -4599,6 +4791,88 @@ class DroneSopInformPolicyTests(TestCase):
         refreshed_sop = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed_sop.send_messenger, 1)
         self.assertIsNone(refreshed_sop.messenger_reason)
+
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_MAIL_SENDER="sender@example.com",
+    )
+    @patch.dict(
+        os.environ,
+        {
+            "KNOX_MESSENGER_API_BASE_URL": "http://example.local/messenger/",
+            "KNOX_MESSENGER_AUTHORIZATION": "dummy-auth",
+            "KNOX_MESSENGER_SYSTEM_ID": "dummy-system",
+        },
+    )
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_messenger_message")
+    @patch("api.drone.services.inform.sop_inform.messenger_services.create_chatroom")
+    @patch("api.drone.services.inform.sop_inform.messenger_services.resolve_user_ids_by_single_ids")
+    def test_inform_force_new_chatroom_recreates_and_resets_flag(
+        self,
+        mock_resolve_user_ids: Mock,
+        mock_create_chatroom: Mock,
+        mock_messenger: Mock,
+    ) -> None:
+        """새 채팅방 생성 요청이 있으면 기존 chatroom_id 대신 새 방을 만들고 플래그를 해제합니다."""
+        mock_resolve_user_ids.return_value = ["user-101", "user-102"]
+        mock_create_chatroom.return_value = 4567
+
+        User = get_user_model()
+        user_a = User.objects.create_user(sabun="S83101", password="test-password")
+        user_a.knox_id = "knox-101"
+        user_a.save(update_fields=["knox_id"])
+        _set_current_affiliation(user_a, user_sdwt_prod="SDWT1")
+
+        user_b = User.objects.create_user(sabun="S83102", password="test-password")
+        user_b.knox_id = "knox-102"
+        user_b.save(update_fields=["knox_id"])
+        _set_current_affiliation(user_b, user_sdwt_prod="SDWT1")
+
+        _upsert_target(
+            target_user_sdwt_prod="SDWT1",
+            messenger_template_key="common",
+            chatroom_id=12345,
+            force_new_chatroom=True,
+        )
+        _create_target_recipient(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopTargetRecipient.Channels.MESSENGER,
+            user=user_a,
+        )
+        _create_target_recipient(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopTargetRecipient.Channels.MESSENGER,
+            user=user_b,
+        )
+
+        _create_drone_sop(
+            line_id="L1",
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.2",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            send_jira=-1,
+            send_messenger=0,
+            send_mail=-1,
+            metro_current_step="ST001",
+        )
+
+        result = services.run_drone_sop_pipeline_from_env()
+        self.assertEqual(result.candidates, 1)
+        self.assertEqual(result.messenger_sent, 1)
+
+        mock_resolve_user_ids.assert_called_once()
+        mock_create_chatroom.assert_called_once()
+        mock_messenger.assert_called_once()
+        self.assertEqual(mock_messenger.call_args.kwargs.get("chatroom_id"), 4567)
+
+        refreshed_channel = DroneSopTarget.objects.get(target_user_sdwt_prod="SDWT1")
+        self.assertEqual(refreshed_channel.chatroom_id, 4567)
+        self.assertFalse(refreshed_channel.messenger_force_new_chatroom)
 
 
 class DroneTriggerAuthTests(TestCase):

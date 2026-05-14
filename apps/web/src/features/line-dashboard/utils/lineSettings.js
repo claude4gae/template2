@@ -126,12 +126,36 @@ export function getRecipientPrimaryText(user) {
 }
 
 export function getRecipientUserId(user) {
+  if (user?.recipientType === "external") return null
   const userId = Number.parseInt(user?.userId ?? user?.id, 10)
   return Number.isFinite(userId) && userId > 0 ? userId : null
 }
 
+export function getRecipientKey(user) {
+  if (typeof user?.recipientKey === "string" && user.recipientKey.trim()) {
+    return user.recipientKey.trim()
+  }
+  const externalKnoxId = user?.externalKnoxId || user?.knoxId
+  if (user?.recipientType === "external" && externalKnoxId) {
+    return `external:${String(externalKnoxId).trim().toLowerCase()}`
+  }
+  const userId = getRecipientUserId(user)
+  return userId ? `user:${userId}` : ""
+}
+
+export function getRecipientExternalKnoxId(user) {
+  if (user?.recipientType !== "external") return ""
+  const externalKnoxId = user?.externalKnoxId || user?.knoxId
+  return typeof externalKnoxId === "string" ? externalKnoxId.trim().toLowerCase() : ""
+}
+
 export function getRecipientSecondaryText(user) {
-  const parts = [user?.userSdwtProd, user?.email, user?.knoxId].filter(Boolean)
+  const parts = [
+    user?.recipientType === "external" ? "미가입" : "",
+    user?.userSdwtProd,
+    user?.email,
+    user?.knoxId,
+  ].filter(Boolean)
   return parts.length ? parts.join(" · ") : "연락처 정보 없음"
 }
 
@@ -149,20 +173,22 @@ export function getRecipientListText(user) {
 }
 
 export function mergeRecipientUsers(currentUsers, nextUsers) {
-  const byId = new Map()
+  const byKey = new Map()
   for (const user of currentUsers || []) {
-    const userId = getRecipientUserId(user)
-    if (userId) {
-      byId.set(userId, { ...user, userId, id: userId })
+    const recipientKey = getRecipientKey(user)
+    if (recipientKey) {
+      const userId = getRecipientUserId(user)
+      byKey.set(recipientKey, { ...user, recipientKey, userId, id: userId || recipientKey })
     }
   }
   for (const user of nextUsers || []) {
-    const userId = getRecipientUserId(user)
-    if (userId) {
-      byId.set(userId, { ...user, userId, id: userId })
+    const recipientKey = getRecipientKey(user)
+    if (recipientKey) {
+      const userId = getRecipientUserId(user)
+      byKey.set(recipientKey, { ...user, recipientKey, userId, id: userId || recipientKey })
     }
   }
-  return Array.from(byId.values()).sort((a, b) =>
+  return Array.from(byKey.values()).sort((a, b) =>
     `${a.userSdwtProd || ""}${getRecipientPrimaryText(a)}`.localeCompare(
       `${b.userSdwtProd || ""}${getRecipientPrimaryText(b)}`,
     ),

@@ -21,9 +21,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   getRecipientListText,
+  getRecipientKey,
   getRecipientPickerUsers,
   getRecipientSecondaryText,
-  getRecipientUserId,
 } from "../../utils/lineSettings"
 
 function RecipientPickerUserList({
@@ -35,9 +35,11 @@ function RecipientPickerUserList({
   onToggleUser,
   onToggleAll,
 }) {
-  const visibleUserIds = users.map(getRecipientUserId).filter(Boolean)
-  const selectedVisibleCount = visibleUserIds.filter((userId) => selectedIds.includes(userId)).length
-  const allChecked = visibleUserIds.length > 0 && selectedVisibleCount === visibleUserIds.length
+  const visibleRecipientKeys = users.map(getRecipientKey).filter(Boolean)
+  const selectedVisibleCount = visibleRecipientKeys.filter((recipientKey) =>
+    selectedIds.includes(recipientKey),
+  ).length
+  const allChecked = visibleRecipientKeys.length > 0 && selectedVisibleCount === visibleRecipientKeys.length
   const checked = allChecked ? true : selectedVisibleCount > 0 ? "indeterminate" : false
 
   if (isLoading) {
@@ -67,16 +69,16 @@ function RecipientPickerUserList({
       </label>
       <div className="min-h-0 overflow-y-auto">
         {users.map((user) => {
-          const userId = getRecipientUserId(user)
-          if (!userId) return null
+          const recipientKey = getRecipientKey(user)
+          if (!recipientKey) return null
           return (
             <label
-              key={userId}
+              key={recipientKey}
               className="flex min-w-0 cursor-pointer items-center gap-3 border-b px-3 py-2 last:border-b-0"
             >
               <Checkbox
-                checked={selectedIds.includes(userId)}
-                onCheckedChange={(nextChecked) => onToggleUser(userId, nextChecked === true)}
+                checked={selectedIds.includes(recipientKey)}
+                onCheckedChange={(nextChecked) => onToggleUser(recipientKey, nextChecked === true)}
               />
               <div className="min-w-0">
                 <div className="truncate text-xs font-medium">{getRecipientListText(user)}</div>
@@ -120,8 +122,8 @@ export function RecipientPickerDialog({
   const searchUsers = results?.search || []
   const selectableUsers = getRecipientPickerUsers(results)
   const selectedCount = selectableUsers.filter((user) => {
-    const userId = getRecipientUserId(user)
-    return userId && selectedIds.includes(userId)
+    const recipientKey = getRecipientKey(user)
+    return recipientKey && selectedIds.includes(recipientKey)
   }).length
 
   return (

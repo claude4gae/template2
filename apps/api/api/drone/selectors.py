@@ -232,7 +232,7 @@ def list_drone_sop_user_sdwt_channels_by_targets(
         target_user_sdwt_prod_values: target_user_sdwt_prod 집합 또는 리스트.
 
     반환:
-        {target_user_sdwt_prod: {jira_key, chatroom_id, jira_template_key, mail_template_key, messenger_template_key, *_enabled, *_configured}} 형태의 dict.
+        {target_user_sdwt_prod: {jira_key, chatroom_id, force_new_chatroom, jira_template_key, mail_template_key, messenger_template_key, *_enabled, *_configured}} 형태의 dict.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -266,6 +266,7 @@ def list_drone_sop_user_sdwt_channels_by_targets(
         mapping[target_lookup] = {
             "jira_key": normalize_text(jira_config.jira_project_key if jira_config else None),
             "chatroom_id": chatroom_id,
+            "force_new_chatroom": bool(messenger_config.force_new_chatroom) if messenger_config else False,
             "jira_template_key": normalize_text(jira_config.template_key if jira_config else None),
             "mail_template_key": normalize_text(mail_config.template_key if mail_config else None),
             "messenger_template_key": normalize_text(messenger_config.template_key if messenger_config else None),
@@ -1047,7 +1048,7 @@ def _list_recipient_contact_values(
     if not normalized:
         return []
 
-    rows = (
+    user_values = (
         DroneSopTargetRecipient.objects.filter(
             target__target_user_sdwt_prod__iexact=normalized,
             channel=channel,
@@ -1059,15 +1060,35 @@ def _list_recipient_contact_values(
         .order_by(f"user__{contact_field}")
         .distinct()
     )
+    external_knox_ids = (
+        DroneSopTargetRecipient.objects.filter(
+            target__target_user_sdwt_prod__iexact=normalized,
+            channel=channel,
+            user__isnull=True,
+        )
+        .exclude(external_knox_id__exact="")
+        .values_list("external_knox_id", flat=True)
+        .order_by("external_knox_id")
+        .distinct()
+    )
 
     normalized_values: list[str] = []
     seen: set[str] = set()
-    for value in rows:
+    for value in user_values:
         cleaned = normalize_text(value)
         if not cleaned or cleaned in seen:
             continue
         seen.add(cleaned)
         normalized_values.append(cleaned)
+    for knox_id in external_knox_ids:
+        cleaned_knox_id = normalize_text(knox_id)
+        if not cleaned_knox_id:
+            continue
+        value = f"{cleaned_knox_id}@samsung.com" if contact_field == "email" else cleaned_knox_id
+        if value in seen:
+            continue
+        seen.add(value)
+        normalized_values.append(value)
     return normalized_values
 
 
@@ -1104,20 +1125,51 @@ def list_drone_sop_channel_recipients(
         DroneSopTargetRecipient.objects.filter(
             target__target_user_sdwt_prod__iexact=normalized,
             channel=channel,
-            user__is_active=True,
         )
+        .filter(Q(user__is_active=True) | (Q(user__isnull=True) & ~Q(external_knox_id="")))
         .select_related("target", "user")
         .order_by(
             "user__username",
+            "external_knox_id",
             "user_id",
+            "id",
         )
     )
     affiliation_by_user_id = account_selectors.get_current_affiliation_values_by_user_ids(
-        user_ids=[row.user_id for row in rows]
+        user_ids=[row.user_id for row in rows if row.user_id]
+    )
+    external_snapshot_by_knox_id = account_selectors.get_external_affiliation_snapshots_by_knox_lookup_keys(
+        knox_ids=[row.external_knox_id for row in rows if row.user_id is None and row.external_knox_id]
     )
 
     recipients: list[dict[str, object]] = []
     for row in rows:
+        if row.user_id is None:
+            knox_id = normalize_text(row.external_knox_id)
+            if not knox_id:
+                continue
+            snapshot = external_snapshot_by_knox_id.get(knox_id.lower())
+            recipients.append(
+                {
+                    "id": row.id,
+                    "userId": None,
+                    "recipientType": "external",
+                    "recipientKey": f"external:{knox_id.lower()}",
+                    "externalKnoxId": knox_id,
+                    "username": "",
+                    "displayName": knox_id,
+                    "sabun": "",
+                    "knoxId": knox_id,
+                    "email": f"{knox_id}@samsung.com",
+                    "department": getattr(snapshot, "department", None) or "",
+                    "line": "",
+                    "userSdwtProd": getattr(snapshot, "predicted_user_sdwt_prod", None) or "",
+                    "channel": row.channel,
+                    "lineId": response_line_id,
+                    "targetUserSdwtProd": row.target_user_sdwt_prod,
+                }
+            )
+            continue
         user = row.user
         affiliation_values = affiliation_by_user_id.get(user.id, {})
         display_name = (
@@ -1132,6 +1184,8 @@ def list_drone_sop_channel_recipients(
             {
                 "id": row.id,
                 "userId": user.id,
+                "recipientType": "user",
+                "recipientKey": f"user:{user.id}",
                 "username": getattr(user, "username", None) or "",
                 "displayName": display_name,
                 "sabun": getattr(user, "sabun", None) or "",

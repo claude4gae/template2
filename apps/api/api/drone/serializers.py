@@ -214,6 +214,29 @@ def parse_user_id_list(value: Any) -> list[int]:
     return user_ids
 
 
+def parse_external_knox_id_list(value: Any) -> list[str]:
+    """externalKnoxIds 값을 중복 제거된 문자열 리스트로 파싱합니다."""
+
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise DroneRequestValidationError("externalKnoxIds must be a list")
+
+    knox_ids: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise DroneRequestValidationError("externalKnoxIds must contain only strings")
+        knox_id = item.strip().lower()
+        if not knox_id:
+            raise DroneRequestValidationError("externalKnoxIds must contain non-empty strings")
+        if knox_id in seen:
+            continue
+        seen.add(knox_id)
+        knox_ids.append(knox_id)
+    return knox_ids
+
+
 def parse_optional_comment(payload: dict[str, Any]) -> str | None:
     """즉시 인폼 요청의 comment 필드를 파싱합니다."""
 

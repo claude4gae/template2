@@ -1,7 +1,8 @@
 import { IconDeviceFloppy, IconUserPlus } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
-import { getRecipientListText } from "../../utils/lineSettings"
+import { Checkbox } from "@/components/ui/checkbox"
+import { getRecipientKey, getRecipientListText } from "../../utils/lineSettings"
 
 export function RecipientChannelCard({
   config,
@@ -14,10 +15,14 @@ export function RecipientChannelCard({
   onOpenPicker,
   isDraftCurrent,
   isSavingRecipients,
+  forceNewChatroom = false,
+  isSavingForceNewChatroom = false,
+  onForceNewChatroomChange,
   error,
 }) {
   const saveDisabled = !selectedUserSdwtProd || !canManageRecipients
   const pickerDisabled = !selectedUserSdwtProd
+  const isMessengerChannel = config.channel === "messenger"
 
   return (
     <div className="flex min-w-0 flex-col rounded-lg border bg-background p-4 shadow-sm">
@@ -61,6 +66,32 @@ export function RecipientChannelCard({
           수신인 검색/추가
         </Button>
 
+        {isMessengerChannel ? (
+          <div className="rounded-md border bg-muted/30 p-3">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="messenger-force-new-chatroom"
+                checked={Boolean(forceNewChatroom)}
+                disabled={!selectedUserSdwtProd || !canManageRecipients || isSavingForceNewChatroom}
+                onCheckedChange={(checked) => onForceNewChatroomChange?.(checked === true)}
+                className="mt-0.5"
+              />
+              <div className="min-w-0 space-y-1">
+                <label
+                  htmlFor="messenger-force-new-chatroom"
+                  className="cursor-pointer text-xs font-medium leading-none"
+                >
+                  새 대화방 생성
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  체크 시 다음 메신저 발송 때 현재 저장된 수신인 기준으로 새 대화방을 생성합니다.
+                  새 대화방 생성 후에는 자동으로 해제됩니다.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="max-h-80 min-h-64 overflow-y-auto rounded-md border">
           {isLoadingRecipients ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">{config.loadingText}</div>
@@ -69,7 +100,7 @@ export function RecipientChannelCard({
           ) : (
             recipients.map((recipient) => (
               <div
-                key={recipient.userId}
+                key={getRecipientKey(recipient)}
                 className="flex min-w-0 items-center justify-between gap-2 border-b px-3 py-2 last:border-b-0"
               >
                 <div className="min-w-0">

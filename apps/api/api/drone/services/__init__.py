@@ -48,6 +48,7 @@ from .channels import (
     ensure_drone_sop_notification_target,
     get_or_create_drone_sop_target_by_name,
     normalize_recipient_channel,
+    promote_drone_sop_external_recipients_for_user,
     replace_drone_sop_channel_recipients,
     upsert_drone_sop_user_sdwt_channel,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "has_drone_sop_pipeline_candidates",
     "normalize_recipient_channel",
     "pop_legacy_delivery_seed",
+    "promote_drone_sop_external_recipients_for_user",
     "replace_drone_sop_channel_recipients",
     "retry_drone_sop_channel",
     "run_drone_sop_jira_create_from_env",

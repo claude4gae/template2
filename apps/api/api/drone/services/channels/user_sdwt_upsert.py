@@ -21,6 +21,7 @@ class UserSdwtChannelUpsertFields:
     line_id: str | object
     jira_key: str | None | object
     chatroom_id: int | None | object
+    force_new_chatroom: bool | object
     jira_template_key: str | None | object
     mail_template_key: str | None | object
     messenger_template_key: str | None | object
@@ -40,6 +41,7 @@ class UserSdwtChannelUpsertFields:
                 self.line_id,
                 self.jira_key,
                 self.chatroom_id,
+                self.force_new_chatroom,
                 self.jira_template_key,
                 self.mail_template_key,
                 self.messenger_template_key,
@@ -73,6 +75,7 @@ def normalize_user_sdwt_channel_upsert_fields(
     line_id: Any,
     jira_key: str | None | object,
     chatroom_id: int | None | object,
+    force_new_chatroom: bool | object,
     jira_template_key: str | None | object,
     mail_template_key: str | None | object,
     messenger_template_key: str | None | object,
@@ -87,6 +90,7 @@ def normalize_user_sdwt_channel_upsert_fields(
 
     validate_optional_str(jira_key, "jira_key")
     validate_optional_chatroom_id(chatroom_id)
+    _validate_optional_bool(force_new_chatroom, "force_new_chatroom")
     validate_optional_str(jira_template_key, "jira_template_key")
     validate_optional_str(mail_template_key, "mail_template_key")
     validate_optional_str(messenger_template_key, "messenger_template_key")
@@ -101,6 +105,7 @@ def normalize_user_sdwt_channel_upsert_fields(
         line_id=normalize_optional_text(line_id) if line_id is not _UNSET else _UNSET,
         jira_key=jira_key,
         chatroom_id=chatroom_id,
+        force_new_chatroom=force_new_chatroom,
         jira_template_key=normalize_optional_template_key(jira_template_key),
         mail_template_key=normalize_optional_template_key(mail_template_key),
         messenger_template_key=normalize_optional_template_key(messenger_template_key),

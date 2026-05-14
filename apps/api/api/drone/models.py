@@ -321,6 +321,13 @@ class DroneSopTarget(models.Model):
         return config.chatroom_id if config else None
 
     @property
+    def messenger_force_new_chatroom(self) -> bool:
+        """메신저 채널의 다음 발송 새 채팅방 생성 여부를 반환합니다."""
+
+        config = self._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+        return bool(config.force_new_chatroom) if config else False
+
+    @property
     def jira_template_key(self) -> str | None:
         """Jira 채널 template key를 legacy 호환 속성으로 반환합니다."""
 
@@ -423,6 +430,7 @@ class DroneSopTargetChannelConfig(models.Model):
     template_key = models.CharField(max_length=50, null=True, blank=True)
     jira_project_key = models.CharField(max_length=64, null=True, blank=True)
     chatroom_id = models.BigIntegerField(null=True, blank=True)
+    force_new_chatroom = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 
@@ -559,9 +567,10 @@ class DroneSopTargetMapping(models.Model):
 
 
 class DroneSopTargetRecipient(models.Model):
-    """Drone SOP 채널별 실제 수신인 사용자를 저장하는 모델입니다.
+    """Drone SOP 채널별 실제 수신인을 저장하는 모델입니다.
 
     target의 소유 line_id와 채널 설정은 DroneSopTarget에서 관리합니다.
+    가입 사용자는 user FK로, 미가입 외부 스냅샷 사용자는 external_knox_id로 저장합니다.
     """
 
     class Channels(models.TextChoices):
@@ -576,9 +585,12 @@ class DroneSopTargetRecipient(models.Model):
     channel = models.CharField(max_length=16, choices=Channels.choices)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="drone_sop_recipients",
     )
+    external_knox_id = models.CharField(max_length=150, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 
@@ -587,7 +599,18 @@ class DroneSopTargetRecipient(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["target", "channel", "user"],
+                condition=Q(user__isnull=False),
                 name="uniq_dro_sop_tgt_rcp_usr",
+            ),
+            models.UniqueConstraint(
+                fields=["target", "channel", "external_knox_id"],
+                condition=~Q(external_knox_id=""),
+                name="uniq_dro_sop_tgt_rcp_ext",
+            ),
+            models.CheckConstraint(
+                check=Q(user__isnull=False, external_knox_id="")
+                | (Q(user__isnull=True) & ~Q(external_knox_id="")),
+                name="chk_dro_sop_tgt_rcp_one",
             ),
         ]
         indexes = [
@@ -596,6 +619,7 @@ class DroneSopTargetRecipient(models.Model):
                 name="idx_dro_sop_tgt_rcp_tgt",
             ),
             models.Index(fields=["user"], name="idx_dro_sop_tgt_rcp_usr"),
+            models.Index(fields=["external_knox_id"], name="idx_dro_sop_tgt_rcp_ext"),
         ]
 
     @property
@@ -607,7 +631,8 @@ class DroneSopTargetRecipient(models.Model):
     def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
-        return f"{self.target_user_sdwt_prod} / {self.channel} / {self.user_id}"
+        recipient = self.user_id or self.external_knox_id
+        return f"{self.target_user_sdwt_prod} / {self.channel} / {recipient}"
 
 
 class DroneSopTargetDispatch(models.Model):
