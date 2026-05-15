@@ -43,6 +43,7 @@ from .jira.sop_jira import (
     run_drone_sop_jira_create_from_env,
 )
 from .channels import (
+    DroneSopAffiliationSeedResult,
     DroneSopTargetMappingDuplicateError,
     create_drone_sop_target_mapping,
     ensure_drone_sop_notification_target,
@@ -50,6 +51,7 @@ from .channels import (
     normalize_recipient_channel,
     promote_drone_sop_external_recipients_for_user,
     replace_drone_sop_channel_recipients,
+    seed_drone_sop_affiliation_notification_defaults,
     upsert_drone_sop_user_sdwt_channel,
 )
 from .pop3.config import DroneSopPop3Config, DroneSopPop3IngestResult, NeedToSendRule
@@ -70,6 +72,7 @@ __all__ = [
     "DroneEarlyInformUpdateResult",
     "DroneJiraConfig",
     "DroneSopInstantInformResult",
+    "DroneSopAffiliationSeedResult",
     "DroneSopInformResult",
     "DroneSopJiraCreateResult",
     "DroneSopRetryChannelResult",
@@ -98,6 +101,7 @@ __all__ = [
     "run_drone_sop_pipeline_from_env",
     "run_drone_sop_pop3_ingest_from_env",
     "seed_legacy_delivery_rows",
+    "seed_drone_sop_affiliation_notification_defaults",
     "upsert_drone_sop_user_sdwt_channel",
     "update_early_inform_entry",
     "update_table_record",

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from .affiliation_seed import (
+    DroneSopAffiliationSeedResult,
+    seed_drone_sop_affiliation_notification_defaults,
+)
 from .recipients import (
     normalize_recipient_channel,
     promote_drone_sop_external_recipients_for_user,
@@ -15,6 +19,7 @@ from .user_sdwt_channel import (
 )
 
 __all__ = [
+    "DroneSopAffiliationSeedResult",
     "DroneSopTargetMappingDuplicateError",
     "create_drone_sop_target_mapping",
     "ensure_drone_sop_notification_target",
@@ -22,5 +27,6 @@ __all__ = [
     "normalize_recipient_channel",
     "promote_drone_sop_external_recipients_for_user",
     "replace_drone_sop_channel_recipients",
+    "seed_drone_sop_affiliation_notification_defaults",
     "upsert_drone_sop_user_sdwt_channel",
 ]

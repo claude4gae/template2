@@ -2738,6 +2738,102 @@ class DroneSopTargetRecipientTests(TestCase):
         )
 
 
+class DroneSopAffiliationNotificationSeedTests(TestCase):
+    """account 소속 기반 Drone SOP 알림 초기 세팅을 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 account 소속과 사용자 pool을 준비합니다."""
+
+        User = get_user_model()
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="LSEED",
+            user_sdwt_prod="SEED_A",
+        )
+        self.user = User.objects.create_user(
+            sabun="S72001",
+            password="test-password",
+            knox_id="seed-user",
+            email="seed-user@example.com",
+        )
+        _set_current_affiliation(self.user, department="Dept", line="LSEED", user_sdwt_prod="SEED_A")
+        account_services.sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "seed-external",
+                    "department": "ExtDept",
+                    "user_sdwt_prod": "SEED_A",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+    def test_seed_creates_affiliation_defaults_without_overwrite(self) -> None:
+        """소속 기반 target/channel/mapping/recipient 누락분만 생성합니다."""
+
+        first_result = services.seed_drone_sop_affiliation_notification_defaults(line_id="LSEED")
+
+        target = DroneSopTarget.objects.get(target_user_sdwt_prod="SEED_A")
+        self.assertEqual(target.line_id, "LSEED")
+        self.assertEqual(first_result.targets_created, 1)
+        self.assertTrue(
+            DroneSopTargetMapping.objects.filter(
+                sdwt_prod="SEED_A",
+                user_sdwt_prod="SEED_A",
+                target=target,
+            ).exists()
+        )
+
+        jira_config = target.channel_configs.get(channel=DroneSopTargetChannelConfig.Channels.JIRA)
+        messenger_config = target.channel_configs.get(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+        mail_config = target.channel_configs.get(channel=DroneSopTargetChannelConfig.Channels.MAIL)
+        self.assertFalse(jira_config.enabled)
+        self.assertTrue(messenger_config.enabled)
+        self.assertTrue(mail_config.enabled)
+        self.assertEqual(jira_config.template_key, "common")
+        self.assertEqual(messenger_config.template_key, "common")
+        self.assertEqual(mail_config.template_key, "common")
+        self.assertFalse(target.needtosend_rule.enabled)
+        self.assertEqual(target.needtosend_rule.comment_keyword, "$SETUP_EQP")
+
+        self.assertEqual(
+            selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+                line_id="LSEED",
+                user_sdwt_prod="SEED_A",
+            ),
+            ["seed-user@example.com", "seed-external@samsung.com"],
+        )
+        self.assertEqual(
+            selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+                line_id="LSEED",
+                user_sdwt_prod="SEED_A",
+            ),
+            ["seed-user", "seed-external"],
+        )
+
+        second_result = services.seed_drone_sop_affiliation_notification_defaults(line_id="LSEED")
+        self.assertEqual(second_result.targets_created, 0)
+        self.assertEqual(second_result.mappings_created, 0)
+        self.assertEqual(second_result.channel_configs_created, 0)
+        self.assertEqual(second_result.needtosend_rules_created, 0)
+        self.assertEqual(second_result.recipients_created, 0)
+
+    def test_seed_command_dry_run_rolls_back(self) -> None:
+        """dry-run 옵션은 결과 계산 후 DB 변경을 롤백합니다."""
+
+        output = StringIO()
+        call_command(
+            "seed_drone_affiliation_notifications",
+            "--line-id",
+            "LSEED",
+            "--dry-run",
+            stdout=output,
+        )
+
+        self.assertIn("dry-run:", output.getvalue())
+        self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="SEED_A").exists())
+
+
 class DroneJiraKeyEndpointTests(TestCase):
     """Jira 키/템플릿 키 엔드포인트를 검증합니다."""
 

@@ -783,55 +783,6 @@ class DroneSopDelivery(models.Model):
         return f"{self.sop_id} / {self.channel} / {self.status}"
 
 
-class DroneSopDeliveryAttempt(models.Model):
-    """Drone SOP delivery의 실제 외부 발송 시도 1회를 기록하는 모델입니다."""
-
-    class Statuses(models.TextChoices):
-        SENDING = "sending", "Sending"
-        SUCCESS = "success", "Success"
-        FAILED = "failed", "Failed"
-
-    delivery = models.ForeignKey(
-        DroneSopDelivery,
-        on_delete=models.CASCADE,
-        related_name="attempts",
-    )
-    attempt_no = models.PositiveIntegerField()
-    status = models.CharField(max_length=16, choices=Statuses.choices, default=Statuses.SENDING)
-    sent_comment_snapshot = models.TextField(null=True, blank=True)
-    sent_step_snapshot = models.CharField(max_length=50, null=True, blank=True)
-    request_snapshot = models.JSONField(null=True, blank=True)
-    response_snapshot = models.JSONField(null=True, blank=True)
-    error_code = models.CharField(max_length=64, null=True, blank=True)
-    error_message = models.TextField(null=True, blank=True)
-    started_at = models.DateTimeField(null=True, blank=True)
-    finished_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
-    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
-
-    class Meta:
-        db_table = "drone_sop_delivery_attempt"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["delivery", "attempt_no"],
-                name="uniq_dro_sop_dlv_att_no",
-            ),
-            models.CheckConstraint(
-                condition=Q(status__in=["sending", "success", "failed"]),
-                name="chk_dro_sop_dlv_att_st",
-            ),
-        ]
-        indexes = [
-            models.Index(fields=["delivery", "attempt_no"], name="idx_dro_sop_dlv_att_dlv"),
-            models.Index(fields=["status", "started_at"], name="idx_dro_sop_dlv_att_st"),
-        ]
-
-    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
-        """관리자/디버깅용 문자열 표현을 반환합니다."""
-
-        return f"{self.delivery_id} / #{self.attempt_no} / {self.status}"
-
-
 class DroneEarlyInform(models.Model):
     """Drone 조기 알림 설정(라인/스텝 기준)을 저장하는 모델입니다."""
 
@@ -860,7 +811,6 @@ class DroneEarlyInform(models.Model):
 __all__ = [
     "DroneEarlyInform",
     "DroneSOP",
-    "DroneSopDeliveryAttempt",
     "DroneSopDelivery",
     "DroneSopNeedToSendRule",
     "DroneSopTarget",
