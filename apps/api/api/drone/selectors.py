@@ -1139,6 +1139,7 @@ def list_drone_sop_channel_recipients(
             if not knox_id:
                 continue
             snapshot = external_snapshot_by_knox_id.get(knox_id.lower())
+            username = normalize_text(getattr(snapshot, "username", None))
             recipients.append(
                 {
                     "id": row.id,
@@ -1146,8 +1147,8 @@ def list_drone_sop_channel_recipients(
                     "recipientType": "external",
                     "recipientKey": f"external:{knox_id.lower()}",
                     "externalKnoxId": knox_id,
-                    "username": "",
-                    "displayName": knox_id,
+                    "username": username,
+                    "displayName": username or knox_id,
                     "sabun": "",
                     "knoxId": knox_id,
                     "email": f"{knox_id}@samsung.com",

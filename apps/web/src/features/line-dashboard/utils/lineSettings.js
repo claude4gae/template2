@@ -162,8 +162,9 @@ export function getRecipientListText(user) {
     user?.username ||
     user?.sabun ||
     user?.knoxId ||
+    user?.externalKnoxId ||
     `User ${user?.userId || user?.id}`
-  const knoxId = user?.knoxId || ""
+  const knoxId = user?.knoxId || user?.externalKnoxId || ""
   return knoxId && name !== knoxId ? `${name}(${knoxId})` : name
 }
 

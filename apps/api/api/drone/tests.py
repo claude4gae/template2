@@ -1950,6 +1950,7 @@ class DroneSopTargetRecipientTests(TestCase):
             records=[
                 {
                     "knox_id": "external-71003",
+                    "username": "외부사용자",
                     "department": "ExtDept",
                     "user_sdwt_prod": "ETCH_A",
                     "source_updated_at": timezone.now(),
@@ -1991,6 +1992,9 @@ class DroneSopTargetRecipientTests(TestCase):
         external_rows = [row for row in mail_result["recipients"] if row["recipientType"] == "external"]
         self.assertEqual(len(external_rows), 1)
         self.assertEqual(external_rows[0]["recipientKey"], "external:external-71003")
+        self.assertEqual(external_rows[0]["username"], "외부사용자")
+        self.assertEqual(external_rows[0]["displayName"], "외부사용자")
+        self.assertEqual(external_rows[0]["knoxId"], "external-71003")
         self.assertEqual(external_rows[0]["email"], "external-71003@samsung.com")
 
     def test_replace_rejects_unknown_external_snapshot_recipient(self) -> None:
@@ -2435,6 +2439,7 @@ class DroneSopTargetRecipientTests(TestCase):
             records=[
                 {
                     "knox_id": "external-71006",
+                    "username": "외부조회사용자",
                     "department": "ExtDept",
                     "user_sdwt_prod": "ETCH_A",
                     "source_updated_at": timezone.now(),
@@ -2461,6 +2466,10 @@ class DroneSopTargetRecipientTests(TestCase):
         payload = response.json()
         recipient_keys = [row["recipientKey"] for row in payload["recipients"]]
         self.assertCountEqual(recipient_keys, [f"user:{self.mail_user.id}", "external:external-71006"])
+        external_rows = [row for row in payload["recipients"] if row["recipientType"] == "external"]
+        self.assertEqual(external_rows[0]["username"], "외부조회사용자")
+        self.assertEqual(external_rows[0]["displayName"], "외부조회사용자")
+        self.assertEqual(external_rows[0]["knoxId"], "external-71006")
         self.assertTrue(
             DroneSopTargetRecipient.objects.filter(
                 target__target_user_sdwt_prod="ETCH_A",
