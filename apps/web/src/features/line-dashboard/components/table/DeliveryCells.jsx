@@ -20,6 +20,7 @@ import {
   normalizeDeliveryRows,
   normalizeTextValue,
   resolveChannelReason,
+  summarizeDeliveryChannelFlag,
   summarizeExistingDeliveryChannel,
   uniqueDeliveryTargets,
 } from "../../utils/dataTableDelivery"
@@ -195,11 +196,11 @@ function DeliveryCellDetail({ delivery }) {
 
 export function DeliverySummaryCell({ rowOriginal, meta }) {
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
-  if (!deliveryRows.length) return null
-
   const summaries = DELIVERY_CHANNELS.map((channel) => ({
     channel,
-    summary: summarizeExistingDeliveryChannel(deliveryRows, channel.channel),
+    summary: deliveryRows.length
+      ? summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
+      : summarizeDeliveryChannelFlag(channel.channel, rowOriginal?.[channel.field]),
   }))
   const visibleSummaries = summaries.filter(({ summary }) => summary && summary.status !== "disabled")
   if (visibleSummaries.length === 0) return null

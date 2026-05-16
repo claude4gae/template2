@@ -138,6 +138,7 @@ export function summarizeExistingDeliveryChannel(deliveryRows, channel) {
 export function summarizeDeliveryChannel(deliveryRows, channel, fallbackValue) {
   const channelRows = deliveryRows.filter((row) => row.channel === channel)
   if (!channelRows.length) {
+    if (fallbackValue === null || fallbackValue === undefined) return null
     const fallbackState = deriveFlagState(fallbackValue, 0)
     return {
       status: fallbackState.isError ? "failed" : fallbackState.isOn ? "success" : "pending",
@@ -152,6 +153,10 @@ export function summarizeDeliveryChannel(deliveryRows, channel, fallbackValue) {
   return summarizeDeliveryRows(channelRows)
 }
 
+export function summarizeDeliveryChannelFlag(channel, fallbackValue) {
+  return summarizeDeliveryChannel([], channel, fallbackValue)
+}
+
 export function summarizeRowDeliveryChannel(rowOriginal, channelKey) {
   const channel = DELIVERY_CHANNELS.find(
     (item) => item.channel === channelKey || item.field === channelKey || item.fallbackField === channelKey
@@ -159,11 +164,7 @@ export function summarizeRowDeliveryChannel(rowOriginal, channelKey) {
   if (!channel) return null
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
   if (deliveryRows.length) return summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
-  return summarizeDeliveryChannel(
-    deliveryRows,
-    channel.channel,
-    rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField]
-  )
+  return summarizeDeliveryChannelFlag(channel.channel, rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField])
 }
 
 export function isDeliveryChannelSuccessful(rowOriginal, channelKey) {

@@ -47,20 +47,22 @@ def _normalize_positive_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def _summarize_delivery_flag(*, delivery_rows: list[dict[str, Any]], channel: str) -> int:
+def _summarize_delivery_flag(*, delivery_rows: list[dict[str, Any]], channel: str) -> int | None:
     """delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
 
     channel_rows = [row for row in delivery_rows if row.get("channel") == channel]
     if not channel_rows:
-        return 0
+        return None
     statuses = {str(row.get("status") or "").strip().lower() for row in channel_rows}
+    if statuses and statuses <= {"disabled", "cancelled"}:
+        return None
     if "failed" in statuses:
         return -1
-    if "pending" in statuses or "unknown" in statuses:
+    if "pending" in statuses or "unknown" in statuses or "sending" in statuses:
         return 0
     if "success" in statuses:
         return 1
-    return 0
+    return None
 
 
 def _summarize_delivery_overall_flag(*, delivery_rows: list[dict[str, Any]]) -> int:

@@ -6564,6 +6564,9 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(row["id"], sop.id)
         self.assertEqual(row["delivery_status"], 1)
         self.assertEqual(row["delivery_targets"], "SOP-TARGET")
+        self.assertEqual(row["delivery_jira"], 1)
+        self.assertIsNone(row["delivery_messenger"])
+        self.assertIsNone(row["delivery_mail"])
         self.assertEqual(row["jira_key"], "PROJ-1")
         self.assertIsNotNone(row["informed_at"])
         self.assertEqual(
@@ -6598,6 +6601,9 @@ class DroneTablesEndpointTests(TestCase):
         self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
         self.assertEqual(row["delivery_targets"], "TARGET-VISIBLE")
         self.assertEqual(row["delivery_status"], 0)
+        self.assertIsNone(row["delivery_jira"])
+        self.assertIsNone(row["delivery_messenger"])
+        self.assertIsNone(row["delivery_mail"])
 
     def test_table_record_delivery_update_payload_excludes_base_target(self) -> None:
         """단건 갱신 payload는 화면 row target을 덮어쓰지 않는지 확인합니다."""
