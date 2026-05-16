@@ -1687,7 +1687,11 @@ class DroneTableUpdateView(APIView):
         if result.updated_row is not None:
             set_activity_new_state(request, result.updated_row)
 
-        return JsonResponse({"success": True})
+        updated = _merge_latest_delivery_updates(
+            sop_id=record_id,
+            updated_fields=result.updated_row or {},
+        )
+        return JsonResponse({"success": True, "updated": updated})
 
 
 @method_decorator(csrf_exempt, name="dispatch")

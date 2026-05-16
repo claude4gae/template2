@@ -198,9 +198,9 @@ export function DeliverySummaryCell({ rowOriginal, meta }) {
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
   const summaries = DELIVERY_CHANNELS.map((channel) => ({
     channel,
-    summary: deliveryRows.length
-      ? summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
-      : summarizeDeliveryChannelFlag(channel.channel, rowOriginal?.[channel.field]),
+    summary:
+      summarizeExistingDeliveryChannel(deliveryRows, channel.channel) ??
+      summarizeDeliveryChannelFlag(channel.channel, rowOriginal?.[channel.field]),
   }))
   const visibleSummaries = summaries.filter(({ summary }) => summary && summary.status !== "disabled")
   if (visibleSummaries.length === 0) return null
@@ -358,7 +358,9 @@ export function DeliveryChannelSummaryCell({ value, rowOriginal, channelKey, met
     return renderSendChannelCell({ value, rowOriginal, channelKey, meta })
   }
 
-  const summary = summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
+  const summary =
+    summarizeExistingDeliveryChannel(deliveryRows, channel.channel) ??
+    summarizeDeliveryChannelFlag(channel.channel, value)
   if (!summary || summary.status === "disabled") return null
 
   const trigger = (

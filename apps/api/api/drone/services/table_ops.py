@@ -137,16 +137,13 @@ def _normalize_record_id(value: Any) -> int | None:
     return normalized if normalized > 0 else None
 
 
-def _has_needtosend_disabled_update(assignments: Sequence[Any]) -> bool:
-    """업데이트 assignment에 needtosend=0 변경이 포함됐는지 확인합니다."""
+def _has_needtosend_update(assignments: Sequence[Any]) -> bool:
+    """업데이트 assignment에 needtosend 변경이 포함됐는지 확인합니다."""
 
     for assignment in assignments:
         if str(getattr(assignment, "column_name", "")).casefold() != "needtosend":
             continue
-        try:
-            return int(getattr(assignment, "value", 0) or 0) == 0
-        except (TypeError, ValueError):
-            return False
+        return True
     return False
 
 
@@ -296,11 +293,11 @@ def update_table_record(*, payload: Mapping[str, Any]) -> TableUpdateResult:
         """
     ).format(table=table_name, assignments=", ".join(assignment_sql), id_column=id_column)
 
-    should_block_needtosend_disable = _has_needtosend_disabled_update(assignments)
+    should_block_needtosend_update = _has_needtosend_update(assignments)
     normalized_record_id = _normalize_record_id(record_id)
 
     with transaction.atomic():
-        if should_block_needtosend_disable and not _lock_table_record_for_update(
+        if should_block_needtosend_update and not _lock_table_record_for_update(
             table_name=table_name,
             id_column=id_column,
             record_id=record_id,
@@ -308,11 +305,11 @@ def update_table_record(*, payload: Mapping[str, Any]) -> TableUpdateResult:
             raise TableRecordNotFoundError("Record not found")
 
         if (
-            should_block_needtosend_disable
+            should_block_needtosend_update
             and normalized_record_id is not None
             and _has_delivery_for_sop(sop_id=normalized_record_id)
         ):
-            raise ValueError("이미 전송 작업이 생성되어 예약을 해제할 수 없습니다.")
+            raise ValueError("이미 전송 작업이 생성되어 예약을 수정할 수 없습니다.")
 
         try:
             affected, _ = execute(sql, query_params)

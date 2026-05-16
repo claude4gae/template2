@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from .. import selectors
+from .shared.delivery_snapshot import is_sop_delivery_eligible, normalize_lookup_key
 
 _DELIVERY_VIRTUAL_COLUMNS = [
     "delivery_targets",
@@ -20,6 +21,11 @@ _DELIVERY_COLUMN_BY_CHANNEL = {
     "jira": "delivery_jira",
     "messenger": "delivery_messenger",
     "mail": "delivery_mail",
+}
+_CHANNEL_CONFIG_FIELDS_BY_CHANNEL = {
+    "jira": ("jira_configured", "jira_enabled"),
+    "messenger": ("messenger_configured", "messenger_enabled"),
+    "mail": ("mail_configured", "mail_enabled"),
 }
 _DELIVERY_UPDATE_FIELDS = (
     "dispatch_id",
@@ -47,12 +53,17 @@ def _normalize_positive_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def _summarize_delivery_flag(*, delivery_rows: list[dict[str, Any]], channel: str) -> int | None:
+def _summarize_delivery_flag(
+    *,
+    delivery_rows: list[dict[str, Any]],
+    channel: str,
+    enabled_channels: set[str],
+) -> int | None:
     """delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
 
     channel_rows = [row for row in delivery_rows if row.get("channel") == channel]
     if not channel_rows:
-        return None
+        return 0 if channel in enabled_channels else None
     statuses = {str(row.get("status") or "").strip().lower() for row in channel_rows}
     if statuses and statuses <= {"disabled", "cancelled"}:
         return None
@@ -104,9 +115,49 @@ def _extract_row_target(row: dict[str, Any]) -> str | None:
     return target.strip()
 
 
-def _attach_delivery_summary_columns(*, row: dict[str, Any], delivery_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _load_channel_config_map_by_row_target(*, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """row target별 채널 설정 맵을 조회합니다."""
+
+    target_values = [
+        target
+        for row in rows
+        if isinstance(row, dict) and (target := _extract_row_target(row)) is not None
+    ]
+    if not target_values:
+        return {}
+    return selectors.list_drone_sop_user_sdwt_channels_by_targets(
+        target_user_sdwt_prod_values=set(target_values),
+    )
+
+
+def _resolve_enabled_channels_for_row(
+    *,
+    row: dict[str, Any],
+    channel_config_map: dict[str, dict[str, Any]],
+) -> set[str]:
+    """현재 row에서 표시 가능한 활성 채널 목록을 반환합니다."""
+
+    target_key = normalize_lookup_key(_extract_row_target(row))
+    if not target_key or not is_sop_delivery_eligible(row):
+        return set()
+
+    config = channel_config_map.get(target_key) or {}
+    enabled_channels: set[str] = set()
+    for channel, (configured_field, enabled_field) in _CHANNEL_CONFIG_FIELDS_BY_CHANNEL.items():
+        if bool(config.get(configured_field, False)) and bool(config.get(enabled_field, False)):
+            enabled_channels.add(channel)
+    return enabled_channels
+
+
+def _attach_delivery_summary_columns(
+    *,
+    row: dict[str, Any],
+    delivery_rows: list[dict[str, Any]],
+    enabled_channels: set[str] | None = None,
+) -> dict[str, Any]:
     """테이블 row에 delivery 가상 컬럼 값을 붙입니다."""
 
+    visible_enabled_channels = enabled_channels or set()
     dispatch_id = next(
         (
             delivery.get("dispatchId") or delivery.get("dispatch_id")
@@ -123,7 +174,11 @@ def _attach_delivery_summary_columns(*, row: dict[str, Any], delivery_rows: list
         "delivery_status": _summarize_delivery_overall_flag(delivery_rows=delivery_rows),
     }
     for channel, column in _DELIVERY_COLUMN_BY_CHANNEL.items():
-        enriched[column] = _summarize_delivery_flag(delivery_rows=delivery_rows, channel=channel)
+        enriched[column] = _summarize_delivery_flag(
+            delivery_rows=delivery_rows,
+            channel=channel,
+            enabled_channels=visible_enabled_channels,
+        )
 
     jira_success = next(
         (
@@ -152,6 +207,7 @@ def attach_delivery_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(row, dict) and (sop_id := _normalize_positive_int(row.get("id"))) is not None
     ]
     delivery_rows_by_sop_id = selectors.list_drone_sop_channel_delivery_rows_by_sop_ids(sop_ids=sop_ids)
+    channel_config_map = _load_channel_config_map_by_row_target(rows=rows)
     return [
         _attach_delivery_summary_columns(
             row=row,
@@ -159,6 +215,10 @@ def attach_delivery_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 _normalize_positive_int(row.get("id")) if isinstance(row, dict) else 0,
                 [],
             ),
+            enabled_channels=_resolve_enabled_channels_for_row(
+                row=row,
+                channel_config_map=channel_config_map,
+            ) if isinstance(row, dict) else set(),
         )
         for row in rows
     ]
@@ -177,7 +237,15 @@ def build_delivery_update_payload(*, row: dict[str, Any]) -> dict[str, Any]:
         if sop_id is not None
         else []
     )
-    enriched = _attach_delivery_summary_columns(row=row, delivery_rows=delivery_rows)
+    channel_config_map = _load_channel_config_map_by_row_target(rows=[row])
+    enriched = _attach_delivery_summary_columns(
+        row=row,
+        delivery_rows=delivery_rows,
+        enabled_channels=_resolve_enabled_channels_for_row(
+            row=row,
+            channel_config_map=channel_config_map,
+        ),
+    )
     return {key: enriched.get(key) for key in _DELIVERY_UPDATE_FIELDS if key in enriched}
 
 

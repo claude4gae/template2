@@ -41,6 +41,10 @@ _ENABLED_FIELD_BY_CHANNEL: dict[str, str] = {
     DroneSopDelivery.Channels.MESSENGER: "messenger_enabled",
     DroneSopDelivery.Channels.MAIL: "mail_enabled",
 }
+_INSTANT_RETRY_BLOCKED_STATUSES: set[str] = {
+    DroneSopDelivery.Statuses.FAILED,
+    DroneSopDelivery.Statuses.CANCELLED,
+}
 
 
 @dataclass(frozen=True)
@@ -109,6 +113,21 @@ def _resolve_instant_terminal_status(
         return None
 
     return DroneSopDelivery.Statuses.DISABLED, REASON_CHANNEL_CONFIG_MISSING
+
+
+def _is_already_informed_by_deliveries(*, deliveries: list[DroneSopDelivery]) -> bool:
+    """성공 외 재처리 필요 상태가 없고 성공 row가 있으면 이미 발송 완료로 판단합니다."""
+
+    has_success = any(delivery.status == DroneSopDelivery.Statuses.SUCCESS for delivery in deliveries)
+    if not has_success:
+        return False
+    retry_required_statuses = {
+        DroneSopDelivery.Statuses.FAILED,
+        DroneSopDelivery.Statuses.CANCELLED,
+        DroneSopDelivery.Statuses.PENDING,
+        DroneSopDelivery.Statuses.SENDING,
+    }
+    return not any(delivery.status in retry_required_statuses for delivery in deliveries)
 
 
 def enqueue_drone_sop_jira_instant_inform(
@@ -207,6 +226,8 @@ def enqueue_drone_sop_jira_instant_inform(
                     continue
                 if delivery.status == DroneSopDelivery.Statuses.SUCCESS:
                     continue
+                if delivery.status in _INSTANT_RETRY_BLOCKED_STATUSES:
+                    continue
                 terminal_status = _resolve_instant_terminal_status(
                     channel=channel,
                     config=config,
@@ -240,16 +261,23 @@ def enqueue_drone_sop_jira_instant_inform(
             sop.instant_inform = original_instant_inform
             sop.save(update_fields=["instant_inform", "updated_at"])
 
-        success_jira_delivery = sop.channel_deliveries.filter(
-            channel=DroneSopDelivery.Channels.JIRA,
-            status=DroneSopDelivery.Statuses.SUCCESS,
-        ).order_by("id").first()
-        if success_jira_delivery is not None:
-            jira_key = success_jira_delivery.external_key
-            updated_fields["jira_key"] = jira_key
-            updated_fields["inform_step"] = success_jira_delivery.sent_step
-            informed_at = success_jira_delivery.sent_at
-            updated_fields["informed_at"] = informed_at.isoformat() if informed_at else None
+        current_deliveries = list(sop.channel_deliveries.all())
+        if _is_already_informed_by_deliveries(deliveries=current_deliveries):
+            success_jira_delivery = next(
+                (
+                    delivery
+                    for delivery in current_deliveries
+                    if delivery.channel == DroneSopDelivery.Channels.JIRA
+                    and delivery.status == DroneSopDelivery.Statuses.SUCCESS
+                ),
+                None,
+            )
+            jira_key = success_jira_delivery.external_key if success_jira_delivery else None
+            if success_jira_delivery is not None:
+                updated_fields["jira_key"] = jira_key
+                updated_fields["inform_step"] = success_jira_delivery.sent_step
+                informed_at = success_jira_delivery.sent_at
+                updated_fields["informed_at"] = informed_at.isoformat() if informed_at else None
             return DroneSopInstantInformResult(
                 already_informed=True,
                 jira_key=jira_key,

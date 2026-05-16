@@ -245,7 +245,7 @@ const CellRenderers = {
     const isSendJiraComplete = sendJiraState.numericValue === 1
     const isInstantInformComplete = instantInformState.numericValue === 1
     const disabledReason = (() => {
-      if (isDeliveryCreated) return "이미 전송 작업이 생성되어 예약 해제 불가"
+      if (isDeliveryCreated) return "이미 전송 작업이 생성되어 예약 수정 불가"
       if (isSendJiraComplete) return "이미 알림 전송됨 (needtosend 수정 불가)"
       if (isInstantInformComplete) return "이미 즉시 인폼됨 (needtosend 수정 불가)"
       return "needtosend 수정 불가"

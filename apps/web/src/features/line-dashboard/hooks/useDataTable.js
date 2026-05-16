@@ -160,11 +160,15 @@ export function useDataTableState({ lineId }) {
           throw new Error(message)
         }
 
+        const updated = payload?.updated
+        const nextUpdates =
+          updated && typeof updated === "object" && !Array.isArray(updated) ? updated : updates
+
         // 7) 로컬 rows 반영(낙관적 업데이트 확정)
         setRows((previousRows) =>
           previousRows.map((row) => {
             const rowId = String(row?.id ?? "")
-            return rowId === recordId ? { ...row, ...updates } : row
+            return rowId === recordId ? { ...row, ...updates, ...nextUpdates } : row
           })
         )
 
