@@ -29,7 +29,11 @@
 # misc
 .DS_Store
 *.pem
-.codex/
+.codex/*
+!.codex/skills/
+!.codex/skills/**
+.codex/skills/.system/
+.codex/skills/.system/**
 .specify/
 
 # debug

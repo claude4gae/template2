@@ -103,6 +103,11 @@ export function hasDeliveryRows(rowOriginal) {
   return normalizeDeliveryRows(rowOriginal).length > 0
 }
 
+export function hasExplicitDeliveryStatus(rowOriginal) {
+  if (!Object.prototype.hasOwnProperty.call(rowOriginal ?? {}, "delivery_status")) return false
+  return rowOriginal?.delivery_status !== null && rowOriginal?.delivery_status !== undefined
+}
+
 export function uniqueDeliveryTargets(deliveryRows, fallbackTarget) {
   const targets = []
   const seen = new Set()
@@ -180,6 +185,19 @@ export function summarizeDeliveryChannelFlag(channel, fallbackValue) {
   return summarizeDeliveryChannel([], channel, fallbackValue)
 }
 
+export function summarizeRowDeliveryOverall(rowOriginal) {
+  const visibleChannels = normalizeDeliveryVisibleChannels(rowOriginal)
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  const hasVisibleDeliveryMetadata =
+    Boolean(visibleChannels && visibleChannels.size > 0) ||
+    hasExplicitDeliveryStatus(rowOriginal)
+  const hasOnlyHiddenDeliveryRows = Boolean(
+    visibleChannels && visibleChannels.size === 0 && deliveryRows.length > 0
+  )
+  if (!hasVisibleDeliveryMetadata || hasOnlyHiddenDeliveryRows) return null
+  return summarizeDeliveryChannelFlag("delivery_status", rowOriginal?.delivery_status)
+}
+
 export function summarizeRowDeliveryChannel(rowOriginal, channelKey) {
   const channel = DELIVERY_CHANNELS.find(
     (item) => item.channel === channelKey || item.field === channelKey || item.fallbackField === channelKey
@@ -244,12 +262,42 @@ export function findFailedDeliveryChannel(rowOriginal) {
       }
     }
   }
+  const overallSummary = summarizeRowDeliveryOverall(rowOriginal)
+  if (
+    overallSummary &&
+    (overallSummary.failed > 0 ||
+      (overallSummary.cancelled ?? 0) > 0 ||
+      overallSummary.status === "failed" ||
+      overallSummary.status === "cancelled" ||
+      overallSummary.status === "partial_failed")
+  ) {
+    return {
+      channel: "delivery_status",
+      label: "전송",
+      reason:
+        resolveChannelReason(rowOriginal, "delivery_jira") ??
+        resolveChannelReason(rowOriginal, "delivery_messenger") ??
+        resolveChannelReason(rowOriginal, "delivery_mail"),
+      status: overallSummary.status === "cancelled" ? "cancelled" : "failed",
+      statusLabel: DELIVERY_STATUS_LABELS[overallSummary.status] ?? DELIVERY_STATUS_LABELS.failed,
+    }
+  }
   return null
 }
 
 export function isDeliveryAlreadyInformed(rowOriginal) {
   const summaries = summarizeVisibleRowDeliveryChannels(rowOriginal)
-  if (!summaries.length) return false
+  if (!summaries.length) {
+    const overallSummary = summarizeRowDeliveryOverall(rowOriginal)
+    return Boolean(
+      overallSummary &&
+        overallSummary.success > 0 &&
+        overallSummary.failed === 0 &&
+        overallSummary.pending === 0 &&
+        overallSummary.unknown === 0 &&
+        (overallSummary.cancelled ?? 0) === 0
+    )
+  }
 
   const hasSuccess = summaries.some(({ summary }) => summary.success > 0)
   if (!hasSuccess) return false

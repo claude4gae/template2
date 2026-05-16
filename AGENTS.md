@@ -22,6 +22,9 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Django tests + migrations flow: `.codex/skills/django-test-migration-flow/SKILL.md`
 - Korean-commented Python output: `.codex/skills/write-commented-python/SKILL.md`
 - Frontend layout composition: `.codex/skills/compose-frontend-layout/SKILL.md`
+- Product UI design system: `.codex/skills/product-ui-design-system/SKILL.md`
+- UI consistency audit: `.codex/skills/ui-consistency-audit/SKILL.md`
+- Frontend boundary audit: `.codex/skills/frontend-boundary-audit/SKILL.md`
 - Safe file edit/output format: `.codex/skills/safe-file-edit-output/SKILL.md`
 - Offsite contract synchronization: `.codex/skills/offsite-dev-contract-sync/SKILL.md`
 
@@ -112,13 +115,23 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 
 ### 2-5. Styling/React/Layout Core
 - Tailwind only; use design tokens; use `dark:` for dark mode.
-- Arbitrary HEX and inline style are forbidden unless strictly necessary.
+- Use shadcn/Radix primitives from `apps/web/src/components/ui/*` before creating custom primitives.
+- Product UI decisions must follow `product-ui-design-system` skill.
+- Use semantic tokens (`bg-card`, `text-muted-foreground`, `border-border`, `text-destructive`, `bg-primary`, etc.) before raw colors.
+- Arbitrary HEX and inline style are forbidden unless strictly necessary; CSS variable-based dynamic sizing/coloring is allowed when library integration requires it.
 - Avoid premature optimization (`useMemo`, `useCallback`, `React.memo` only when required).
+- UI states must be explicit: loading, empty, error, disabled, selected, hover/focus, and dark mode when applicable.
+- Interactive controls must keep accessible labels, keyboard reachability, and visible focus states.
 - Layout core constraints:
   - one scroll container per axis per region
   - scrollable elements require `min-h-0`
   - page skeleton: `h-screen flex flex-col` + fixed header + `flex-1 min-h-0 overflow-hidden`
 - Detailed layout recipes are in `compose-frontend-layout` skill.
+
+### 2-6. Frontend Verification
+- After frontend UI changes, run or recommend `scripts/agent/check_ui_consistency.sh`.
+- After feature import/export/routing changes, run or recommend `scripts/agent/check_frontend_boundaries.sh`.
+- Audit script findings are review candidates; do not fix legacy findings outside the requested scope.
 
 ## 3. Backend Core Architecture
 

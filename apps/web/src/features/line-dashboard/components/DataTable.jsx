@@ -68,7 +68,16 @@ const EMPTY = {
   noMatches: "No rows match your filter.",
 }
 
-const RENDER_NULLISH_CELL_IDS = new Set(["delivery_status"])
+const RENDER_NULLISH_CELL_IDS = new Set([
+  "comment",
+  "delivery_status",
+  "delivery_targets",
+  "instant_inform",
+  "needtosend",
+  "process_flow",
+  "status",
+  "target_user_sdwt_prod",
+])
 
 const LABELS = {
   titleSuffix: "Line E-SOP Status",
