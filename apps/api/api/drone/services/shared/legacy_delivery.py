@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from ...models import DroneSOP, DroneSopDelivery, DroneSopTargetMapping
-from .delivery_state import get_or_prepare_channel_delivery
+from .delivery_state import prepare_channel_delivery_for_row
 
 LEGACY_DELIVERY_SEED_KEYS = {
     "send_jira",
@@ -108,6 +108,12 @@ def seed_legacy_delivery_rows(*, sop: DroneSOP, seed: Mapping[str, Any]) -> None
         return
 
     target_code = targets[0]
+    delivery_row = {
+        "id": int(sop.pk),
+        "status": sop.status,
+        "needtosend": sop.needtosend,
+        "instant_inform": sop.instant_inform,
+    }
     channel_specs = (
         (DroneSopDelivery.Channels.JIRA, "send_jira", "jira_reason"),
         (DroneSopDelivery.Channels.MESSENGER, "send_messenger", "messenger_reason"),
@@ -129,11 +135,13 @@ def seed_legacy_delivery_rows(*, sop: DroneSOP, seed: Mapping[str, Any]) -> None
                 status = DroneSopDelivery.Statuses.FAILED
                 reason = seed.get(reason_key) or "send_failed"
 
-            delivery = get_or_prepare_channel_delivery(
-                sop_id=int(sop.pk),
+            delivery = prepare_channel_delivery_for_row(
+                row=delivery_row,
                 target_user_sdwt_prod=target_code,
                 channel=channel,
             )
+            if delivery is None:
+                continue
             delivery.status = status
             delivery.reason = reason
             delivery.external_key = external_key

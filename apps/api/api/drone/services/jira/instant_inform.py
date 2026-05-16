@@ -13,8 +13,8 @@ from ..mail.templates.mail_template_registry import MAIL_TEMPLATE_SOURCES
 from ..messenger.templates.messenger_template_registry import EXCEL_TABLE_TEMPLATE_SENDERS
 from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
-    get_or_prepare_channel_delivery,
     mark_channel_delivery_status,
+    prepare_channel_delivery_for_row,
 )
 from ..shared.policy import (
     REASON_CHANNEL_CONFIG_INVALID,
@@ -161,22 +161,25 @@ def enqueue_drone_sop_jira_instant_inform(
             status=DroneSopDelivery.Statuses.SUCCESS,
         ).order_by("id").first()
 
+        original_instant_inform = int(sop.instant_inform or 0)
+        instant_inform_was_changed = original_instant_inform != 1
+        if instant_inform_was_changed:
+            sop.instant_inform = 1
+            update_fields.append("instant_inform")
+
         if update_fields:
             sop.save(update_fields=[*update_fields, "updated_at"])
 
-        snapshot = ensure_channel_delivery_snapshots_for_rows(
-            rows=[
-                {
-                    "id": int(sop.id),
-                    "sdwt_prod": sop.sdwt_prod,
-                    "user_sdwt_prod": sop.user_sdwt_prod,
-                    "target_user_sdwt_prod": sop.target_user_sdwt_prod,
-                    "status": sop.status,
-                    "needtosend": sop.needtosend,
-                    "instant_inform": 1,
-                }
-            ]
-        )
+        snapshot_row = {
+            "id": int(sop.id),
+            "sdwt_prod": sop.sdwt_prod,
+            "user_sdwt_prod": sop.user_sdwt_prod,
+            "target_user_sdwt_prod": sop.target_user_sdwt_prod,
+            "status": sop.status,
+            "needtosend": sop.needtosend,
+            "instant_inform": 1,
+        }
+        snapshot = ensure_channel_delivery_snapshots_for_rows(rows=[snapshot_row])
         if snapshot.missing_sop_ids:
             mark_missing_target_as_failed(
                 sop_ids=snapshot.missing_sop_ids,
@@ -195,11 +198,13 @@ def enqueue_drone_sop_jira_instant_inform(
             target_key = _normalize_target_lookup_key(target)
             config = channel_by_target.get(target_key or "")
             for channel in _INSTANT_INFORM_CHANNELS:
-                delivery = get_or_prepare_channel_delivery(
-                    sop_id=int(sop.id),
+                delivery = prepare_channel_delivery_for_row(
+                    row=snapshot_row,
                     target_user_sdwt_prod=target,
                     channel=channel,
                 )
+                if delivery is None:
+                    continue
                 if delivery.status == DroneSopDelivery.Statuses.SUCCESS:
                     continue
                 terminal_status = _resolve_instant_terminal_status(
@@ -217,9 +222,7 @@ def enqueue_drone_sop_jira_instant_inform(
                 )
 
         if queue_delivery_ids:
-            if sop.instant_inform is None or int(sop.instant_inform) != 1:
-                sop.instant_inform = 1
-                sop.save(update_fields=["instant_inform", "updated_at"])
+            if instant_inform_was_changed:
                 updated_fields["instant_inform"] = 1
             mark_channel_delivery_status(
                 delivery_ids=queue_delivery_ids,
@@ -232,6 +235,10 @@ def enqueue_drone_sop_jira_instant_inform(
                 jira_key=success_jira_delivery.external_key if success_jira_delivery else None,
                 updated_fields=updated_fields,
             )
+
+        if instant_inform_was_changed:
+            sop.instant_inform = original_instant_inform
+            sop.save(update_fields=["instant_inform", "updated_at"])
 
         success_jira_delivery = sop.channel_deliveries.filter(
             channel=DroneSopDelivery.Channels.JIRA,

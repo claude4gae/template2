@@ -79,6 +79,10 @@ export function normalizeDeliveryRows(rowOriginal) {
     .filter(Boolean)
 }
 
+export function hasDeliveryRows(rowOriginal) {
+  return normalizeDeliveryRows(rowOriginal).length > 0
+}
+
 export function uniqueDeliveryTargets(deliveryRows, fallbackTarget) {
   const targets = []
   const seen = new Set()

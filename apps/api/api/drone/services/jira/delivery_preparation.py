@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from ...models import DroneSopDelivery
+from ..shared.delivery_snapshot import is_sop_delivery_eligible
 from ..shared.delivery_state import (
-    get_or_prepare_channel_delivery,
     mark_channel_delivery_status,
     normalize_positive_ids,
+    prepare_channel_delivery_for_row,
 )
 from ..shared.policy import (
     REASON_CHANNEL_CONFIG_INVALID,
@@ -105,13 +106,17 @@ def collect_jira_delivery_rows(
         row_id = _extract_row_id(row)
         if row_id is None:
             continue
+        if not is_sop_delivery_eligible(row):
+            continue
 
         for target in _extract_row_targets(row):
-            delivery = get_or_prepare_channel_delivery(
-                sop_id=row_id,
+            delivery = prepare_channel_delivery_for_row(
+                row=row,
                 target_user_sdwt_prod=target,
                 channel=DroneSopDelivery.Channels.JIRA,
             )
+            if delivery is None:
+                continue
             delivery_ids.append(delivery.id)
             sop_id_by_delivery_id[delivery.id] = row_id
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
+from django.db.models import Q
+
 from ...models import DroneSopDelivery
 
 DELIVERY_CHANNELS: tuple[str, ...] = (
@@ -49,6 +51,12 @@ def is_sop_delivery_eligible(row: dict[str, Any]) -> bool:
     if normalize_int_flag(row.get("instant_inform")) == 1:
         return True
     return normalize_int_flag(row.get("needtosend")) == 1 and str(row.get("status") or "").strip() == "COMPLETE"
+
+
+def build_sop_delivery_eligible_q() -> Q:
+    """SOP delivery 생성 대상 조회 조건을 반환합니다."""
+
+    return Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1)
 
 
 def extract_sop_id(row: dict[str, Any]) -> int | None:
@@ -106,6 +114,7 @@ def normalize_channels(channels: Sequence[str]) -> list[str]:
 __all__ = [
     "DELIVERY_CHANNELS",
     "append_unique_target",
+    "build_sop_delivery_eligible_q",
     "extract_row_targets",
     "extract_sop_id",
     "is_sop_delivery_eligible",

@@ -62,6 +62,7 @@ from .table_ops import (
     TableNotFoundError,
     TableRecordNotFoundError,
     TableUpdateResult,
+    get_table_record_delivery_update_payload,
     get_table_list_payload,
     update_table_record,
 )
@@ -89,6 +90,7 @@ __all__ = [
     "delete_early_inform_entry",
     "ensure_drone_sop_notification_target",
     "enqueue_drone_sop_jira_instant_inform",
+    "get_table_record_delivery_update_payload",
     "get_table_list_payload",
     "get_or_create_drone_sop_target_by_name",
     "has_drone_sop_pipeline_candidates",

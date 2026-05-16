@@ -38,7 +38,11 @@ from api.drone.models import (
 from api.drone.services.channels import recipients as recipient_services
 from api.drone.services.channels import user_sdwt_channel as channel_services
 from api.drone.services.jira.sop_jira import update_drone_sop_jira_status
-from api.drone.services.shared.delivery_state import filter_delivery_ids_for_config_failure
+from api.drone.services.shared.delivery_state import (
+    ensure_channel_delivery_snapshots_for_rows,
+    filter_delivery_ids_for_config_failure,
+)
+from api.drone.services.shared.delivery_snapshot import build_sop_delivery_eligible_q, is_sop_delivery_eligible
 from api.drone.services.pop3.sop_pop3 import build_drone_sop_row, upsert_drone_sop_rows
 
 _PREVIOUS_LOGGING_DISABLE: int | None = None
@@ -506,8 +510,79 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["needtosend"], 0)
 
 
+class DroneSopDeliveryEligibilityTests(TestCase):
+    """delivery 생성 대상 판정 기준을 검증합니다."""
+
+    def test_python_predicate_matches_queryset_filter(self) -> None:
+        """Python 판정과 DB 후보 조건이 같은 SOP를 대상으로 삼는지 확인합니다."""
+
+        cases = [
+            ("ELIGIBLE-COMPLETE", "COMPLETE", 1, 0),
+            ("ELIGIBLE-INSTANT", "IN_PROGRESS", 0, 1),
+            ("SKIP-COMPLETE", "COMPLETE", 0, 0),
+            ("SKIP-IN-PROGRESS", "IN_PROGRESS", 1, 0),
+        ]
+        expected_ids: set[int] = set()
+        for eqp_id, status, needtosend, instant_inform in cases:
+            sop = DroneSOP.objects.create(
+                line_id="L1",
+                sdwt_prod="SDWT",
+                user_sdwt_prod="USER",
+                eqp_id=eqp_id,
+                chamber_ids="1",
+                lot_id=f"LOT.{eqp_id}",
+                main_step="MS",
+                status=status,
+                needtosend=needtosend,
+                instant_inform=instant_inform,
+            )
+            row = {
+                "status": status,
+                "needtosend": needtosend,
+                "instant_inform": instant_inform,
+            }
+            if is_sop_delivery_eligible(row):
+                expected_ids.add(int(sop.id))
+
+        queryset_ids = set(
+            DroneSOP.objects.filter(build_sop_delivery_eligible_q()).values_list("id", flat=True)
+        )
+
+        self.assertEqual(queryset_ids, expected_ids)
+
+
 class DroneSopUpsertTests(TestCase):
     """UPSERT 동작을 검증합니다."""
+
+    def test_upsert_skips_delivery_snapshot_for_ineligible_row_with_target(self) -> None:
+        """target이 이미 확정되어도 발송 조건 미충족 row는 delivery를 만들지 않습니다."""
+
+        _ensure_target_mapping(
+            sdwt_prod="SDWT-SKIP",
+            user_sdwt_prod="USER-SKIP",
+            target_user_sdwt_prod="TARGET-SKIP",
+        )
+        upsert_drone_sop_rows(
+            rows=[
+                {
+                    "line_id": "L1",
+                    "sdwt_prod": "SDWT-SKIP",
+                    "user_sdwt_prod": "USER-SKIP",
+                    "eqp_id": "EQP-SKIP",
+                    "chamber_ids": "1",
+                    "lot_id": "LOT.SKIP",
+                    "main_step": "MS",
+                    "needtosend": 0,
+                    "instant_inform": 0,
+                    "status": "IN_PROGRESS",
+                }
+            ]
+        )
+
+        sop = DroneSOP.objects.get(eqp_id="EQP-SKIP")
+        self.assertEqual(sop.target_user_sdwt_prod, "TARGET-SKIP")
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+        self.assertFalse(DroneSopTargetDispatch.objects.filter(sop=sop).exists())
 
     def test_upsert_marks_unconfigured_channel_snapshots_disabled(self) -> None:
         """신규 SOP upsert 시 미설정 채널 snapshot은 pending이 아니어야 합니다."""
@@ -741,6 +816,64 @@ class DroneSopJiraCandidateTests(TestCase):
 
 class DroneSopJiraUpdateTests(TestCase):
     """Jira 상태 업데이트 로직을 검증합니다."""
+
+    def test_update_drone_sop_jira_status_skips_ineligible_row(self) -> None:
+        """기존 delivery가 없으면 발송 조건 미충족 row의 delivery를 만들지 않습니다."""
+
+        row = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT-SKIP",
+            user_sdwt_prod="USER-SKIP",
+            target_user_sdwt_prod="TARGET-SKIP",
+            eqp_id="EQP-SKIP",
+            chamber_ids="1",
+            lot_id="LOT.SKIP",
+            main_step="MS",
+            status="IN_PROGRESS",
+            needtosend=0,
+            instant_inform=0,
+        )
+
+        updated = update_drone_sop_jira_status(
+            done_ids=[int(row.id)],
+            rows=[{"id": int(row.id), "target_user_sdwt_prod": "TARGET-SKIP"}],
+            key_by_id={int(row.id): "DUMMY-1"},
+        )
+
+        self.assertEqual(updated, 0)
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=row).exists())
+
+    def test_update_drone_sop_jira_status_records_existing_delivery_when_unreserved(self) -> None:
+        """예약 해제 후에도 이미 생성된 Jira delivery 성공 결과는 기록합니다."""
+
+        row = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-DONE",
+            eqp_id="EQP-DONE",
+            lot_id="LOT.DONE",
+            status="COMPLETE",
+            needtosend=1,
+        )
+        delivery = services.create_channel_delivery_with_dispatch(
+            sop=row,
+            channel=DroneSopDelivery.Channels.JIRA,
+            status=DroneSopDelivery.Statuses.CANCELLED,
+        )
+        row.status = "IN_PROGRESS"
+        row.needtosend = 0
+        row.save(update_fields=["status", "needtosend", "updated_at"])
+
+        updated = update_drone_sop_jira_status(
+            done_ids=[int(row.id)],
+            rows=[{"id": int(row.id), "metro_current_step": "ST-DONE", "comment": "sent comment"}],
+            key_by_id={int(row.id): "DUMMY-DONE-1"},
+        )
+
+        self.assertEqual(updated, 1)
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, DroneSopDelivery.Statuses.SUCCESS)
+        self.assertEqual(delivery.external_key, "DUMMY-DONE-1")
+        self.assertEqual(delivery.sent_step, "ST-DONE")
+        self.assertEqual(delivery.sent_comment, "sent comment")
 
     def test_update_drone_sop_jira_status_sets_send_jira_and_key(self) -> None:
         """send_jira/jira_key/inform_step이 갱신되는지 확인합니다."""
@@ -1139,6 +1272,68 @@ class DroneSopInstantInformTests(TestCase):
 class DroneSopDeliveryConstraintTests(TestCase):
     """DroneSOP delivery 데이터 무결성을 검증합니다."""
 
+    def test_create_channel_delivery_rejects_ineligible_sop(self) -> None:
+        """명시 생성 helper도 발송 조건 미충족 SOP의 delivery를 만들지 않습니다."""
+
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT-SKIP",
+            user_sdwt_prod="USER-SKIP",
+            target_user_sdwt_prod="TARGET-SKIP",
+            eqp_id="EQP-SKIP-MANUAL",
+            chamber_ids="1",
+            lot_id="LOT.SKIP.MANUAL",
+            main_step="MS",
+            status="IN_PROGRESS",
+            needtosend=0,
+            instant_inform=0,
+        )
+
+        with self.assertRaises(ValueError):
+            services.create_channel_delivery_with_dispatch(
+                sop=sop,
+                channel=DroneSopDelivery.Channels.JIRA,
+            )
+
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+        self.assertFalse(DroneSopTargetDispatch.objects.filter(sop=sop).exists())
+
+    def test_delivery_snapshot_rechecks_current_sop_before_create(self) -> None:
+        """stale 후보 row가 넘어와도 현재 SOP가 발송 조건을 벗어나면 delivery를 만들지 않습니다."""
+
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT-RACE",
+            user_sdwt_prod="USER-RACE",
+            target_user_sdwt_prod="TARGET-RACE",
+            eqp_id="EQP-RACE",
+            chamber_ids="1",
+            lot_id="LOT.RACE",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            instant_inform=0,
+        )
+        stale_row = {
+            "id": int(sop.id),
+            "sdwt_prod": sop.sdwt_prod,
+            "user_sdwt_prod": sop.user_sdwt_prod,
+            "target_user_sdwt_prod": sop.target_user_sdwt_prod,
+            "status": "COMPLETE",
+            "needtosend": 1,
+            "instant_inform": 0,
+        }
+        DroneSOP.objects.filter(id=sop.id).update(needtosend=0)
+
+        result = ensure_channel_delivery_snapshots_for_rows(
+            rows=[stale_row],
+            channels=[DroneSopDelivery.Channels.JIRA],
+        )
+
+        self.assertEqual(result.created_count, 0)
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+        self.assertFalse(DroneSopTargetDispatch.objects.filter(sop=sop).exists())
+
     def test_delivery_status_rejects_sop_lifecycle_status(self) -> None:
         """SOP 진행 상태값이 delivery status에 저장되지 못하는지 확인합니다."""
 
@@ -1191,7 +1386,7 @@ class DroneSopRetryChannelTests(TestCase):
     """단건 채널 재시도 요청 로직을 검증합니다."""
 
     def test_retry_channel_resets_failed_state_to_pending(self) -> None:
-        """실패 채널(send=-1)을 재시도 시 대기(0)로 복구하는지 확인합니다."""
+        """실패 delivery 채널을 재시도 시 pending으로 복구하는지 확인합니다."""
         row = _create_drone_sop(
             target_user_sdwt_prod="TARGET-A",
             send_jira=-1,
@@ -1267,6 +1462,57 @@ class DroneSopRetryChannelTests(TestCase):
         self.assertIsNone(deliveries[0].reason)
         candidate_ids = {int(candidate["id"]) for candidate in selectors.list_drone_sop_jira_candidates()}
         self.assertIn(int(sop.id), candidate_ids)
+
+    def test_retry_channel_does_not_resolve_target_missing_when_ineligible(self) -> None:
+        """발송 조건을 벗어난 SOP는 target 재해석 재시도에서 delivery를 새로 만들지 않습니다."""
+
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT-MISSING",
+            user_sdwt_prod="USER-MISSING",
+            eqp_id="EQP-MISSING-INELIGIBLE",
+            chamber_ids="1",
+            lot_id="LOT.MISSING.INELIGIBLE",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            instant_inform=0,
+        )
+        result = services.run_drone_sop_jira_create_from_env()
+        self.assertEqual(result.skip_reason, "no_valid_targets")
+        failed_delivery = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        self.assertEqual(failed_delivery.reason, "target_missing")
+
+        sop.status = "IN_PROGRESS"
+        sop.needtosend = 0
+        sop.instant_inform = 0
+        sop.save(update_fields=["status", "needtosend", "instant_inform", "updated_at"])
+        _ensure_target_mapping(
+            sdwt_prod="SDWT-MISSING",
+            user_sdwt_prod="USER-MISSING",
+            target_user_sdwt_prod="TARGET-RESOLVED",
+        )
+
+        retry_result = services.retry_drone_sop_channel(sop_id=int(sop.id), channel="jira")
+
+        self.assertFalse(retry_result.queued)
+        self.assertTrue(retry_result.already_disabled)
+        self.assertEqual(
+            DroneSopDelivery.objects.filter(
+                sop=sop,
+                channel=DroneSopDelivery.Channels.JIRA,
+            ).count(),
+            1,
+        )
+        self.assertFalse(
+            DroneSopTargetDispatch.objects.filter(
+                sop=sop,
+                target_code_snapshot="TARGET-RESOLVED",
+            ).exists()
+        )
 
     def test_retry_channel_returns_already_pending_when_not_failed(self) -> None:
         """실패 상태가 아니면 이미 대기 상태로 응답하는지 확인합니다."""
@@ -1417,6 +1663,40 @@ class DroneEndpointTests(TestCase):
         self.assertTrue(response.json().get("notQueueable"))
         self.assertEqual(response.json().get("blockReason"), "no_queueable_channel")
 
+    def test_drone_sop_instant_inform_returns_latest_delivery_metadata(self) -> None:
+        """즉시 인폼 응답이 최신 delivery 메타를 함께 반환하는지 확인합니다."""
+
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-INSTANT",
+            jira_key="PROJ",
+            jira_template_key="common",
+            messenger_enabled=False,
+            mail_enabled=False,
+        )
+        sop = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-INSTANT",
+            needtosend=0,
+            instant_inform=0,
+            status="IN_PROGRESS",
+        )
+
+        response = self.client.post(
+            reverse("drone-sop-instant-inform", kwargs={"sop_id": int(sop.id)}),
+            data='{"comment":"now"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("status"), "queued")
+        updated = payload.get("updated")
+        self.assertEqual(updated.get("comment"), "now")
+        self.assertEqual(updated.get("instant_inform"), 1)
+        self.assertIn("deliveryRows", updated)
+        jira_rows = [row for row in updated["deliveryRows"] if row["channel"] == "jira"]
+        self.assertEqual(jira_rows[0]["status"], "pending")
+        self.assertEqual(updated.get("delivery_jira"), 0)
+
     @patch("api.drone.views.services.retry_drone_sop_channel")
     def test_drone_sop_retry_channel(self, mock_service) -> None:
         """채널 재시도 API가 정상 응답하는지 확인합니다."""
@@ -1435,6 +1715,39 @@ class DroneEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json().get("status"), "queued")
         self.assertEqual(response.json().get("channel"), "jira")
+
+    def test_drone_sop_retry_channel_returns_latest_delivery_metadata(self) -> None:
+        """재시도 응답이 pending으로 갱신된 delivery 메타를 함께 반환하는지 확인합니다."""
+
+        sop = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-RETRY",
+            send_jira=-1,
+            jira_reason="send_failed",
+            instant_inform=1,
+        )
+        delivery = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        delivery.status = DroneSopDelivery.Statuses.FAILED
+        delivery.reason = "send_failed"
+        delivery.save(update_fields=["status", "reason", "updated_at"])
+
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": int(sop.id)}),
+            data='{"channel":"jira"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("status"), "queued")
+        updated = payload.get("updated")
+        self.assertIn("deliveryRows", updated)
+        jira_rows = [row for row in updated["deliveryRows"] if row["channel"] == "jira"]
+        self.assertEqual(jira_rows[0]["status"], "pending")
+        self.assertIsNone(jira_rows[0]["reason"])
+        self.assertEqual(updated.get("delivery_jira"), 0)
 
     def test_drone_sop_retry_channel_rejects_invalid_channel(self) -> None:
         """지원하지 않는 채널 요청은 400으로 거부하는지 확인합니다."""
@@ -6258,6 +6571,16 @@ class DroneTablesEndpointTests(TestCase):
             ],
         )
 
+    def test_table_record_delivery_update_payload_excludes_base_target(self) -> None:
+        """단건 갱신 payload는 화면 row target을 덮어쓰지 않는지 확인합니다."""
+
+        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-A")
+        payload = services.get_table_record_delivery_update_payload(record_id=int(sop.id))
+
+        self.assertIn("deliveryRows", payload)
+        self.assertIn("delivery_jira", payload)
+        self.assertNotIn("target_user_sdwt_prod", payload)
+
     def test_tables_list_rejects_non_drone_sop_table(self) -> None:
         """drone_sop 외 테이블 조회를 거부하는지 확인합니다."""
 
@@ -6429,6 +6752,128 @@ class DroneTablesEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["success"])
+
+    @patch("api.drone.services.table_ops.execute")
+    @patch("api.drone.services.table_ops._fetch_row")
+    @patch("api.drone.services.table_ops.table_schema.list_table_columns")
+    def test_tables_update_allows_needtosend(
+        self,
+        mock_columns: Mock,
+        mock_fetch_row: Mock,
+        mock_execute: Mock,
+    ) -> None:
+        """사용자 수정 필드인 needtosend 업데이트가 허용되는지 확인합니다."""
+
+        mock_columns.return_value = ["id", "needtosend"]
+        mock_execute.return_value = (1, None)
+        mock_fetch_row.side_effect = [{"id": 12, "needtosend": 0}, {"id": 12, "needtosend": 1}]
+
+        response = self.client.patch(
+            reverse("drone-tables-update"),
+            data='{"table":"drone_sop","id":12,"updates":{"needtosend":true}}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertEqual(mock_execute.call_args.args[1], [1, 12])
+
+    @patch("api.drone.services.table_ops.execute")
+    @patch("api.drone.services.table_ops.table_schema.list_table_columns")
+    def test_tables_update_rejects_invalid_needtosend_value(
+        self,
+        mock_columns: Mock,
+        mock_execute: Mock,
+    ) -> None:
+        """needtosend는 0/1 외 값을 저장하지 않습니다."""
+
+        mock_columns.return_value = ["id", "needtosend"]
+
+        response = self.client.patch(
+            reverse("drone-tables-update"),
+            data='{"table":"drone_sop","id":12,"updates":{"needtosend":2}}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "needtosend는 0 또는 1만 입력할 수 있습니다.")
+        mock_execute.assert_not_called()
+
+    def test_tables_update_needtosend_zero_rejects_when_delivery_exists(self) -> None:
+        """delivery 생성 이후에는 예약 해제를 거부합니다."""
+
+        sop = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-LOCK",
+            eqp_id="EQP-LOCK",
+            lot_id="LOT.LOCK",
+            status="COMPLETE",
+            needtosend=1,
+        )
+        delivery = services.create_channel_delivery_with_dispatch(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+            status=DroneSopDelivery.Statuses.PENDING,
+        )
+
+        response = self.client.patch(
+            reverse("drone-tables-update"),
+            data=json.dumps({"table": "drone_sop", "id": sop.id, "updates": {"needtosend": 0}}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "이미 전송 작업이 생성되어 예약을 해제할 수 없습니다.")
+        sop.refresh_from_db()
+        delivery.refresh_from_db()
+        self.assertEqual(sop.needtosend, 1)
+        self.assertEqual(delivery.status, DroneSopDelivery.Statuses.PENDING)
+
+    def test_tables_update_needtosend_zero_allows_before_delivery_exists(self) -> None:
+        """delivery 생성 전에는 예약 해제를 허용합니다."""
+
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT-BEFORE-DELIVERY",
+            user_sdwt_prod="USER-BEFORE-DELIVERY",
+            target_user_sdwt_prod="TARGET-BEFORE-DELIVERY",
+            eqp_id="EQP-BEFORE-DELIVERY",
+            chamber_ids="1",
+            lot_id="LOT.BEFORE.DELIVERY",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+        )
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+
+        response = self.client.patch(
+            reverse("drone-tables-update"),
+            data=json.dumps({"table": "drone_sop", "id": sop.id, "updates": {"needtosend": 0}}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        sop.refresh_from_db()
+        self.assertEqual(sop.needtosend, 0)
+
+    @patch("api.drone.services.table_ops.execute")
+    def test_tables_update_rejects_parsing_controlled_fields(self, mock_execute: Mock) -> None:
+        """일반 수정 API에서 관리하지 않는 필드는 거부되는지 확인합니다."""
+
+        for field_name, value in (
+            ("status", "COMPLETE"),
+            ("instant_inform", 1),
+        ):
+            with self.subTest(field_name=field_name):
+                response = self.client.patch(
+                    reverse("drone-tables-update"),
+                    data=json.dumps({"table": "drone_sop", "id": 11, "updates": {field_name: value}}),
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json().get("error"), "No valid updates provided")
+
+        mock_execute.assert_not_called()
 
     @patch("api.drone.services.table_ops.execute")
     def test_tables_update_rejects_values_alias(self, mock_execute: Mock) -> None:

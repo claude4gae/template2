@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from ...models import DroneSopDelivery
-from .delivery_state import get_or_prepare_channel_delivery, mark_channel_delivery_status
+from ...models import DroneSOP, DroneSopDelivery
+from .delivery_state import mark_channel_delivery_status, prepare_channel_delivery_for_row
 
 # 채널 상태 사유 코드
 REASON_DISABLED_BY_POLICY = "disabled_by_policy"
@@ -71,24 +71,43 @@ def mark_missing_target_as_failed(
     if not sop_ids:
         return
 
+    normalized_sop_ids = [
+        int(sop_id)
+        for sop_id in sop_ids
+        if isinstance(sop_id, int) and sop_id > 0
+    ]
+    if not normalized_sop_ids:
+        return
+
+    row_by_sop_id = {
+        int(row["id"]): row
+        for row in DroneSOP.objects.filter(id__in=normalized_sop_ids).values(
+            "id",
+            "status",
+            "needtosend",
+            "instant_inform",
+        )
+    }
+    if not row_by_sop_id:
+        return
+
     normalized_channels = _normalize_channels(channels)
     if not normalized_channels:
         return
 
-    # -----------------------------------------------------------------------------
-    # 2) 누락 대상 dispatch/delivery row 생성 후 실패 상태로 갱신
-    # -----------------------------------------------------------------------------
     delivery_ids: list[int] = []
-    for sop_id in sop_ids:
-        if not isinstance(sop_id, int) or sop_id <= 0:
+    for sop_id in normalized_sop_ids:
+        row = row_by_sop_id.get(sop_id)
+        if row is None:
             continue
         for channel in normalized_channels:
-            delivery = get_or_prepare_channel_delivery(
-                sop_id=sop_id,
+            delivery = prepare_channel_delivery_for_row(
+                row=row,
                 target_user_sdwt_prod="__TARGET_MISSING__",
                 channel=channel,
             )
-            delivery_ids.append(int(delivery.id))
+            if delivery is not None:
+                delivery_ids.append(int(delivery.id))
     mark_channel_delivery_status(
         delivery_ids=delivery_ids,
         status=DroneSopDelivery.Statuses.FAILED,

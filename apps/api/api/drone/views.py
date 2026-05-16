@@ -229,6 +229,13 @@ def _record_activity_state_and_respond(
     return JsonResponse(response_payload, status=status)
 
 
+def _merge_latest_delivery_updates(*, sop_id: int, updated_fields: dict[str, Any]) -> dict[str, Any]:
+    """단건 액션 응답에 최신 delivery 메타를 병합합니다."""
+
+    delivery_updates = services.get_table_record_delivery_update_payload(record_id=sop_id)
+    return {**updated_fields, **delivery_updates}
+
+
 def _respond_precheck_has_candidates(
     request: HttpRequest,
     *,
@@ -1632,7 +1639,7 @@ class DroneTableUpdateView(APIView):
 
         요청 예시:
             예시 요청: PATCH /api/v1/line-dashboard/tables/update
-            예시 바디: {"table":"drone_sop","id":123,"updates":{"status":"DONE"}}
+            예시 바디: {"table":"drone_sop","id":123,"updates":{"needtosend":1}}
 
         반환:
             예시 응답: 200 {"success": true}
@@ -1710,7 +1717,7 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
             예시 응답: 200 {"status": "queued", "queued": true, "alreadyInformed": false, "updated": {...}}
 
         부작용:
-            즉시인폼 체크는 배치 실행 시 Jira 생성으로 이어집니다.
+            즉시인폼 체크는 배치 실행 시 설정된 채널 알림 전송으로 이어집니다.
 
         오류:
             400: 입력 검증 오류
@@ -1772,7 +1779,10 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
                 "notQueueable": getattr(result, "not_queueable", False),
                 "blockReason": getattr(result, "block_reason", None),
                 "jiraKey": result.jira_key,
-                "updated": result.updated_fields,
+                "updated": _merge_latest_delivery_updates(
+                    sop_id=sop_id,
+                    updated_fields=result.updated_fields,
+                ),
             }
             return JsonResponse(payload, status=200)
 
@@ -1812,7 +1822,7 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
             예시 응답: 200 {"status":"queued","channel":"jira","updated":{...}}
 
         부작용:
-            실패 채널(send_*=-1)이면 해당 채널을 대기(0)로 되돌립니다.
+            실패 delivery 채널이면 해당 채널을 pending으로 되돌립니다.
 
         오류:
             400: 입력 검증 오류
@@ -1872,7 +1882,10 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
                 "alreadyPending": result.already_pending,
                 "alreadySent": result.already_sent,
                 "alreadyDisabled": getattr(result, "already_disabled", False),
-                "updated": result.updated_fields,
+                "updated": _merge_latest_delivery_updates(
+                    sop_id=sop_id,
+                    updated_fields=result.updated_fields,
+                ),
             }
             return JsonResponse(response_payload, status=200)
 

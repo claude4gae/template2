@@ -16,7 +16,7 @@ class UpdateAssignment:
     value: Any
 
 
-_ALLOWED_UPDATE_COLUMNS = {"comment", "needtosend", "instant_inform", "status"}
+_ALLOWED_UPDATE_COLUMNS = {"comment", "needtosend"}
 
 _RECENT_HOURS_MIN = 0
 _RECENT_HOURS_DAY_STEP = 24
@@ -100,44 +100,42 @@ def normalize_update_value(key: str, value: Any) -> Any:
     if key == "comment":
         return "" if value is None else str(value)
     if key == "needtosend":
-        return coerce_smallint_flag(value)
-    if key == "instant_inform":
-        return coerce_smallint_flag(value)
-    if key == "status":
-        return "" if value is None else str(value)
+        return coerce_binary_flag(value)
     return value
 
 
-def coerce_smallint_flag(value: Any) -> int:
-    """다양한 입력을 0~127 범위 정수로 변환합니다."""
+def coerce_binary_flag(value: Any) -> int:
+    """다양한 입력을 0 또는 1 플래그로만 변환합니다."""
 
-    tiny_min, tiny_max = 0, 127
-
-    def clamp(numeric: int) -> int:
-        return max(tiny_min, min(tiny_max, int(numeric)))
+    def ensure_binary(numeric: int) -> int:
+        if numeric in {0, 1}:
+            return numeric
+        raise ValueError("needtosend는 0 또는 1만 입력할 수 있습니다.")
 
     if isinstance(value, bool):
         return 1 if value else 0
     if value is None:
-        return 0
+        raise ValueError("needtosend는 0 또는 1만 입력할 수 있습니다.")
     if isinstance(value, (int, float)):
-        return clamp(value)
+        if isinstance(value, float) and not value.is_integer():
+            raise ValueError("needtosend는 0 또는 1만 입력할 수 있습니다.")
+        return ensure_binary(int(value))
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized in {"1", "true", "t", "y", "yes"}:
+        if normalized in {"1", "true", "t", "y", "yes", "on"}:
             return 1
-        if normalized in {"0", "false", "f", "n", "no", ""}:
+        if normalized in {"0", "false", "f", "n", "no", "off"}:
             return 0
         try:
             parsed = int(float(normalized))
-            return clamp(parsed)
+            return ensure_binary(parsed)
         except (TypeError, ValueError):
-            return 0
+            raise ValueError("needtosend는 0 또는 1만 입력할 수 있습니다.") from None
     try:
         coerced = int(value)
-        return clamp(coerced)
+        return ensure_binary(coerced)
     except (TypeError, ValueError):
-        return 0
+        raise ValueError("needtosend는 0 또는 1만 입력할 수 있습니다.") from None
 
 
 __all__ = [

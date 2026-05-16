@@ -11,12 +11,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 
+from django.db import transaction
+
 from api.common.services.db import execute, run_query
 
+from ..models import DroneSopDelivery
 from . import table_schema
 from .table_delivery import (
     append_delivery_columns as _append_delivery_columns,
     attach_delivery_rows as _attach_delivery_rows,
+    build_delivery_update_payload as _build_delivery_update_payload,
 )
 from .table_normalization import (
     build_update_assignments as _build_update_assignments,
@@ -106,6 +110,52 @@ def _fetch_table_record(*, table_name: str, id_column: str, record_id: Any) -> d
     )
 
 
+def _lock_table_record_for_update(*, table_name: str, id_column: str, record_id: Any) -> bool:
+    """동시 delivery 생성과 사용자 수정 충돌을 막기 위해 대상 row를 잠급니다."""
+
+    locked = _fetch_row(
+        sql=(
+            """
+            SELECT {id_column}
+            FROM {table}
+            WHERE {id_column} = %s
+            FOR UPDATE
+            """
+        ).format(table=table_name, id_column=id_column),
+        params=[record_id],
+    )
+    return locked is not None
+
+
+def _normalize_record_id(value: Any) -> int | None:
+    """테이블 record id를 양의 정수로 정규화합니다."""
+
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized > 0 else None
+
+
+def _has_needtosend_disabled_update(assignments: Sequence[Any]) -> bool:
+    """업데이트 assignment에 needtosend=0 변경이 포함됐는지 확인합니다."""
+
+    for assignment in assignments:
+        if str(getattr(assignment, "column_name", "")).casefold() != "needtosend":
+            continue
+        try:
+            return int(getattr(assignment, "value", 0) or 0) == 0
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _has_delivery_for_sop(*, sop_id: int) -> bool:
+    """이미 생성된 delivery 작업이 있는지 확인합니다."""
+
+    return DroneSopDelivery.objects.filter(sop_id=sop_id).exists()
+
+
 def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
     """테이블 조회 결과를 응답 payload로 구성합니다."""
 
@@ -188,6 +238,23 @@ def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def get_table_record_delivery_update_payload(*, record_id: Any) -> dict[str, Any]:
+    """단건 SOP 액션 이후 프론트가 즉시 갱신할 delivery 메타를 반환합니다."""
+
+    table_name = table_schema.DEFAULT_TABLE
+    try:
+        column_names = table_schema.list_table_columns(table_name)
+    except Exception as exc:  # 방어적 처리: pragma: no cover
+        _raise_if_table_missing(exc, table_name)
+        raise
+
+    id_column = _resolve_id_column(table_name=table_name, column_names=column_names)
+    row = _fetch_table_record(table_name=table_name, id_column=id_column, record_id=record_id)
+    if row is None:
+        return {}
+    return _build_delivery_update_payload(row=row)
+
+
 def update_table_record(*, payload: Mapping[str, Any]) -> TableUpdateResult:
     """테이블 레코드를 부분 업데이트합니다."""
 
@@ -229,16 +296,34 @@ def update_table_record(*, payload: Mapping[str, Any]) -> TableUpdateResult:
         """
     ).format(table=table_name, assignments=", ".join(assignment_sql), id_column=id_column)
 
-    try:
-        affected, _ = execute(sql, query_params)
-    except Exception as exc:  # 방어적 처리: pragma: no cover
-        _raise_if_table_missing(exc, table_name)
-        raise
+    should_block_needtosend_disable = _has_needtosend_disabled_update(assignments)
+    normalized_record_id = _normalize_record_id(record_id)
 
-    if affected == 0:
-        raise TableRecordNotFoundError("Record not found")
+    with transaction.atomic():
+        if should_block_needtosend_disable and not _lock_table_record_for_update(
+            table_name=table_name,
+            id_column=id_column,
+            record_id=record_id,
+        ):
+            raise TableRecordNotFoundError("Record not found")
 
-    updated_row = _fetch_table_record(table_name=table_name, id_column=id_column, record_id=record_id)
+        if (
+            should_block_needtosend_disable
+            and normalized_record_id is not None
+            and _has_delivery_for_sop(sop_id=normalized_record_id)
+        ):
+            raise ValueError("이미 전송 작업이 생성되어 예약을 해제할 수 없습니다.")
+
+        try:
+            affected, _ = execute(sql, query_params)
+        except Exception as exc:  # 방어적 처리: pragma: no cover
+            _raise_if_table_missing(exc, table_name)
+            raise
+
+        if affected == 0:
+            raise TableRecordNotFoundError("Record not found")
+
+        updated_row = _fetch_table_record(table_name=table_name, id_column=id_column, record_id=record_id)
 
     return TableUpdateResult(
         table_name=table_name,
@@ -251,6 +336,7 @@ __all__ = [
     "TableNotFoundError",
     "TableRecordNotFoundError",
     "TableUpdateResult",
+    "get_table_record_delivery_update_payload",
     "get_table_list_payload",
     "update_table_record",
 ]

@@ -77,8 +77,8 @@ function showRetryAlreadySentToast(label) {
 
 function showRetryDisabledToast(label) {
   toast.info(`${label} 비활성 상태입니다.`, {
-    description: "채널 설정을 확인한 뒤 다시 시도해 주세요.",
-    ...buildToastOptions({ intent: "info", duration: 2600 }),
+    description: "비활성 delivery는 자동 재전송되지 않습니다. 설정을 켠 뒤 신규 예약으로 처리해 주세요.",
+    ...buildToastOptions({ intent: "info", duration: 3600 }),
   })
 }
 
@@ -314,7 +314,7 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
-            목록의 채널 상태는 delivery row를 요약한 값입니다.
+            목록의 채널 상태는 delivery row를 요약한 값입니다. 비활성 delivery는 채널 설정을 다시 켜도 자동 재전송되지 않습니다.
           </span>
           <div className="flex flex-wrap justify-end gap-2">
             {retryChannels.map((channel) => {

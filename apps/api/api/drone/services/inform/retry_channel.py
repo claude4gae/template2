@@ -13,10 +13,11 @@ from django.db import transaction
 
 from ... import selectors
 from ...models import DroneSOP, DroneSopDelivery
+from ..shared.delivery_snapshot import is_sop_delivery_eligible
 from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
-    get_or_prepare_channel_delivery,
     mark_channel_delivery_status,
+    prepare_channel_delivery_for_row,
 )
 from ..shared.notify_resolver import load_user_sdwt_prod_map_index, resolve_target_user_sdwt_prods
 from ..shared.policy import REASON_TARGET_MISSING
@@ -69,12 +70,15 @@ def _requeue_target_missing_delivery(
     sop: DroneSOP,
     channel: str,
     failed_deliveries: list[DroneSopDelivery],
+    is_eligible: bool,
 ) -> str | None:
     """target 미확정 실패 row를 현재 mapping target의 pending row로 전환합니다."""
 
     target_missing_deliveries = [delivery for delivery in failed_deliveries if _is_target_missing_delivery(delivery)]
     if not target_missing_deliveries:
         return None
+    if not is_eligible:
+        return "disabled"
 
     resolved_target = _resolve_current_target_for_sop(sop=sop)
     if not resolved_target:
@@ -83,11 +87,13 @@ def _requeue_target_missing_delivery(
     if sop.target_user_sdwt_prod != resolved_target:
         sop.target_user_sdwt_prod = resolved_target
         sop.save(update_fields=["target_user_sdwt_prod", "updated_at"])
-    resolved_delivery = get_or_prepare_channel_delivery(
-        sop_id=int(sop.id),
+    resolved_delivery = prepare_channel_delivery_for_row(
+        row=_build_resolution_row(sop=sop),
         target_user_sdwt_prod=resolved_target,
         channel=channel,
     )
+    if resolved_delivery is None:
+        return "disabled"
     mark_channel_delivery_status(
         delivery_ids=[int(resolved_delivery.id)],
         status=DroneSopDelivery.Statuses.PENDING,
@@ -139,7 +145,10 @@ def retry_drone_sop_channel(
         if sop is None:
             raise ValueError("DroneSOP not found")
 
-        ensure_channel_delivery_snapshots_for_rows(rows=[_build_resolution_row(sop=sop)])
+        resolution_row = _build_resolution_row(sop=sop)
+        is_eligible = is_sop_delivery_eligible(resolution_row)
+        if is_eligible:
+            ensure_channel_delivery_snapshots_for_rows(rows=[resolution_row])
 
         failed_deliveries = list(
             DroneSopDelivery.objects.filter(
@@ -153,6 +162,7 @@ def retry_drone_sop_channel(
             sop=sop,
             channel=delivery_channel,
             failed_deliveries=failed_deliveries,
+            is_eligible=is_eligible,
         )
         if target_missing_result is not None:
             return build_retry_channel_result(channel=normalized_channel, state=target_missing_result)
@@ -174,6 +184,12 @@ def retry_drone_sop_channel(
             status=DroneSopDelivery.Statuses.DISABLED,
         ).exists()
 
+        if success_exists:
+            return build_retry_channel_result(channel=normalized_channel, state="success")
+
+        if disabled_exists or not is_eligible:
+            return build_retry_channel_result(channel=normalized_channel, state="disabled")
+
         if failed_delivery_ids:
             mark_channel_delivery_status(
                 delivery_ids=[int(delivery_id) for delivery_id in failed_delivery_ids],
@@ -183,12 +199,6 @@ def retry_drone_sop_channel(
 
         if pending_exists:
             return build_retry_channel_result(channel=normalized_channel, state="pending")
-
-        if success_exists:
-            return build_retry_channel_result(channel=normalized_channel, state="success")
-
-        if disabled_exists:
-            return build_retry_channel_result(channel=normalized_channel, state="disabled")
 
         return build_retry_channel_result(channel=normalized_channel, state="pending")
 

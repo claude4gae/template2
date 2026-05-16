@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...models import DroneSopDelivery
+from ..shared.delivery_snapshot import is_sop_delivery_eligible
 from ..shared.delivery_state import (
-    get_or_prepare_channel_delivery as _get_or_prepare_delivery,
     mark_channel_delivery_status as _mark_delivery_status,
     normalize_positive_ids as _normalize_positive_ids,
+    prepare_channel_delivery_for_row as _prepare_delivery_for_row,
 )
 from ..shared.policy import (
     REASON_CHANNEL_CONFIG_MISSING,
@@ -111,13 +112,17 @@ def collect_pending_channel_deliveries(
         row_id = extract_row_id(row)
         if row_id is None:
             continue
+        if not is_sop_delivery_eligible(row):
+            continue
 
         for target in _extract_row_targets(row):
-            delivery = _get_or_prepare_delivery(
-                sop_id=row_id,
+            delivery = _prepare_delivery_for_row(
+                row=row,
                 target_user_sdwt_prod=target,
                 channel=channel,
             )
+            if delivery is None:
+                continue
             delivery_ids.append(delivery.id)
             if delivery.status in {
                 DroneSopDelivery.Statuses.SUCCESS,

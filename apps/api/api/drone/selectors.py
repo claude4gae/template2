@@ -52,6 +52,7 @@ from .services.history.payload import (
     normalize_breakdown_row,
     normalize_daily_row,
 )
+from .services.shared.delivery_snapshot import build_sop_delivery_eligible_q
 
 _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "id",
@@ -95,7 +96,7 @@ _DIMENSION_CANDIDATES = [
 def _drone_sop_eligible_filter() -> Q:
     """Drone SOP 후보 공통 적합 조건 필터를 반환합니다."""
 
-    return Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1)
+    return build_sop_delivery_eligible_q()
 
 
 def list_early_inform_entries(*, line_id: str) -> QuerySet[DroneEarlyInform]:

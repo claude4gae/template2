@@ -8,17 +8,15 @@ import { makeCellKey } from "../utils/dataTableCellState"
 import { deriveFlagState, describeFlagState } from "../utils/dataTableFlagState"
 
 /* ============================================================================
- * NeedToSendCell (Boolean 버전)
- * - needtosend 값을 tinyint 스타일로 표시/토글 (현재는 0/1만 사용)
- * - 서버로는 { needtosend: number } 전송 (1/0 토글)
+ * NeedToSendCell
+ * - needtosend 값을 tinyint 스타일로 표시/토글합니다. (현재는 0/1만 사용)
+ * - 서버로는 { needtosend: number } 형태로 전송합니다.
  * - 과거 0/1, "Y"/"N" 등도 안전 변환
  * ========================================================================== */
 
 /* =========================
- * 1) 유틸
+ * 1) 토스트 도우미
  * ======================= */
-
-/** 토스트 도우미 */
 function showReserveToast() {
   toast.success("예약 성공", {
     description: "E-SOP Inform 예약 되었습니다.",
@@ -26,6 +24,7 @@ function showReserveToast() {
     ...buildToastOptions({ intent: "success", duration: 1800 }),
   })
 }
+
 function showCancelToast() {
   toast.success("예약 취소", {
     description: "E-SOP Inform 예약 취소 되었습니다.",
@@ -33,9 +32,10 @@ function showCancelToast() {
     ...buildToastOptions({ intent: "success", duration: 1800 }),
   })
 }
-function showErrorToast(msg) {
+
+function showErrorToast(message) {
   toast.error("저장 실패", {
-    description: msg || "저장 중 오류가 발생했습니다.",
+    description: message || "저장 중 오류가 발생했습니다.",
     icon: <XCircle className="h-5 w-5 text-[var(--normal-text)]" />,
     ...buildToastOptions({ intent: "destructive", duration: 3000 }),
   })
@@ -52,7 +52,7 @@ export function NeedToSendCell({
   sendJiraValue,
   instantInformValue,
   disabled = false,
-  disabledReason = "이미 JIRA 전송됨 (needtosend 수정 불가)",
+  disabledReason = "이미 전송 작업이 생성되어 예약 수정 불가",
 }) {
   const baseState = state ?? deriveFlagState(baseValue, 0)
   const sendJiraState = deriveFlagState(sendJiraValue, 0)
@@ -61,20 +61,14 @@ export function NeedToSendCell({
   const isLockedByInstantInform = instantInformState.numericValue === 1
   const isDisabled = disabled || isLockedBySendJira || isLockedByInstantInform
 
-  // 메타에서 임시 드래프트 값(서버 저장 전)을 우선 사용
   const draftValue = meta?.needToSendDrafts?.[recordId]
   const effectiveState = draftValue === undefined ? baseState : deriveFlagState(draftValue, baseState.numericValue)
   const { numericValue, isOn, isError } = effectiveState
-
   const isChecked = isOn
 
-  // 저장 중 상태: 같은 셀 동시 요청 방지
   const savingKey = makeCellKey(recordId, "needtosend")
   const isSaving = Boolean(meta?.updatingCells?.[savingKey])
 
-  // ────────────────────────────────────────────────
-  // 토글 로직 (클릭/키보드)
-  // ────────────────────────────────────────────────
   const toggle = async () => {
     if (isDisabled) {
       toast.info(disabledReason, {
@@ -84,39 +78,31 @@ export function NeedToSendCell({
     }
     if (isSaving) return
 
-    // boolean 토글 기반으로 1/0 저장 (음수 상태 → 1로 복귀)
     const targetValue = isChecked ? 0 : 1
-
-    // 드래프트/에러 초기화
     meta?.setNeedToSendDraftValue?.(recordId, targetValue)
     meta?.clearUpdateError?.(savingKey)
 
     try {
-      // 서버에 실제 업데이트 요청 — 숫자로 전송
-      const ok = await meta?.handleUpdate?.(recordId, { needtosend: targetValue })
+      const updateSucceeded = await meta?.handleUpdate?.(recordId, { needtosend: targetValue })
 
-      if (ok) {
+      if (updateSucceeded) {
         meta?.removeNeedToSendDraftValue?.(recordId)
         targetValue ? showReserveToast() : showCancelToast()
         return
       }
 
-      const msg = meta?.updateErrors?.[savingKey]
-      showErrorToast(msg)
-    } catch (err) {
-      showErrorToast(err?.message)
+      const errorMessage = meta?.updateErrors?.[savingKey]
+      showErrorToast(errorMessage)
+    } catch (error) {
+      showErrorToast(error?.message)
     } finally {
-      // 성공/실패와 무관하게 드래프트는 정리(성공 시 이미 제거됨)
       meta?.removeNeedToSendDraftValue?.(recordId)
     }
   }
 
-  // ────────────────────────────────────────────────
-  // 키보드 접근성: Space/Enter 로 토글
-  // ────────────────────────────────────────────────
-  const onKeyDown = (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault()
+  const onKeyDown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
       toggle()
     }
   }
@@ -127,7 +113,7 @@ export function NeedToSendCell({
 
   return (
     <div className="inline-flex justify-center">
-      {/* ✅ 원형 토글 버튼 (role='switch' + aria-checked=true|false) */}
+      {/* 원형 토글 버튼 */}
       <button
         type="button"
         onClick={toggle}

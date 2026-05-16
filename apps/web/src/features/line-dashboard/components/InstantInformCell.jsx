@@ -19,7 +19,7 @@ import { deriveFlagState } from "../utils/dataTableFlagState"
 
 function showInstantInformQueuedToast() {
   toast.info("즉시 발송 대기 등록", {
-    description: "다음 배치 실행 시 Jira 이슈가 생성됩니다.",
+    description: "다음 배치 실행 시 설정된 채널로 알림이 전송됩니다.",
     ...buildToastOptions({ intent: "info", duration: 2200 }),
   })
 }
@@ -41,7 +41,7 @@ function showInstantInformNotQueueableToast(reason) {
 }
 
 function showAlreadyInformedToast() {
-  toast.info("이미 Jira 전송 완료되었습니다.", {
+  toast.info("이미 알림 전송 완료되었습니다.", {
     ...buildToastOptions({ intent: "info", duration: 2400 }),
   })
 }
@@ -60,7 +60,7 @@ export function InstantInformCell({
   baseValue,
   rowOriginal,
   disabled = false,
-  disabledReason = "이미 JIRA 전송됨 (즉시 발송 불가)",
+  disabledReason = "이미 알림 전송됨 (즉시 발송 불가)",
 }) {
   const { visibleText: baseVisibleText, suffixWithMarker } = splitComment(rowOriginal?.comment)
 
@@ -244,7 +244,7 @@ export function InstantInformCell({
           <DialogFooter className="flex items-start gap-2">
             <div className="flex flex-col mr-auto text-[11px] text-muted-foreground">
               <span>Enter: 저장  |  Shift+Enter: 줄바꿈</span>
-              <span className="text-primary">등록 후 배치에서 Jira 이슈가 생성됩니다.</span>
+              <span className="text-primary">등록 후 배치에서 설정된 채널 알림이 전송됩니다.</span>
             </div>
 
             <Button onClick={() => void handleConfirm()} disabled={isSaving}>

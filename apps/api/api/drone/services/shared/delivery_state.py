@@ -253,18 +253,57 @@ def _get_or_prepare_channel_delivery(
     return delivery, created
 
 
-def get_or_prepare_channel_delivery(
+def _load_current_delivery_row_for_update(*, sop_id: int) -> dict[str, Any] | None:
+    """delivery 생성 직전 최신 SOP 상태를 행 잠금으로 조회합니다."""
+
+    current_row = (
+        DroneSOP.objects.select_for_update()
+        .filter(id=sop_id)
+        .values("id", "status", "needtosend", "instant_inform")
+        .first()
+    )
+    return dict(current_row) if current_row is not None else None
+
+
+def _prepare_channel_delivery_for_row(
     *,
-    sop_id: int,
+    row: dict[str, Any],
     target_user_sdwt_prod: str,
     channel: str,
     initial_status: str = DroneSopDelivery.Statuses.PENDING,
     initial_reason: str | None = None,
-) -> DroneSopDelivery:
-    """target/channel 발송 row를 생성하거나 현재 상태로 반환합니다."""
+) -> tuple[DroneSopDelivery | None, bool]:
+    """최신 SOP 상태가 발송 대상일 때만 delivery row와 생성 여부를 반환합니다."""
 
-    delivery, _ = _get_or_prepare_channel_delivery(
-        sop_id=sop_id,
+    sop_id = _extract_sop_id(row)
+    if sop_id is None or not _is_sop_delivery_eligible(row):
+        return None, False
+
+    with transaction.atomic():
+        current_row = _load_current_delivery_row_for_update(sop_id=sop_id)
+        if current_row is None or not _is_sop_delivery_eligible(current_row):
+            return None, False
+        return _get_or_prepare_channel_delivery(
+            sop_id=sop_id,
+            target_user_sdwt_prod=target_user_sdwt_prod,
+            channel=channel,
+            initial_status=initial_status,
+            initial_reason=initial_reason,
+        )
+
+
+def prepare_channel_delivery_for_row(
+    *,
+    row: dict[str, Any],
+    target_user_sdwt_prod: str,
+    channel: str,
+    initial_status: str = DroneSopDelivery.Statuses.PENDING,
+    initial_reason: str | None = None,
+) -> DroneSopDelivery | None:
+    """발송 조건을 만족하는 row에 대해서만 target/channel delivery를 생성하거나 반환합니다."""
+
+    delivery, _ = _prepare_channel_delivery_for_row(
+        row=row,
         target_user_sdwt_prod=target_user_sdwt_prod,
         channel=channel,
         initial_status=initial_status,
@@ -284,11 +323,18 @@ def create_channel_delivery_with_dispatch(
     """명시적인 service 경로로 dispatch가 연결된 delivery row를 생성합니다."""
 
     target_code = _normalize_string_value(target_user_sdwt_prod) or _normalize_string_value(sop.target_user_sdwt_prod)
-    delivery = get_or_prepare_channel_delivery(
-        sop_id=int(sop.id),
+    delivery = prepare_channel_delivery_for_row(
+        row={
+            "id": int(sop.id),
+            "status": sop.status,
+            "needtosend": sop.needtosend,
+            "instant_inform": sop.instant_inform,
+        },
         target_user_sdwt_prod=target_code or "__TARGET_MISSING__",
         channel=channel,
     )
+    if delivery is None:
+        raise ValueError("DroneSOP is not eligible for delivery")
     delivery.status = status
     delivery.reason = reason
     delivery.save(update_fields=["status", "reason", "updated_at"])
@@ -327,17 +373,18 @@ def ensure_channel_delivery_snapshots_for_rows(
         sop_id = _extract_sop_id(row)
         if sop_id is None:
             continue
+        if not _is_sop_delivery_eligible(row):
+            continue
 
         snapshot_targets = _extract_row_targets(row)
-        if not snapshot_targets and _is_sop_delivery_eligible(row):
+        if not snapshot_targets:
             snapshot_targets = resolve_target_user_sdwt_prods(row=row, index=index)
 
         row["target_user_sdwt_prods"] = snapshot_targets
         row["target_user_sdwt_prod"] = snapshot_targets[0] if snapshot_targets else None
 
         if not snapshot_targets:
-            if _is_sop_delivery_eligible(row):
-                missing_ids.append(sop_id)
+            missing_ids.append(sop_id)
             continue
 
         resolved_targets_by_sop_id[sop_id] = snapshot_targets
@@ -348,9 +395,6 @@ def ensure_channel_delivery_snapshots_for_rows(
             target_values.add(target)
             if not _normalize_string_value(row.get("target_user_sdwt_prod")) and not target.startswith("__"):
                 row["target_user_sdwt_prod"] = target
-                DroneSOP.objects.filter(id=sop_id).filter(
-                    Q(target_user_sdwt_prod__isnull=True) | Q(target_user_sdwt_prod="")
-                ).update(target_user_sdwt_prod=target)
 
     initial_state_by_target = _load_initial_delivery_state_by_target(
         target_user_sdwt_prods=target_values,
@@ -358,22 +402,27 @@ def ensure_channel_delivery_snapshots_for_rows(
     )
     created_count = 0
     for sop_id, targets in resolved_targets_by_sop_id.items():
-        for target in targets:
-            for channel in normalized_channels:
-                initial_status, initial_reason = _resolve_initial_delivery_state(
-                    state_by_target=initial_state_by_target,
-                    target_user_sdwt_prod=target,
-                    channel=channel,
-                )
-                _, created = _get_or_prepare_channel_delivery(
-                    sop_id=sop_id,
-                    target_user_sdwt_prod=target,
-                    channel=channel,
-                    initial_status=initial_status,
-                    initial_reason=initial_reason,
-                )
-                if created:
-                    created_count += 1
+        with transaction.atomic():
+            current_row = _load_current_delivery_row_for_update(sop_id=sop_id)
+            if current_row is None or not _is_sop_delivery_eligible(current_row):
+                continue
+
+            for target in targets:
+                for channel in normalized_channels:
+                    initial_status, initial_reason = _resolve_initial_delivery_state(
+                        state_by_target=initial_state_by_target,
+                        target_user_sdwt_prod=target,
+                        channel=channel,
+                    )
+                    _, created = _get_or_prepare_channel_delivery(
+                        sop_id=sop_id,
+                        target_user_sdwt_prod=target,
+                        channel=channel,
+                        initial_status=initial_status,
+                        initial_reason=initial_reason,
+                    )
+                    if created:
+                        created_count += 1
 
     return DeliverySnapshotResult(
         target_user_sdwt_prods=target_values,
@@ -451,8 +500,8 @@ __all__ = [
     "create_channel_delivery_with_dispatch",
     "ensure_channel_delivery_snapshots_for_rows",
     "filter_delivery_ids_for_config_failure",
-    "get_or_prepare_channel_delivery",
     "mark_channel_delivery_status",
     "normalize_sent_comment",
     "normalize_positive_ids",
+    "prepare_channel_delivery_for_row",
 ]

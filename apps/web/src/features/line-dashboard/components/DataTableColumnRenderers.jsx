@@ -25,7 +25,7 @@ import {
   normalizeStepValue,
   parseMetroSteps,
 } from "../utils/dataTableFormatters"
-import { isDeliveryChannelSuccessful } from "../utils/dataTableDelivery"
+import { hasDeliveryRows, isDeliveryChannelSuccessful } from "../utils/dataTableDelivery"
 import { STATUS_LABELS } from "../utils/statusLabels"
 import { CommentCell } from "./CommentCell"
 import { InstantInformCell } from "./InstantInformCell"
@@ -230,7 +230,7 @@ const CellRenderers = {
         baseValue={baseState.numericValue}
         rowOriginal={rowOriginal}
         disabled={isLocked}
-        disabledReason="이미 JIRA 전송됨 (즉시 발송 불가)"
+        disabledReason="이미 알림 전송됨 (즉시 발송 불가)"
       />
     )
   },
@@ -241,13 +241,15 @@ const CellRenderers = {
     const baseState = deriveFlagState(normalizeNeedToSend(rowOriginal?.needtosend), 0)
     const sendJiraState = deriveFlagState(rowOriginal?.delivery_jira ?? rowOriginal?.send_jira, 0)
     const instantInformState = deriveFlagState(normalizeInstantInform(rowOriginal?.instant_inform), 0)
+    const isDeliveryCreated = hasDeliveryRows(rowOriginal)
     const isSendJiraComplete = sendJiraState.numericValue === 1
     const isInstantInformComplete = instantInformState.numericValue === 1
-    const disabledReason = isSendJiraComplete
-      ? "이미 JIRA 전송됨 (needtosend 수정 불가)"
-      : isInstantInformComplete
-        ? "이미 즉시 인폼됨 (needtosend 수정 불가)"
-        : "needtosend 수정 불가"
+    const disabledReason = (() => {
+      if (isDeliveryCreated) return "이미 전송 작업이 생성되어 예약 해제 불가"
+      if (isSendJiraComplete) return "이미 알림 전송됨 (needtosend 수정 불가)"
+      if (isInstantInformComplete) return "이미 즉시 인폼됨 (needtosend 수정 불가)"
+      return "needtosend 수정 불가"
+    })()
     return (
       <NeedToSendCell
         meta={meta}
@@ -256,7 +258,7 @@ const CellRenderers = {
         state={baseState}
         sendJiraValue={sendJiraState.numericValue}
         instantInformValue={instantInformState.numericValue}
-        disabled={isSendJiraComplete || isInstantInformComplete}
+        disabled={isDeliveryCreated || isSendJiraComplete || isInstantInformComplete}
         disabledReason={disabledReason}
       />
     )

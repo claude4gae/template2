@@ -100,7 +100,7 @@ export function useDataTableState({ lineId }) {
 
   /* ────────────────────────────────────────────────────────────────────────
    * handleUpdate: 단일 레코드 부분 업데이트(PATCH)
-   *  - updates = { comment: "...", needtosend: true } 식으로 필드 묶음 전달
+   *  - updates = { comment: "...", needtosend: 1 } 형태만 테이블 수정 API로 전달합니다.
    *  - updatingCells/indicators로 진행상태 UI 피드백
    *  - 성공 시 로컬 rows 반영 + 드래프트/편집 상태 정리
    * ──────────────────────────────────────────────────────────────────────── */
@@ -176,10 +176,6 @@ export function useDataTableState({ lineId }) {
         if ("needtosend" in updates) {
           setNeedToSendDrafts((prev) => removeKey(prev, recordId))
         }
-        if ("instant_inform" in updates) {
-          setInstantInformDrafts((prev) => removeKey(prev, recordId))
-        }
-
         updateSucceeded = true
         return true
       } catch (error) {
@@ -330,7 +326,11 @@ export function useDataTableState({ lineId }) {
             const rowId = String(row?.id ?? "")
             if (rowId !== recordId) return row
             const nextRow = { ...row, ...nextUpdates }
-            if (payload?.status === "queued" && Array.isArray(row?.deliveryRows)) {
+            if (
+              payload?.status === "queued" &&
+              !Array.isArray(nextUpdates.deliveryRows) &&
+              Array.isArray(row?.deliveryRows)
+            ) {
               nextRow.deliveryRows = row.deliveryRows.map((delivery) => {
                 if (delivery?.channel !== channel || delivery?.status !== "failed") return delivery
                 return {
