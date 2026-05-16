@@ -154,8 +154,11 @@ def update_drone_sop_jira_status(
         DroneSopDelivery.objects.filter(
             sop_id__in=status_sop_ids,
             channel=DroneSopDelivery.Channels.JIRA,
+            status__in=[
+                DroneSopDelivery.Statuses.PENDING,
+                DroneSopDelivery.Statuses.SENDING,
+            ],
         )
-        .exclude(status=DroneSopDelivery.Statuses.SUCCESS)
         .order_by("sop_id", "id")
         .values("id", "sop_id")
     )

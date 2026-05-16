@@ -19,9 +19,16 @@ export const DELIVERY_STATUS_LABELS = {
   failed: "실패",
   pending: "대기",
   disabled: "비활성",
+  cancelled: "취소",
   partial_failed: "일부 실패",
   partial_success: "일부 성공",
   unknown: "미확인",
+}
+
+function normalizeDeliveryStatus(value) {
+  const status = normalizeTextValue(value)?.toLowerCase() ?? "unknown"
+  if (status === "sending") return "pending"
+  return status in DELIVERY_STATUS_LABELS ? status : "unknown"
 }
 
 const CHANNEL_REASON_KEYS = {
@@ -68,7 +75,7 @@ export function normalizeDeliveryRows(rowOriginal) {
         channel,
         dispatchStatus: normalizeTextValue(row?.dispatchStatus ?? row?.dispatch_status),
         commentOverride: normalizeTextValue(row?.commentOverride ?? row?.comment_override),
-        status: normalizeTextValue(row?.status)?.toLowerCase() ?? "unknown",
+        status: normalizeDeliveryStatus(row?.status),
         reason: normalizeTextValue(row?.reason),
         externalKey: normalizeTextValue(row?.externalKey ?? row?.external_key),
         sentComment: normalizeTextValue(row?.sentComment ?? row?.sent_comment),
@@ -114,11 +121,12 @@ function summarizeDeliveryRows(channelRows) {
       acc[status] = (acc[status] ?? 0) + 1
       return acc
     },
-    { success: 0, failed: 0, pending: 0, disabled: 0, unknown: 0 }
+    { success: 0, failed: 0, pending: 0, disabled: 0, cancelled: 0, unknown: 0 }
   )
   const total = channelRows.length
   const status = (() => {
     if (counts.failed > 0) return counts.failed === total ? "failed" : "partial_failed"
+    if (counts.cancelled > 0) return counts.cancelled === total ? "cancelled" : "partial_failed"
     if (counts.pending > 0 || counts.unknown > 0) return "pending"
     if (counts.disabled === total) return "disabled"
     if (counts.success === total) return "success"
@@ -147,6 +155,8 @@ export function summarizeDeliveryChannel(deliveryRows, channel, fallbackValue) {
       failed: fallbackState.isError ? 1 : 0,
       pending: fallbackState.state === "off" ? 1 : 0,
       disabled: 0,
+      cancelled: 0,
+      unknown: 0,
     }
   }
 
@@ -162,14 +172,82 @@ export function summarizeRowDeliveryChannel(rowOriginal, channelKey) {
     (item) => item.channel === channelKey || item.field === channelKey || item.fallbackField === channelKey
   )
   if (!channel) return null
+  const hasDeliveryField = Object.prototype.hasOwnProperty.call(rowOriginal ?? {}, channel.field)
+  const hasFallbackField = Object.prototype.hasOwnProperty.call(rowOriginal ?? {}, channel.fallbackField)
+  const explicitValue = rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField]
+  if ((hasDeliveryField || hasFallbackField) && (explicitValue === null || explicitValue === undefined)) {
+    return null
+  }
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
-  if (deliveryRows.length) return summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
-  return summarizeDeliveryChannelFlag(channel.channel, rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField])
+  const existingSummary = summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
+  if (existingSummary) return existingSummary
+  return summarizeDeliveryChannelFlag(channel.channel, explicitValue)
 }
 
 export function isDeliveryChannelSuccessful(rowOriginal, channelKey) {
   const summary = summarizeRowDeliveryChannel(rowOriginal, channelKey)
-  return Boolean(summary && summary.success > 0 && summary.failed === 0)
+  return Boolean(
+    summary &&
+    summary.success > 0 &&
+    summary.failed === 0 &&
+    summary.pending === 0 &&
+    summary.unknown === 0 &&
+    (summary.cancelled ?? 0) === 0
+  )
+}
+
+function summarizeVisibleRowDeliveryChannels(rowOriginal) {
+  return DELIVERY_CHANNELS.map((channel) => {
+    const summary = summarizeRowDeliveryChannel(rowOriginal, channel.channel)
+    if (!summary || summary.status === "disabled") return null
+    return { channel, summary }
+  }).filter(Boolean)
+}
+
+export function findFailedDeliveryChannel(rowOriginal) {
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  for (const { channel, summary } of summarizeVisibleRowDeliveryChannels(rowOriginal)) {
+    if (
+      summary.failed > 0 ||
+      (summary.cancelled ?? 0) > 0 ||
+      summary.status === "failed" ||
+      summary.status === "cancelled" ||
+      summary.status === "partial_failed"
+    ) {
+      const blockedRow = deliveryRows.find(
+        (row) => row.channel === channel.channel && (row.status === "failed" || row.status === "cancelled")
+      )
+      const status = blockedRow?.status ?? summary.status
+      return {
+        channel: channel.channel,
+        label: channel.label,
+        reason: blockedRow?.reason ?? resolveChannelReason(rowOriginal, channel.field),
+        status,
+        statusLabel: DELIVERY_STATUS_LABELS[status] ?? DELIVERY_STATUS_LABELS.failed,
+      }
+    }
+  }
+  return null
+}
+
+export function isDeliveryAlreadyInformed(rowOriginal) {
+  const summaries = summarizeVisibleRowDeliveryChannels(rowOriginal)
+  if (!summaries.length) return false
+
+  const hasSuccess = summaries.some(({ summary }) => summary.success > 0)
+  if (!hasSuccess) return false
+
+  return !summaries.some(({ summary }) =>
+    summary.failed > 0 ||
+    (summary.cancelled ?? 0) > 0 ||
+    summary.pending > 0 ||
+    summary.unknown > 0 ||
+    summary.status === "failed" ||
+    summary.status === "cancelled" ||
+    summary.status === "partial_failed" ||
+    summary.status === "pending" ||
+    summary.status === "unknown"
+  )
 }
 
 export function getDeliveryStatusLabel(summary) {
@@ -177,9 +255,10 @@ export function getDeliveryStatusLabel(summary) {
   if (!summary.total || summary.total <= 1) return label
   if (summary.status === "success") return `${label} ${summary.success}/${summary.total}`
   if (summary.status === "failed" || summary.status === "partial_failed") {
-    return `${label} ${summary.failed}/${summary.total}`
+    return `${label} ${summary.failed + (summary.cancelled ?? 0)}/${summary.total}`
   }
   if (summary.status === "pending") return `${label} ${summary.pending + summary.unknown}/${summary.total}`
   if (summary.status === "disabled") return `${label} ${summary.disabled}/${summary.total}`
+  if (summary.status === "cancelled") return `${label} ${summary.cancelled}/${summary.total}`
   return `${label} ${summary.success}/${summary.total}`
 }

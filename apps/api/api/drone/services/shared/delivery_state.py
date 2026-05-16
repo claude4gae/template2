@@ -112,7 +112,11 @@ def _summarize_dispatch_status(statuses: set[str]) -> str:
         return DroneSopTargetDispatch.Statuses.DISABLED
     if DroneSopDelivery.Statuses.PENDING in statuses or DroneSopDelivery.Statuses.SENDING in statuses:
         return DroneSopTargetDispatch.Statuses.DISPATCHING
-    if DroneSopDelivery.Statuses.FAILED in statuses and DroneSopDelivery.Statuses.SUCCESS in statuses:
+    blocked_statuses = {
+        DroneSopDelivery.Statuses.FAILED,
+        DroneSopDelivery.Statuses.CANCELLED,
+    }
+    if statuses & blocked_statuses and DroneSopDelivery.Statuses.SUCCESS in statuses:
         return DroneSopTargetDispatch.Statuses.PARTIAL_FAILED
     if DroneSopDelivery.Statuses.FAILED in statuses:
         return DroneSopTargetDispatch.Statuses.FAILED
@@ -151,6 +155,12 @@ def _refresh_dispatch_statuses_for_delivery_ids(*, delivery_ids: Sequence[int]) 
             status=_summarize_dispatch_status(statuses),
             updated_at=now,
         )
+
+
+def refresh_dispatch_statuses_for_delivery_ids(*, delivery_ids: Sequence[int]) -> None:
+    """delivery 상태 변경 후 dispatch 요약 상태를 재계산합니다."""
+
+    _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=delivery_ids)
 
 
 def _load_initial_delivery_state_by_target(
@@ -504,4 +514,5 @@ __all__ = [
     "normalize_sent_comment",
     "normalize_positive_ids",
     "prepare_channel_delivery_for_row",
+    "refresh_dispatch_statuses_for_delivery_ids",
 ]

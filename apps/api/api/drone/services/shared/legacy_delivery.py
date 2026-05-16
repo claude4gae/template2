@@ -9,7 +9,10 @@ from django.db import transaction
 from django.db.models import Q
 
 from ...models import DroneSOP, DroneSopDelivery, DroneSopTargetMapping
-from .delivery_state import prepare_channel_delivery_for_row
+from .delivery_state import (
+    prepare_channel_delivery_for_row,
+    refresh_dispatch_statuses_for_delivery_ids,
+)
 
 LEGACY_DELIVERY_SEED_KEYS = {
     "send_jira",
@@ -120,6 +123,7 @@ def seed_legacy_delivery_rows(*, sop: DroneSOP, seed: Mapping[str, Any]) -> None
         (DroneSopDelivery.Channels.MAIL, "send_mail", "mail_reason"),
     )
     with transaction.atomic():
+        updated_delivery_ids: list[int] = []
         for channel, send_key, reason_key in channel_specs:
             numeric_status = _normalize_legacy_status(seed.get(send_key, 0))
             status = DroneSopDelivery.Statuses.PENDING
@@ -157,6 +161,8 @@ def seed_legacy_delivery_rows(*, sop: DroneSOP, seed: Mapping[str, Any]) -> None
                     "updated_at",
                 ]
             )
+            updated_delivery_ids.append(int(delivery.id))
+        refresh_dispatch_statuses_for_delivery_ids(delivery_ids=updated_delivery_ids)
 
 
 __all__ = [

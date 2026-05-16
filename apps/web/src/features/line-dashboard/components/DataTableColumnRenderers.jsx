@@ -25,7 +25,7 @@ import {
   normalizeStepValue,
   parseMetroSteps,
 } from "../utils/dataTableFormatters"
-import { hasDeliveryRows, isDeliveryChannelSuccessful } from "../utils/dataTableDelivery"
+import { hasDeliveryRows, isDeliveryAlreadyInformed } from "../utils/dataTableDelivery"
 import { STATUS_LABELS } from "../utils/statusLabels"
 import { CommentCell } from "./CommentCell"
 import { InstantInformCell } from "./InstantInformCell"
@@ -222,7 +222,7 @@ const CellRenderers = {
     const recordId = getRecordId(rowOriginal)
     if (!meta || !recordId) return formatCellValue(value)
     const baseState = deriveFlagState(normalizeInstantInform(rowOriginal?.instant_inform), 0)
-    const isLocked = isDeliveryChannelSuccessful(rowOriginal, "jira")
+    const isLocked = isDeliveryAlreadyInformed(rowOriginal)
     return (
       <InstantInformCell
         meta={meta}
@@ -239,14 +239,13 @@ const CellRenderers = {
     const recordId = getRecordId(rowOriginal)
     if (!meta || !recordId) return formatCellValue(value)
     const baseState = deriveFlagState(normalizeNeedToSend(rowOriginal?.needtosend), 0)
-    const sendJiraState = deriveFlagState(rowOriginal?.delivery_jira ?? rowOriginal?.send_jira, 0)
     const instantInformState = deriveFlagState(normalizeInstantInform(rowOriginal?.instant_inform), 0)
     const isDeliveryCreated = hasDeliveryRows(rowOriginal)
-    const isSendJiraComplete = sendJiraState.numericValue === 1
+    const isDeliveryComplete = isDeliveryAlreadyInformed(rowOriginal)
     const isInstantInformComplete = instantInformState.numericValue === 1
     const disabledReason = (() => {
       if (isDeliveryCreated) return "이미 전송 작업이 생성되어 예약 수정 불가"
-      if (isSendJiraComplete) return "이미 알림 전송됨 (needtosend 수정 불가)"
+      if (isDeliveryComplete) return "이미 알림 전송됨 (needtosend 수정 불가)"
       if (isInstantInformComplete) return "이미 즉시 인폼됨 (needtosend 수정 불가)"
       return "needtosend 수정 불가"
     })()
@@ -256,9 +255,9 @@ const CellRenderers = {
         recordId={recordId}
         baseValue={baseState.numericValue}
         state={baseState}
-        sendJiraValue={sendJiraState.numericValue}
+        sendJiraValue={isDeliveryComplete ? 1 : 0}
         instantInformValue={instantInformState.numericValue}
-        disabled={isDeliveryCreated || isSendJiraComplete || isInstantInformComplete}
+        disabled={isDeliveryCreated || isDeliveryComplete || isInstantInformComplete}
         disabledReason={disabledReason}
       />
     )

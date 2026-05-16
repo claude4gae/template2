@@ -41,6 +41,7 @@ from api.drone.services.jira.sop_jira import update_drone_sop_jira_status
 from api.drone.services.shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
     filter_delivery_ids_for_config_failure,
+    mark_channel_delivery_status,
 )
 from api.drone.services.shared.delivery_snapshot import build_sop_delivery_eligible_q, is_sop_delivery_eligible
 from api.drone.services.pop3.sop_pop3 import build_drone_sop_row, upsert_drone_sop_rows
@@ -856,7 +857,7 @@ class DroneSopJiraUpdateTests(TestCase):
         delivery = services.create_channel_delivery_with_dispatch(
             sop=row,
             channel=DroneSopDelivery.Channels.JIRA,
-            status=DroneSopDelivery.Statuses.CANCELLED,
+            status=DroneSopDelivery.Statuses.PENDING,
         )
         row.status = "IN_PROGRESS"
         row.needtosend = 0
@@ -874,6 +875,36 @@ class DroneSopJiraUpdateTests(TestCase):
         self.assertEqual(delivery.external_key, "DUMMY-DONE-1")
         self.assertEqual(delivery.sent_step, "ST-DONE")
         self.assertEqual(delivery.sent_comment, "sent comment")
+
+    def test_update_drone_sop_jira_status_does_not_overwrite_cancelled_delivery(self) -> None:
+        """취소된 Jira delivery는 뒤늦은 성공 동기화가 있어도 성공으로 덮어쓰지 않습니다."""
+
+        row = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-CANCELLED",
+            eqp_id="EQP-CANCELLED",
+            lot_id="LOT.CANCELLED",
+            status="COMPLETE",
+            needtosend=1,
+        )
+        delivery = services.create_channel_delivery_with_dispatch(
+            sop=row,
+            channel=DroneSopDelivery.Channels.JIRA,
+            status=DroneSopDelivery.Statuses.CANCELLED,
+            reason="cancelled",
+        )
+
+        updated = update_drone_sop_jira_status(
+            done_ids=[int(row.id)],
+            rows=[{"id": int(row.id), "metro_current_step": "ST-CANCELLED", "comment": "sent comment"}],
+            key_by_id={int(row.id): "DUMMY-CANCELLED-1"},
+        )
+
+        self.assertEqual(updated, 0)
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, DroneSopDelivery.Statuses.CANCELLED)
+        self.assertIsNone(delivery.external_key)
+        self.assertIsNone(delivery.sent_step)
+        self.assertIsNone(delivery.sent_comment)
 
     def test_update_drone_sop_jira_status_sets_send_jira_and_key(self) -> None:
         """send_jira/jira_key/inform_step이 갱신되는지 확인합니다."""
@@ -1430,6 +1461,62 @@ class DroneSopDeliveryConstraintTests(TestCase):
                 status="ESOP_STARTED",
             )
 
+    def test_legacy_send_status_treats_cancelled_as_blocked(self) -> None:
+        """legacy send_* 속성도 취소 delivery를 대기 상태로 오인하지 않습니다."""
+
+        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-CANCELLED")
+        delivery = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        delivery.status = DroneSopDelivery.Statuses.CANCELLED
+        delivery.reason = "cancelled"
+        delivery.save(update_fields=["status", "reason", "updated_at"])
+
+        refreshed = DroneSOP.objects.get(id=sop.id)
+        self.assertEqual(refreshed.send_jira, -1)
+        self.assertEqual(refreshed.jira_reason, "cancelled")
+
+    def test_dispatch_status_treats_success_and_cancelled_as_partial_failed(self) -> None:
+        """성공과 취소가 섞인 target dispatch는 일부 실패로 요약합니다."""
+
+        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-PARTIAL")
+        deliveries = {
+            delivery.channel: delivery
+            for delivery in DroneSopDelivery.objects.filter(sop=sop)
+        }
+
+        mark_channel_delivery_status(
+            delivery_ids=[int(deliveries[DroneSopDelivery.Channels.JIRA].id)],
+            status=DroneSopDelivery.Statuses.SUCCESS,
+        )
+        mark_channel_delivery_status(
+            delivery_ids=[int(deliveries[DroneSopDelivery.Channels.MESSENGER].id)],
+            status=DroneSopDelivery.Statuses.CANCELLED,
+            reason="cancelled",
+        )
+        mark_channel_delivery_status(
+            delivery_ids=[int(deliveries[DroneSopDelivery.Channels.MAIL].id)],
+            status=DroneSopDelivery.Statuses.DISABLED,
+            reason="disabled_by_policy",
+        )
+
+        dispatch = DroneSopTargetDispatch.objects.get(sop=sop)
+        self.assertEqual(dispatch.status, DroneSopTargetDispatch.Statuses.PARTIAL_FAILED)
+
+    def test_legacy_delivery_seed_refreshes_dispatch_status(self) -> None:
+        """legacy seed가 delivery 상태를 덮어쓴 뒤 dispatch 요약도 함께 갱신합니다."""
+
+        sop = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-SEED-SUCCESS",
+            send_jira=1,
+            send_messenger=1,
+            send_mail=1,
+        )
+
+        dispatch = DroneSopTargetDispatch.objects.get(sop=sop)
+        self.assertEqual(dispatch.status, DroneSopTargetDispatch.Statuses.SUCCESS)
+
     def test_config_failure_filter_preserves_existing_failed_delivery(self) -> None:
         """전역 설정 실패 처리는 이미 실패한 delivery 사유를 덮어쓰지 않아야 합니다."""
 
@@ -1635,6 +1722,26 @@ class DroneSopRetryChannelTests(TestCase):
         refreshed = DroneSOP.objects.get(id=row.id)
         self.assertEqual(refreshed.send_mail, 0)
         self.assertEqual(refreshed.mail_reason, "channel_config_missing")
+
+    def test_retry_channel_returns_disabled_when_channel_is_cancelled(self) -> None:
+        """취소된 채널은 대기 상태로 오인하지 않고 비활성 응답을 반환합니다."""
+        row = _create_drone_sop(target_user_sdwt_prod="TARGET-A")
+        delivery = DroneSopDelivery.objects.get(
+            sop=row,
+            channel=DroneSopDelivery.Channels.MAIL,
+        )
+        delivery.status = DroneSopDelivery.Statuses.CANCELLED
+        delivery.reason = "cancelled"
+        delivery.save(update_fields=["status", "reason", "updated_at"])
+
+        result = services.retry_drone_sop_channel(sop_id=int(row.id), channel="mail")
+
+        self.assertFalse(result.queued)
+        self.assertFalse(result.already_pending)
+        self.assertFalse(result.already_sent)
+        self.assertTrue(result.already_disabled)
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, DroneSopDelivery.Statuses.CANCELLED)
 
     def test_retry_channel_rejects_invalid_channel(self) -> None:
         """지원하지 않는 채널 키는 오류로 거부하는지 확인합니다."""
@@ -4318,6 +4425,78 @@ class DroneSopInformPolicyTests(TestCase):
         self.assertEqual(jira_delivery.reason, "send_failed")
         self.assertEqual(messenger_delivery.status, DroneSopDelivery.Statuses.SUCCESS)
 
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_MAIL_SENDER="sender@example.com",
+    )
+    @patch.dict(
+        os.environ,
+        {
+            "KNOX_MESSENGER_API_BASE_URL": "http://example.local/messenger/",
+            "KNOX_MESSENGER_AUTHORIZATION": "dummy-auth",
+            "KNOX_MESSENGER_SYSTEM_ID": "dummy-system",
+        },
+    )
+    @patch("api.drone.services.jira.sop_jira._jira_session")
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_messenger_message")
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_mail")
+    def test_inform_skips_cancelled_delivery_until_manual_retry(
+        self,
+        mock_mail: Mock,
+        mock_messenger: Mock,
+        mock_jira_session: Mock,
+    ) -> None:
+        """취소 delivery는 자동 재발송하지 않고 pending 채널만 처리하는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S85001", password="test-password")
+        user.email = "target85001@example.com"
+        user.save(update_fields=["email"])
+        _set_current_affiliation(user, user_sdwt_prod="SDWT1")
+        _upsert_target(
+            target_user_sdwt_prod="SDWT1",
+            jira_template_key="common",
+            jira_key="PROJ1",
+            messenger_template_key="common",
+            mail_template_key="common",
+            chatroom_id=12345,
+        )
+        _create_target_recipient(
+            target_user_sdwt_prod="SDWT1",
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=user,
+        )
+        sop = _create_drone_sop(
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            send_jira=0,
+            send_messenger=0,
+            send_mail=0,
+            instant_inform=1,
+            metro_current_step="ST001",
+        )
+        for channel in (DroneSopDelivery.Channels.JIRA, DroneSopDelivery.Channels.MESSENGER):
+            delivery = DroneSopDelivery.objects.get(sop=sop, channel=channel)
+            delivery.status = DroneSopDelivery.Statuses.CANCELLED
+            delivery.reason = "cancelled"
+            delivery.save(update_fields=["status", "reason", "updated_at"])
+
+        result = services.run_drone_sop_pipeline_from_env()
+
+        self.assertEqual(result.candidates, 1)
+        self.assertEqual(result.jira_created, 0)
+        self.assertEqual(result.messenger_sent, 0)
+        self.assertEqual(result.mail_sent, 1)
+        mock_jira_session.assert_not_called()
+        mock_messenger.assert_not_called()
+        mock_mail.assert_called_once()
+
+        jira_delivery = DroneSopDelivery.objects.get(sop=sop, channel=DroneSopDelivery.Channels.JIRA)
+        messenger_delivery = DroneSopDelivery.objects.get(sop=sop, channel=DroneSopDelivery.Channels.MESSENGER)
+        mail_delivery = DroneSopDelivery.objects.get(sop=sop, channel=DroneSopDelivery.Channels.MAIL)
+        self.assertEqual(jira_delivery.status, DroneSopDelivery.Statuses.CANCELLED)
+        self.assertEqual(messenger_delivery.status, DroneSopDelivery.Statuses.CANCELLED)
+        self.assertEqual(mail_delivery.status, DroneSopDelivery.Statuses.SUCCESS)
+
     def test_inform_persists_mapping_target_on_sop(self) -> None:
         """발송 준비가 매핑 target을 DroneSOP에 저장하는지 확인합니다."""
         sop = _create_drone_sop(
@@ -6718,6 +6897,52 @@ class DroneTablesEndpointTests(TestCase):
         self.assertIsNone(row["delivery_jira"])
         self.assertEqual(row["delivery_messenger"], 0)
         self.assertEqual(row["delivery_mail"], 0)
+
+    def test_tables_list_marks_cancelled_delivery_as_blocked_status(self) -> None:
+        """취소 delivery는 비활성이 아니라 차단 상태로 요약합니다."""
+
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-CANCELLED",
+            jira_key="PROJ",
+            jira_template_key="common",
+        )
+        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-CANCELLED")
+        delivery = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        delivery.status = DroneSopDelivery.Statuses.CANCELLED
+        delivery.reason = "cancelled"
+        delivery.save(update_fields=["status", "reason", "updated_at"])
+
+        response = self.client.get(reverse("drone-tables"), {"table": "drone_sop", "recentHoursStart": "24"})
+
+        self.assertEqual(response.status_code, 200)
+        row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
+        self.assertEqual(row["delivery_status"], -1)
+        self.assertEqual(row["delivery_jira"], -1)
+
+    def test_tables_list_hides_existing_delivery_when_channel_disabled(self) -> None:
+        """현재 비활성화된 채널은 기존 pending delivery가 있어도 표시하지 않습니다."""
+
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-HIDDEN",
+            jira_key="PROJ",
+            jira_template_key="common",
+        )
+        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-HIDDEN", send_jira=0)
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-HIDDEN",
+            jira_enabled=False,
+        )
+
+        response = self.client.get(reverse("drone-tables"), {"table": "drone_sop", "recentHoursStart": "24"})
+
+        self.assertEqual(response.status_code, 200)
+        row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
+        self.assertIsNone(row["delivery_jira"])
+        self.assertIsNone(row.get("jira_key"))
+        self.assertIsNone(row.get("informed_at"))
 
     def test_table_record_delivery_update_payload_excludes_base_target(self) -> None:
         """단건 갱신 payload는 화면 row target을 덮어쓰지 않는지 확인합니다."""

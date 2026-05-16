@@ -79,14 +79,44 @@ function compareDeliveryFlagOptions(a, b) {
   return String(a.value).localeCompare(String(b.value))
 }
 
+function resolveColumnFromRows(columns, rows, column) {
+  const columnKey = findMatchingColumn(columns, column)
+  if (columnKey) return columnKey
+  if (!Array.isArray(rows)) return null
+  return rows.some((row) => row && Object.prototype.hasOwnProperty.call(row, column)) ? column : null
+}
+
 function createDeliveryQuickFilterDefinition({ key, label, column }) {
   return {
     key,
     label,
-    resolveColumn: (columns) => findMatchingColumn(columns, column),
-    normalizeValue: normalizeFlagState,
-    formatValue: formatDeliveryFlagValue,
-    compareOptions: compareDeliveryFlagOptions,
+    buildSection: ({ columns, rows }) => {
+      const columnKey = resolveColumnFromRows(columns, rows, column)
+      if (!columnKey) return null
+
+      const valueMap = new Map()
+      rows.forEach((row) => {
+        const normalized = normalizeFlagState(row?.[columnKey])
+        if (normalized === null) return
+        if (!valueMap.has(normalized)) {
+          valueMap.set(normalized, formatDeliveryFlagValue(normalized))
+        }
+      })
+
+      const options = Array.from(valueMap.entries())
+        .map(([value, optionLabel]) => ({ value, label: optionLabel }))
+        .sort(compareDeliveryFlagOptions)
+
+      return {
+        options,
+        getValue: (row) => normalizeFlagState(row?.[columnKey]),
+        allowCustomValue: false,
+        matchRow: (row, current) => {
+          const rowValue = normalizeFlagState(row?.[columnKey])
+          return current !== null ? rowValue === current : true
+        },
+      }
+    },
   }
 }
 

@@ -128,6 +128,7 @@ def collect_pending_channel_deliveries(
                 DroneSopDelivery.Statuses.SUCCESS,
                 DroneSopDelivery.Statuses.FAILED,
                 DroneSopDelivery.Statuses.DISABLED,
+                DroneSopDelivery.Statuses.CANCELLED,
             }:
                 continue
 

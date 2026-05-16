@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef } from "react"
 import { IconArrowNarrowRight } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
+import { isDeliveryAlreadyInformed } from "./dataTableDelivery"
 
 /* ============================================
  * 공통 상수
@@ -340,10 +341,7 @@ function MetroStepFlowCell({ rowData }) {
   const customEndStep = normalizeStepValue(rowData.custom_end_step)
   const metroEndStep = normalizeStepValue(rowData.metro_end_step)
   const needToSend = toBooleanFlag(rowData.needtosend)                 // 예약(보낼 예정)
-  const sendJira = toBooleanFlag(rowData.delivery_jira)
-  const sendMessenger = toBooleanFlag(rowData.delivery_messenger)
-  const sendMail = toBooleanFlag(rowData.delivery_mail)
-  const isAnyInformed = sendJira || sendMessenger || sendMail          // 채널 중 하나라도 전송 완료
+  const isInformComplete = isDeliveryAlreadyInformed(rowData)          // 표시 가능한 채널 전체 전송 완료
 
   // END 표시 후보: custom_end_step 우선 → metro_end_step
   const endStep = customEndStep || metroEndStep
@@ -365,12 +363,12 @@ function MetroStepFlowCell({ rowData }) {
   }
 
   // 인폼 라벨 결정
-  // - sendjira = true          → Inform 완료 (위치는 inform_step || endStep)
-  // - sendjira = false, need=1 → 인폼예정   (위치는 custom_end_step || metro_end_step)
-  let informLabelType = "none"  // "none" | "done" | "planned"
+  // - 표시 가능한 채널 전체 완료 → Inform 완료 (위치는 inform_step || endStep)
+  // - 예약 상태이고 아직 전체 완료 아님 → 인폼예정 (위치는 custom_end_step || metro_end_step)
+  let informLabelType = "none"  // 내부 상태: 없음 | 완료 | 예정
   let informLabelStep = null
 
-  if (isAnyInformed) {
+  if (isInformComplete) {
     informLabelType = "done"
     informLabelStep = informStep || endStep || null
   } else if (needToSend) {

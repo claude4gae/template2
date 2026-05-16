@@ -20,8 +20,7 @@ import {
   normalizeDeliveryRows,
   normalizeTextValue,
   resolveChannelReason,
-  summarizeDeliveryChannelFlag,
-  summarizeExistingDeliveryChannel,
+  summarizeRowDeliveryChannel,
   uniqueDeliveryTargets,
 } from "../../utils/dataTableDelivery"
 import { buildToastOptions } from "../../utils/toast"
@@ -40,6 +39,7 @@ const DELIVERY_STATUS_CLASSES = {
   failed: "border-destructive/30 bg-destructive/10 text-destructive",
   pending: "border-border bg-muted text-muted-foreground",
   disabled: "border-border bg-muted/60 text-muted-foreground",
+  cancelled: "border-border bg-muted/60 text-muted-foreground",
   partial_failed: "border-destructive/30 bg-destructive/10 text-destructive",
   partial_success: "border-primary/20 bg-primary/10 text-primary",
   unknown: "border-border bg-background text-muted-foreground",
@@ -51,8 +51,15 @@ const DELIVERY_STATUS_ICONS = {
   partial_failed: AlertTriangle,
   pending: Clock3,
   disabled: Ban,
+  cancelled: Ban,
   partial_success: Check,
   unknown: Clock3,
+}
+
+const DETAIL_GRID_COLUMNS_BY_COUNT = {
+  1: "grid-cols-[180px_minmax(150px,1fr)]",
+  2: "grid-cols-[180px_repeat(2,minmax(150px,1fr))]",
+  3: "grid-cols-[180px_repeat(3,minmax(150px,1fr))]",
 }
 
 function showRetryQueuedToast(label) {
@@ -163,13 +170,42 @@ function groupDeliveryRowsByChannel(deliveryRows) {
   return grouped
 }
 
-function DeliveryCellDetail({ delivery }) {
-  if (!delivery) {
+function buildVisibleChannelSummaries(rowOriginal, channels = DELIVERY_CHANNELS) {
+  return channels
+    .map((channel) => ({
+      channel,
+      summary: summarizeRowDeliveryChannel(rowOriginal, channel.channel),
+    }))
+    .filter(({ summary }) => summary && summary.status !== "disabled")
+}
+
+function buildSingleDeliverySummary(delivery) {
+  const status = delivery?.status ?? "unknown"
+  const summary = {
+    status,
+    total: 1,
+    success: 0,
+    failed: 0,
+    pending: 0,
+    disabled: 0,
+    cancelled: 0,
+    unknown: 0,
+  }
+  if (status in summary) {
+    summary[status] = 1
+  } else {
+    summary.unknown = 1
+  }
+  return summary
+}
+
+function DeliveryCellDetail({ delivery, summaryFallback }) {
+  const summary = delivery ? buildSingleDeliverySummary(delivery) : summaryFallback
+  if (!summary || summary.status === "disabled") {
     return <span className="text-xs text-muted-foreground">-</span>
   }
 
-  const summary = { status: delivery.status, total: 1, success: 0, failed: 0, pending: 0, disabled: 0, unknown: 0 }
-  const timestamp = delivery.sentAt || delivery.updatedAt
+  const timestamp = delivery?.sentAt || delivery?.updatedAt
   return (
     <div className="flex min-w-0 flex-col items-center gap-1 text-center">
       <div className="flex max-w-full items-center justify-center gap-1">
@@ -180,12 +216,12 @@ function DeliveryCellDetail({ delivery }) {
           </span>
         )}
       </div>
-      {delivery.reason && (
+      {delivery?.reason && (
         <span className="max-w-full truncate text-[10px] text-destructive" title={delivery.reason}>
           {delivery.reason}
         </span>
       )}
-      {delivery.externalKey && (
+      {delivery?.externalKey && (
         <span className="max-w-full truncate text-[10px] text-muted-foreground" title={delivery.externalKey}>
           {delivery.externalKey}
         </span>
@@ -195,14 +231,7 @@ function DeliveryCellDetail({ delivery }) {
 }
 
 export function DeliverySummaryCell({ rowOriginal, meta }) {
-  const deliveryRows = normalizeDeliveryRows(rowOriginal)
-  const summaries = DELIVERY_CHANNELS.map((channel) => ({
-    channel,
-    summary:
-      summarizeExistingDeliveryChannel(deliveryRows, channel.channel) ??
-      summarizeDeliveryChannelFlag(channel.channel, rowOriginal?.[channel.field]),
-  }))
-  const visibleSummaries = summaries.filter(({ summary }) => summary && summary.status !== "disabled")
+  const visibleSummaries = buildVisibleChannelSummaries(rowOriginal)
   if (visibleSummaries.length === 0) return null
 
   const title = visibleSummaries
@@ -228,7 +257,6 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
   const primaryTarget = normalizeTextValue(rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod)
   const targetValues = primaryTarget ? [primaryTarget] : uniqueDeliveryTargets(deliveryRows, null)
-  const deliveryByChannel = groupDeliveryRowsByChannel(deliveryRows)
   const recordId = getRecordId(rowOriginal)
 
   const orderedChannels = initialChannel
@@ -237,9 +265,17 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
         ...DELIVERY_CHANNELS.filter((item) => item.channel !== initialChannel),
       ]
     : DELIVERY_CHANNELS
+  const visibleChannelSummaries = buildVisibleChannelSummaries(rowOriginal, orderedChannels)
+  if (visibleChannelSummaries.length === 0) return trigger
 
-  const retryChannels = DELIVERY_CHANNELS.filter((channel) =>
-    deliveryRows.some((row) => row.channel === channel.channel && row.status === "failed"),
+  const visibleChannelSet = new Set(visibleChannelSummaries.map(({ channel }) => channel.channel))
+  const visibleDeliveryRows = deliveryRows.filter((row) => visibleChannelSet.has(row.channel))
+  const deliveryByChannel = groupDeliveryRowsByChannel(visibleDeliveryRows)
+  const detailGridClass =
+    DETAIL_GRID_COLUMNS_BY_COUNT[Math.min(3, Math.max(1, visibleChannelSummaries.length))]
+
+  const retryChannels = visibleChannelSummaries.map(({ channel }) => channel).filter((channel) =>
+    visibleDeliveryRows.some((row) => row.channel === channel.channel && row.status === "failed"),
   )
 
   return (
@@ -254,9 +290,9 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
         </DialogHeader>
 
         <div className="min-h-0 overflow-auto rounded-md border">
-          <div className="grid min-w-[680px] grid-cols-[180px_repeat(3,minmax(150px,1fr))] border-b bg-muted/60 text-xs font-medium">
+          <div className={`grid min-w-[680px] ${detailGridClass} border-b bg-muted/60 text-xs font-medium`}>
             <div className="px-3 py-2">Target</div>
-            {orderedChannels.map((channel) => (
+            {visibleChannelSummaries.map(({ channel }) => (
               <div key={channel.channel} className="px-3 py-2 text-center">
                 {channel.label}
               </div>
@@ -268,16 +304,19 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
               return (
                 <div
                   key={target}
-                  className="grid min-w-[680px] grid-cols-[180px_repeat(3,minmax(150px,1fr))] border-b last:border-b-0"
+                  className={`grid min-w-[680px] ${detailGridClass} border-b last:border-b-0`}
                 >
                   <div className="min-w-0 px-3 py-3">
                     <Badge variant="secondary" className="max-w-full justify-start font-mono">
                       <span className="truncate">{target}</span>
                     </Badge>
                   </div>
-                  {orderedChannels.map((channel) => (
+                  {visibleChannelSummaries.map(({ channel, summary }) => (
                     <div key={`${target}:${channel.channel}`} className="min-w-0 px-3 py-3">
-                      <DeliveryCellDetail delivery={deliveryByChannel.get(channel.channel)} />
+                      <DeliveryCellDetail
+                        delivery={deliveryByChannel.get(channel.channel)}
+                        summaryFallback={summary}
+                      />
                     </div>
                   ))}
                 </div>
@@ -354,13 +393,15 @@ export function DeliveryChannelSummaryCell({ value, rowOriginal, channelKey, met
     return renderSendChannelCell({ value, rowOriginal, channelKey, meta })
   }
 
+  if (channelKey === channel.field && (value === null || value === undefined)) {
+    return null
+  }
+
   if (!deliveryRows.length) {
     return renderSendChannelCell({ value, rowOriginal, channelKey, meta })
   }
 
-  const summary =
-    summarizeExistingDeliveryChannel(deliveryRows, channel.channel) ??
-    summarizeDeliveryChannelFlag(channel.channel, value)
+  const summary = summarizeRowDeliveryChannel(rowOriginal, channel.channel)
   if (!summary || summary.status === "disabled") return null
 
   const trigger = (

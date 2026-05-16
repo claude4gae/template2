@@ -128,6 +128,7 @@ def collect_jira_delivery_rows(
                 DroneSopDelivery.Statuses.SUCCESS,
                 DroneSopDelivery.Statuses.FAILED,
                 DroneSopDelivery.Statuses.DISABLED,
+                DroneSopDelivery.Statuses.CANCELLED,
             }:
                 continue
 

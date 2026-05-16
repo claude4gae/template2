@@ -182,17 +182,25 @@ class DroneSOP(models.Model):
         if not delivery_rows:
             return 0, None
 
+        blocked_statuses = {
+            DroneSopDelivery.Statuses.FAILED,
+            DroneSopDelivery.Statuses.CANCELLED,
+        }
         failed_reason = next(
             (
                 row.reason
                 for row in delivery_rows
-                if row.status == DroneSopDelivery.Statuses.FAILED and row.reason
+                if row.status in blocked_statuses and row.reason
             ),
             None,
         )
-        if failed_reason or any(row.status == DroneSopDelivery.Statuses.FAILED for row in delivery_rows):
+        if failed_reason or any(row.status in blocked_statuses for row in delivery_rows):
             return -1, failed_reason
-        if any(row.status == DroneSopDelivery.Statuses.PENDING for row in delivery_rows):
+        pending_statuses = {
+            DroneSopDelivery.Statuses.PENDING,
+            DroneSopDelivery.Statuses.SENDING,
+        }
+        if any(row.status in pending_statuses for row in delivery_rows):
             return 0, None
         if any(row.status == DroneSopDelivery.Statuses.SUCCESS for row in delivery_rows):
             return 1, None

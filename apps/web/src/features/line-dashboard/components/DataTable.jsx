@@ -68,6 +68,8 @@ const EMPTY = {
   noMatches: "No rows match your filter.",
 }
 
+const RENDER_NULLISH_CELL_IDS = new Set(["delivery_status"])
+
 const LABELS = {
   titleSuffix: "Line E-SOP Status",
   updated: "Updated",
@@ -172,7 +174,8 @@ function TableBodyRows({
         const isProcessFlowCell = cell.column.id === "process_flow"
 
         const raw = cell.getValue()
-        const content = isNullishDisplay(raw)
+        const shouldRenderNullish = RENDER_NULLISH_CELL_IDS.has(cell.column.id)
+        const content = isNullishDisplay(raw) && !shouldRenderNullish
           ? EMPTY.text
           : flexRender(cell.column.columnDef.cell, cell.getContext())
         const shouldTruncate = !isProcessFlowCell

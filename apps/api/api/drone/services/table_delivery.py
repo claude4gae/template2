@@ -58,16 +58,21 @@ def _summarize_delivery_flag(
     delivery_rows: list[dict[str, Any]],
     channel: str,
     enabled_channels: set[str],
+    hidden_channels: set[str],
 ) -> int | None:
     """delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
 
+    if channel in hidden_channels:
+        return None
     channel_rows = [row for row in delivery_rows if row.get("channel") == channel]
     if not channel_rows:
         return 0 if channel in enabled_channels else None
     statuses = {str(row.get("status") or "").strip().lower() for row in channel_rows}
-    if statuses and statuses <= {"disabled", "cancelled"}:
+    if statuses and statuses <= {"disabled"}:
         return None
     if "failed" in statuses:
+        return -1
+    if "cancelled" in statuses:
         return -1
     if "pending" in statuses or "unknown" in statuses or "sending" in statuses:
         return 0
@@ -76,17 +81,31 @@ def _summarize_delivery_flag(
     return None
 
 
-def _summarize_delivery_overall_flag(*, delivery_rows: list[dict[str, Any]]) -> int:
-    """전체 delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
+def _summarize_delivery_overall_flag(
+    *,
+    delivery_rows: list[dict[str, Any]],
+    enabled_channels: set[str],
+    hidden_channels: set[str],
+) -> int:
+    """현재 활성 채널의 delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
 
-    if not delivery_rows:
+    flags = [
+        _summarize_delivery_flag(
+            delivery_rows=delivery_rows,
+            channel=channel,
+            enabled_channels=enabled_channels,
+            hidden_channels=hidden_channels,
+        )
+        for channel in _DELIVERY_COLUMN_BY_CHANNEL
+    ]
+    visible_flags = [flag for flag in flags if flag is not None]
+    if not visible_flags:
         return 0
-    statuses = {str(row.get("status") or "").strip().lower() for row in delivery_rows}
-    if "failed" in statuses:
+    if any(flag < 0 for flag in visible_flags):
         return -1
-    if "pending" in statuses or "unknown" in statuses:
+    if any(flag == 0 for flag in visible_flags):
         return 0
-    if "success" in statuses:
+    if all(flag > 0 for flag in visible_flags):
         return 1
     return 0
 
@@ -149,15 +168,36 @@ def _resolve_enabled_channels_for_row(
     return enabled_channels
 
 
+def _resolve_hidden_channels_for_row(
+    *,
+    row: dict[str, Any],
+    channel_config_map: dict[str, dict[str, Any]],
+) -> set[str]:
+    """현재 설정에서 명시적으로 비활성화된 채널 목록을 반환합니다."""
+
+    target_key = normalize_lookup_key(_extract_row_target(row))
+    if not target_key:
+        return set()
+
+    config = channel_config_map.get(target_key) or {}
+    hidden_channels: set[str] = set()
+    for channel, (configured_field, enabled_field) in _CHANNEL_CONFIG_FIELDS_BY_CHANNEL.items():
+        if bool(config.get(configured_field, False)) and not bool(config.get(enabled_field, False)):
+            hidden_channels.add(channel)
+    return hidden_channels
+
+
 def _attach_delivery_summary_columns(
     *,
     row: dict[str, Any],
     delivery_rows: list[dict[str, Any]],
     enabled_channels: set[str] | None = None,
+    hidden_channels: set[str] | None = None,
 ) -> dict[str, Any]:
     """테이블 row에 delivery 가상 컬럼 값을 붙입니다."""
 
     visible_enabled_channels = enabled_channels or set()
+    hidden_channel_set = hidden_channels or set()
     dispatch_id = next(
         (
             delivery.get("dispatchId") or delivery.get("dispatch_id")
@@ -171,27 +211,39 @@ def _attach_delivery_summary_columns(
         "dispatch_id": dispatch_id,
         "deliveryRows": delivery_rows,
         "delivery_targets": _extract_row_target(row),
-        "delivery_status": _summarize_delivery_overall_flag(delivery_rows=delivery_rows),
+        "delivery_status": _summarize_delivery_overall_flag(
+            delivery_rows=delivery_rows,
+            enabled_channels=visible_enabled_channels,
+            hidden_channels=hidden_channel_set,
+        ),
     }
     for channel, column in _DELIVERY_COLUMN_BY_CHANNEL.items():
         enriched[column] = _summarize_delivery_flag(
             delivery_rows=delivery_rows,
             channel=channel,
             enabled_channels=visible_enabled_channels,
+            hidden_channels=hidden_channel_set,
         )
 
     jira_success = next(
         (
             delivery
             for delivery in delivery_rows
-            if delivery.get("channel") == "jira" and delivery.get("status") == "success"
+            if "jira" not in hidden_channel_set
+            and delivery.get("channel") == "jira"
+            and delivery.get("status") == "success"
         ),
         None,
     )
     if jira_success:
         enriched["jira_key"] = jira_success.get("externalKey")
         enriched["inform_step"] = jira_success.get("sentStep")
-    enriched["informed_at"] = _latest_success_sent_at(delivery_rows=delivery_rows)
+    visible_delivery_rows = [
+        delivery
+        for delivery in delivery_rows
+        if delivery.get("channel") not in hidden_channel_set
+    ]
+    enriched["informed_at"] = _latest_success_sent_at(delivery_rows=visible_delivery_rows)
     return enriched
 
 
@@ -219,6 +271,10 @@ def attach_delivery_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 row=row,
                 channel_config_map=channel_config_map,
             ) if isinstance(row, dict) else set(),
+            hidden_channels=_resolve_hidden_channels_for_row(
+                row=row,
+                channel_config_map=channel_config_map,
+            ) if isinstance(row, dict) else set(),
         )
         for row in rows
     ]
@@ -242,6 +298,10 @@ def build_delivery_update_payload(*, row: dict[str, Any]) -> dict[str, Any]:
         row=row,
         delivery_rows=delivery_rows,
         enabled_channels=_resolve_enabled_channels_for_row(
+            row=row,
+            channel_config_map=channel_config_map,
+        ),
+        hidden_channels=_resolve_hidden_channels_for_row(
             row=row,
             channel_config_map=channel_config_map,
         ),

@@ -16,6 +16,7 @@ import { buildToastOptions } from "../utils/toast"
 import { makeCellKey } from "../utils/dataTableCellState"
 import { composeComment, splitComment } from "../utils/commentUtils"
 import { deriveFlagState } from "../utils/dataTableFlagState"
+import { findFailedDeliveryChannel, isDeliveryAlreadyInformed } from "../utils/dataTableDelivery"
 
 function showInstantInformQueuedToast() {
   toast.info("즉시 발송 대기 등록", {
@@ -46,9 +47,12 @@ function showAlreadyInformedToast() {
   })
 }
 
-function showJiraFailedLockedToast(reason) {
-  const detail = typeof reason === "string" && reason.trim() ? reason.trim() : "send_failed"
-  toast.info("JIRA 실패 상태입니다.", {
+function showDeliveryFailedLockedToast(failure) {
+  const label = failure?.label || "채널"
+  const statusLabel = failure?.statusLabel || "실패"
+  const defaultReason = failure?.status === "cancelled" ? "cancelled" : "send_failed"
+  const detail = typeof failure?.reason === "string" && failure.reason.trim() ? failure.reason.trim() : defaultReason
+  toast.info(`${label} ${statusLabel} 상태입니다.`, {
     description: `즉시 발송으로는 재시도되지 않습니다. (reason: ${detail})`,
     ...buildToastOptions({ intent: "info", duration: 3200 }),
   })
@@ -65,24 +69,16 @@ export function InstantInformCell({
   const { visibleText: baseVisibleText, suffixWithMarker } = splitComment(rowOriginal?.comment)
 
   const baseState = deriveFlagState(baseValue, 0)
-  const sendJiraState = deriveFlagState(rowOriginal?.delivery_jira, 0)
-  const jiraDeliveryRows = Array.isArray(rowOriginal?.deliveryRows)
-    ? rowOriginal.deliveryRows.filter((delivery) => delivery?.channel === "jira")
-    : []
-  const hasJiraSuccess = jiraDeliveryRows.some((delivery) => delivery?.status === "success")
-  const hasJiraFailed = jiraDeliveryRows.some((delivery) => delivery?.status === "failed")
-  const jiraReason =
-    jiraDeliveryRows.find((delivery) => typeof delivery?.reason === "string" && delivery.reason.trim())?.reason ??
-    (typeof rowOriginal?.jira_reason === "string" && rowOriginal.jira_reason.trim()
-      ? rowOriginal.jira_reason.trim()
-      : null)
-  const isLocked = disabled || hasJiraSuccess || hasJiraFailed || sendJiraState.isOn || sendJiraState.isError
+  const deliveryFailure = findFailedDeliveryChannel(rowOriginal)
+  const hasDeliveryFailed = Boolean(deliveryFailure)
+  const alreadyInformed = disabled || isDeliveryAlreadyInformed(rowOriginal)
+  const isLocked = alreadyInformed || hasDeliveryFailed
   const draftValue = meta?.instantInformDrafts?.[recordId]
   const effectiveState = draftValue === undefined ? baseState : deriveFlagState(draftValue, baseState.numericValue)
   const { isOn, isError } = effectiveState
   const isChecked = isOn
-  const isDeliveryComplete = hasJiraSuccess || sendJiraState.isOn
-  const isDeliveryFailed = hasJiraFailed || sendJiraState.isError || isError
+  const isDeliveryComplete = alreadyInformed
+  const isDeliveryFailed = hasDeliveryFailed || isError
 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
   const [commentDraft, setCommentDraft] = React.useState(baseVisibleText)
@@ -110,12 +106,12 @@ export function InstantInformCell({
 
   const openDialog = () => {
     if (isSaving) return
-    if (hasJiraSuccess || sendJiraState.isOn) {
-      showAlreadyInformedToast()
+    if (hasDeliveryFailed) {
+      showDeliveryFailedLockedToast(deliveryFailure)
       return
     }
-    if (hasJiraFailed || sendJiraState.isError) {
-      showJiraFailedLockedToast(jiraReason)
+    if (alreadyInformed) {
+      showAlreadyInformedToast()
       return
     }
     if (isLocked) {
@@ -176,8 +172,10 @@ export function InstantInformCell({
   }
 
   const titleText = isLocked
-    ? sendJiraState.isError
-      ? `JIRA 실패 상태 (reason: ${jiraReason ?? "send_failed"})`
+    ? hasDeliveryFailed
+      ? `${deliveryFailure?.label || "채널"} ${deliveryFailure?.statusLabel || "실패"} 상태 (reason: ${
+          deliveryFailure?.reason ?? (deliveryFailure?.status === "cancelled" ? "cancelled" : "send_failed")
+        })`
       : disabledReason
     : isError
       ? "즉시 발송 오류 상태"
