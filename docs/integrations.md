@@ -15,6 +15,19 @@
 | MinIO | Emails/Common | `minio` service |
 | Airflow | Account/Emails/Drone trigger | Bearer token |
 
+## 로컬 dummy 외부계
+
+`apps/adfs_dummy`는 로컬 개발에서 다음 역할을 대체합니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `apps/adfs_dummy/adfs_oidc.py` | OIDC authorize/logout/callback 보조 |
+| `apps/adfs_dummy/adfs_rag.py` | RAG search/insert/delete/index-info |
+| `apps/adfs_dummy/adfs_llm.py` | LLM chat completions |
+| `apps/adfs_dummy/adfs_mail.py` | Mail send와 dummy mail messages |
+| `apps/adfs_dummy/adfs_jira.py` | Jira issue 대체 |
+| `apps/adfs_dummy/adfs_stores.py` | dummy 저장소 |
+
 ## ADFS/OIDC
 
 주요 설정:
@@ -107,3 +120,15 @@ Authorization: Bearer <AIRFLOW_TRIGGER_TOKEN>
 - Emails POP3 수집
 - Emails Outbox 처리
 - Drone SOP 수집/파이프라인
+
+## 연동 변경 체크리스트
+
+| 변경 | 함께 확인할 문서/파일 |
+| --- | --- |
+| OIDC provider 변경 | `env/api*.env`, `env/web*.env`, `apps/adfs_dummy/adfs_oidc.py`, `docs/api/auth.md` |
+| RAG endpoint/schema 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_rag.py`, `docs/api/assistant.md`, `docs/modules/emails.md` |
+| LLM request/response 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_llm.py`, `docs/modules/assistant.md` |
+| Mail API 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_mail.py`, `docs/modules/emails.md`, `docs/modules/line-dashboard.md` |
+| Jira 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_jira.py`, `docs/modules/line-dashboard.md` |
+| MinIO 변경 | `minio.env`, `docs/data-model.md`, `docs/modules/emails.md` |
+| Airflow token/trigger 변경 | `env/api*.env`, 관련 `docs/api/*.md`, `docs/operations.md` |

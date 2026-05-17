@@ -24,6 +24,10 @@ docker compose -f docker-compose.dev.yml up -d
 npm run web:dev
 npm run web:build
 npm run web:lint
+npm run agent:audit
+npm run agent:audit:docs
+npm run agent:audit:web-boundary
+npm run agent:audit:ui
 ```
 
 ## 백엔드 검증
@@ -43,6 +47,9 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 | `seed_dummy_emails` | 개발용 샘플 메일 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `seed_drone_dummy_data` | Drone 개발용 샘플 데이터 생성 |
+| `seed_drone_affiliation_notifications` | Account 소속 기준 Drone 알림 target/channel/recipient seed |
+| `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
+| `purge_drone_sop` | Drone SOP 데이터 전체 삭제 또는 dry-run 확인 |
 
 실행 예시:
 
@@ -50,6 +57,9 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy_emails
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_affiliation_notifications
+docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
+docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
 ```
 
 ## 환경 변수 파일
@@ -66,3 +76,31 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone
 - backend 테스트와 Django 명령은 `api` 컨테이너에서 실행합니다.
 - 외부 연동 URL은 하드코딩하지 않고 env로 관리합니다.
 - auth/RAG/assistant/mail 계약을 바꾸면 `apps/adfs_dummy`도 함께 갱신합니다.
+
+## 문서 검증
+
+문서가 실제 route/model/env inventory와 크게 어긋나지 않는지 확인합니다.
+
+```bash
+npm run agent:audit:docs
+```
+
+검증 대상:
+
+- backend API prefix와 주요 endpoint
+- frontend route와 feature facade
+- 주요 Django model class
+- management command
+- env group
+
+## 장애 확인 순서
+
+| 증상 | 먼저 확인할 것 |
+| --- | --- |
+| 화면이 API를 못 부름 | `VITE_BACKEND_URL`, Nginx proxy, Django allowed hosts/CORS/CSRF |
+| 로그인 redirect 실패 | `OIDC_REDIRECT_URI`, `ALLOWED_REDIRECT_HOSTS`, session cookie secure/samesite |
+| Emails 수집 실패 | POP3 env, Airflow token, `seed_dummy_emails`/dummy mail 동작 |
+| RAG/Assistant 실패 | `ASSISTANT_*`, `RAG_*`, dummy RAG endpoint, permission group |
+| Drone 알림 실패 | SOP 수집 결과, target/channel/recipient 설정, Jira/Mail/Messenger env |
+| Timeline 조회 실패 | `TIMELINE_DB_*`, `TIMELINE_QUERY_DAYS`, 기준 정보 endpoint |
+| 파일/이미지 실패 | MinIO env, bucket 접근, asset sequence |

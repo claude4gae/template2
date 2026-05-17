@@ -66,6 +66,22 @@ staff/superuser는 대부분의 소속 제한을 우회합니다.
 | 승인 대기 중 재요청 | 이전 요청은 `SUPERSEDED` |
 | 마지막 manager 회수 시도 | 거부 |
 
+## 화면/API/데이터 추적
+
+| 구간 | 위치 |
+| --- | --- |
+| 화면 | `/settings/account`, `/settings/members` |
+| Frontend | `apps/web/src/features/account`, `apps/web/src/features/auth` |
+| Backend API | `/api/v1/account/**`, `/api/v1/auth/me` |
+| 데이터 | `User`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
+| 외부/배치 | Airflow `external-affiliations/sync` |
+
+## 운영 포인트
+
+- 소속이 예상과 다르면 `ExternalAffiliationSnapshot`과 `UserCurrentAffiliation`을 함께 확인합니다.
+- 권한 문제가 있으면 `UserSdwtProdAccess`의 role과 staff/superuser 여부를 확인합니다.
+- 외부 동기화 실패는 Airflow Bearer token과 `docs/configuration.md`의 auth/env 설정을 확인합니다.
+
 ## 관련 API
 
 - `docs/api/account.md`

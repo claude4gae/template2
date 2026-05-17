@@ -30,6 +30,22 @@ Common은 여러 백엔드 모듈에서 공유하는 helper, middleware, 외부 
 | `send_knox_mail_api` | Knox Mail API 호출 |
 | `send_chat_message` | Knox Messenger 메시지 전송 |
 
+## 의존 모듈
+
+| Common 기능 | 주 사용 모듈 |
+| --- | --- |
+| request helper/token 검증 | Emails, Drone, Account |
+| ActivityLog helper/middleware | Account, Emails, Drone, VOC, Activity |
+| raw SQL/schema helper | Timeline, Drone table API |
+| storage helper | Emails |
+| Mail API/Messenger client | Drone, Emails |
+
+## 운영 포인트
+
+- 여러 모듈에서 같은 증상이 발생하면 `api.common`의 helper 또는 env 설정을 먼저 확인합니다.
+- 외부 client 변경은 `docs/integrations.md`와 `docs/configuration.md`를 함께 갱신해야 합니다.
+- middleware 변경은 ActivityLog와 인증/Knox ID 처리에 영향을 줄 수 있습니다.
+
 ## 관련 문서
 
 - `docs/integrations.md`

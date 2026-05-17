@@ -74,3 +74,11 @@ npm run preview
 - 다른 feature를 import할 때는 `@/features/<feature>` facade만 사용합니다.
 - JSX 파일은 `.jsx`, 비 JSX 파일은 `.js`를 사용합니다.
 - Tailwind와 design token을 우선 사용하고, 임의 HEX/inline style은 피합니다.
+
+## 더 읽을 문서
+
+- 앱 문서 홈: `docs/README.md`
+- 프론트엔드 상세 구조: `docs/frontend.md`
+- 실제 route 색인: `docs/inventory.md`
+- API 호출 규칙: `docs/api/README.md`
+- 모듈별 업무 흐름: `docs/modules/*.md`

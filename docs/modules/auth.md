@@ -29,6 +29,22 @@ Auth는 OIDC 기반 로그인과 Django session 관리를 담당합니다.
 
 로컬에서는 `apps/adfs_dummy`가 ADFS 역할을 합니다.
 
+## 화면/API/데이터 추적
+
+| 구간 | 위치 |
+| --- | --- |
+| 화면 | `/login`, 인증 후 `/` |
+| Frontend | `apps/web/src/features/auth` |
+| Backend API | `/api/v1/auth/config`, `/api/v1/auth/login`, `/api/v1/auth/me`, `/api/v1/auth/logout`, `/auth/google/callback/` |
+| 데이터 | `api.account.User`, Django session |
+| 외부 연동 | ADFS/OIDC 또는 `apps/adfs_dummy` |
+
+## 운영 포인트
+
+- 로그인 redirect 오류는 `ALLOWED_REDIRECT_HOSTS`, `OIDC_REDIRECT_URI`, proxy host 설정을 확인합니다.
+- callback 오류는 state/nonce/session cookie와 ADFS 인증서 설정을 확인합니다.
+- `/api/v1/auth/me` 응답은 Account 온보딩/소속 재확인 UI의 기준입니다.
+
 ## 관련 API
 
 - `docs/api/auth.md`

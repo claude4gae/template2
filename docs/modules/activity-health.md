@@ -28,6 +28,22 @@ Health는 인증 없이 서버 상태를 반환합니다.
 }
 ```
 
+## API/데이터 추적
+
+| 구간 | 위치 |
+| --- | --- |
+| Activity API | `/api/v1/activity/logs` |
+| Health API | `/api/v1/health/` |
+| Backend | `apps/api/api/activity`, `apps/api/api/health` |
+| 데이터 | `ActivityLog`, runtime health payload |
+| 생성 경로 | `api.common` middleware와 service helper |
+
+## 운영 포인트
+
+- Activity 403은 `activity.view_activitylog` 또는 `api.view_activitylog` 권한을 확인합니다.
+- Health 실패는 Django process, DB 연결 여부, reverse proxy routing을 순서대로 확인합니다.
+- Activity가 비어 있으면 middleware 적용 여부와 작업별 metadata 주입 여부를 확인합니다.
+
 ## 관련 API
 
 - `docs/api/activity-health.md`

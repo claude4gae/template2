@@ -39,6 +39,22 @@ Assistant는 다음 값을 permission group으로 사용합니다.
 - index/permission group 정규화
 - 실패 로그 기록
 
+## 화면/API/데이터 추적
+
+| 구간 | 위치 |
+| --- | --- |
+| 화면 | `/assistant` |
+| Frontend | `apps/web/src/features/assistant` |
+| Backend API | `/api/v1/assistant/rag-indexes`, `/api/v1/assistant/chat` |
+| 데이터 | Account 권한 그룹, runtime 대화 이력 |
+| 외부 연동 | RAG search, LLM chat completions |
+
+## 운영 포인트
+
+- 답변이 빈 경우 RAG index, permission group, RAG 검색 결과를 먼저 확인합니다.
+- 403은 요청 permission group이 서버 계산 그룹을 벗어났거나 `knox_id`가 없을 때 발생할 수 있습니다.
+- 502/503은 RAG/LLM URL, header, timeout 설정을 확인합니다.
+
 ## 관련 API
 
 - `docs/api/assistant.md`

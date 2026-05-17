@@ -28,6 +28,22 @@ AppStore는 내부 앱과 도구를 등록하고 공유하는 기능입니다.
 
 대표 이미지가 URL이면 redirect하고, base64/data URL이면 이미지 바이너리로 응답합니다.
 
+## 화면/API/데이터 추적
+
+| 구간 | 위치 |
+| --- | --- |
+| 화면 | `/appstore` |
+| Frontend | `apps/web/src/features/appstore` |
+| Backend API | `/api/v1/appstore/**` |
+| 데이터 | `AppStoreApp`, `AppStoreLike`, `AppStoreComment`, `AppStoreCommentLike` |
+| 파일/이미지 | cover endpoint가 URL redirect 또는 이미지 바이너리를 반환 |
+
+## 운영 포인트
+
+- 이미지가 깨지면 cover URL/data URL 형식과 `/cover` 응답 방식을 확인합니다.
+- 수정/삭제 403은 작성자와 관리자 권한을 확인합니다.
+- 댓글/좋아요 불일치는 앱/댓글 ID와 로그인 사용자 기준 중복 여부를 확인합니다.
+
 ## 관련 API
 
 - `docs/api/appstore.md`

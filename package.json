@@ -5,7 +5,8 @@
     "apps/web"
   ],
   "scripts": {
-    "agent:audit": "npm run agent:audit:web-boundary && npm run agent:audit:ui",
+    "agent:audit": "npm run agent:audit:web-boundary && npm run agent:audit:ui && npm run agent:audit:docs",
+    "agent:audit:docs": "scripts/agent/check_docs_inventory.sh",
     "agent:audit:ui": "scripts/agent/check_ui_consistency.sh",
     "agent:audit:web-boundary": "scripts/agent/check_frontend_boundaries.sh",
     "web:dev": "npm run dev --workspace web",

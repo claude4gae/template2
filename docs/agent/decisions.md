@@ -13,3 +13,10 @@
 ## 보류된 결정
 - backend boundary audit은 단순 grep이 아니라 AST 기반으로 별도 설계한다.
 - multi-agent orchestration은 eval에서 병렬 검토 효과가 확인될 때까지 도입하지 않는다.
+
+## 2026-05-17: 앱 문서 상세화 구조
+
+- 문서 홈은 `docs/README.md`로 유지하고, 실제 route/model/env/command 색인은 `docs/inventory.md`로 분리한다.
+- 주제별 상세 문서는 `docs/backend.md`, `docs/frontend.md`, `docs/data-model.md`, `docs/configuration.md`로 분리해 문서가 길어져도 읽기 흐름을 유지한다.
+- 모듈 문서는 업무 흐름과 운영 포인트를 담당하고, API 문서는 endpoint 계약을 담당한다.
+- 문서 drift를 줄이기 위해 `scripts/agent/check_docs_inventory.sh`로 backend endpoint, frontend route, model, command, env group의 문서 반영 여부를 검증한다.

@@ -59,11 +59,13 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 
 ## 문서 읽는 순서
 
-1. 전체 구조는 이 파일을 봅니다.
-2. 백엔드 실행/설정은 `apps/api/README.md`를 봅니다.
-3. 프론트엔드 실행/구조는 `apps/web/README.md`를 봅니다.
-4. API 공통 규칙은 `docs/api/README.md`, 모듈별 호출 방식은 `docs/api/*.md`를 봅니다.
-5. 소속/권한 정책은 `docs/modules/account.md`를 봅니다.
+1. 문서 홈과 전체 읽기 순서는 `docs/README.md`를 봅니다.
+2. 전체 구조와 데이터 흐름은 `docs/architecture.md`를 봅니다.
+3. 실제 route/model/env 색인은 `docs/inventory.md`를 봅니다.
+4. 백엔드 상세는 `docs/backend.md`, 프론트엔드 상세는 `docs/frontend.md`를 봅니다.
+5. 데이터 모델은 `docs/data-model.md`, 환경 설정은 `docs/configuration.md`를 봅니다.
+6. API 공통 규칙은 `docs/api/README.md`, 모듈별 호출 방식은 `docs/api/*.md`를 봅니다.
+7. 모듈별 업무 흐름은 `docs/modules/*.md`를 봅니다.
 
 ## 작업할 때 지켜야 할 큰 원칙
 

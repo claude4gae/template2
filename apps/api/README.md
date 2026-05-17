@@ -64,6 +64,10 @@ python manage.py seed_drone_dummy_data
 ## 더 읽을 문서
 
 - 전체 구조: `docs/architecture.md`
+- 백엔드 상세 구조: `docs/backend.md`
+- 실제 API route/model/command 색인: `docs/inventory.md`
+- 데이터 모델: `docs/data-model.md`
+- 환경 설정: `docs/configuration.md`
 - API 공통 규칙: `docs/api/README.md`
 - 모듈별 API 계약: `docs/api/*.md`
 - 모듈별 기능/동작: `docs/modules/*.md`

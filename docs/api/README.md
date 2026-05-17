@@ -33,6 +33,21 @@ OIDC provider가 `form_post`로 호출하는 callback입니다.
 | Internal token | OCR worker | `X-Internal-Token: <EMAIL_OCR_INTERNAL_TOKEN>` |
 | 공개 | health, 일부 조회 | 인증 없이 접근 가능 |
 
+## API 문서 작성 단위
+
+각 endpoint는 다음 항목을 확인할 수 있어야 합니다.
+
+| 항목 | 설명 |
+| --- | --- |
+| Method/Path | 실제 `apps/api/api/<feature>/urls.py` 기준 경로 |
+| Auth | Session, Bearer token, Internal token, 공개 여부 |
+| Query/Body | 필수/선택 입력, `snake_case`/`camelCase` 호환 여부 |
+| Response | 주요 field와 collection envelope |
+| Error | 400/401/403/404/409/5xx 조건 |
+| Side effect | DB write, 외부 호출, ActivityLog, RAG Outbox 같은 부작용 |
+
+실제 endpoint 색인은 `docs/inventory.md`를 기준으로 확인합니다.
+
 ## 요청 형식
 
 대부분의 write API는 JSON body를 사용합니다.
@@ -55,6 +70,16 @@ Content-Type: application/json
 
 파일/이미지 endpoint는 바이너리 또는 redirect를 반환할 수 있습니다.
 
+목록 응답은 모듈별로 다음 중 하나를 사용합니다.
+
+| 형태 | 예 |
+| --- | --- |
+| 단순 목록 | `{ "results": [] }` |
+| 페이지 목록 | `{ "results": [], "page": 1, "page_size": 20, "count": 100 }` |
+| 요약 포함 | `{ "results": [], "summary": {} }` |
+| 단건 객체 | `{ "id": 1, ... }` |
+| 파일/HTML | binary, redirect, HTML response |
+
 ## 공통 오류
 
 | Status | 의미 |
@@ -67,6 +92,16 @@ Content-Type: application/json
 | 500 | 서버 처리 실패 |
 | 502 | 외부 연동 실패 |
 | 503 | 필수 외부 연동 설정 누락 |
+
+## Side effect 분류
+
+| 분류 | 해당 모듈 |
+| --- | --- |
+| DB write | Account, Emails, Drone, AppStore, VOC |
+| 외부 read/search | Assistant, Timeline, Drone |
+| 외부 write/send | Emails RAG, Drone Jira/Mail/Messenger, Assistant LLM |
+| 파일/asset | Emails, AppStore |
+| ActivityLog | Account 일부 작업, Emails 이동/삭제, Drone table update, VOC |
 
 ## 모듈별 API 문서
 

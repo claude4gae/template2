@@ -40,6 +40,23 @@ Line Dashboard는 Drone SOP 데이터를 보고, 조기 알림과 멀티 채널 
 | `instant_inform` | 즉시 인폼 큐잉 여부 |
 | `needtosend` | 전송 필요 여부 |
 
+## 화면/API/데이터 추적
+
+| 구간 | 위치 |
+| --- | --- |
+| 화면 | `/ESOP_Dashboard/**` |
+| Frontend | `apps/web/src/features/line-dashboard` |
+| Backend API | `/api/v1/line-dashboard/**` |
+| 데이터 | `DroneSOP`, `DroneSopTarget`, `DroneSopTargetChannelConfig`, `DroneSopTargetRecipient`, `DroneSopTargetDispatch`, `DroneSopDelivery`, `DroneEarlyInform` |
+| 외부 연동 | POP3, Jira, Knox Messenger, Knox Mail API |
+
+## 운영 포인트
+
+- 수집 문제는 `sop/ingest/pop3/trigger`와 POP3 env를 확인합니다.
+- 전송 문제는 channel별 delivery 상태와 Jira/Messenger/Mail env를 분리해 확인합니다.
+- 알림 대상 문제는 Account 소속, target mapping, recipient 설정을 함께 확인합니다.
+- 테이블 수정 문제는 허용 컬럼과 ActivityLog 기록 여부를 확인합니다.
+
 ## 관련 API
 
 - `docs/api/line-dashboard.md`
