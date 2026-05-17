@@ -28,6 +28,13 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Safe file edit/output format: `.codex/skills/safe-file-edit-output/SKILL.md`
 - Offsite contract synchronization: `.codex/skills/offsite-dev-contract-sync/SKILL.md`
 
+## 0-4. Planning and Evaluation
+- For complex changes, use `docs/agent/PLANS.md`.
+- Use an ExecPlan when work changes 3+ files, touches API/DB/auth/env contracts, spans frontend and backend, or is a significant refactor.
+- Do not use ExecPlan for small single-file fixes, obvious typo/import cleanup, or tightly specified edits.
+- Use `docs/agent/evals/*` as regression seeds for common agent tasks.
+- After changing agent rules/skills/scripts, run the relevant validation command and report whether it passed.
+
 ## 1. Global Core Rules
 
 ### 1-1. Determinism
@@ -60,142 +67,13 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Proper nouns remain in original form.
 - When editing a file, convert touched English comments/docstrings in that file to Korean unless external specs require English.
 
-## 2. Frontend Core Architecture
+## 2. Scoped Architecture
+- Frontend-specific rules live in `apps/web/AGENTS.md`.
+- Backend-specific rules live in `apps/api/AGENTS.md`.
+- When editing scoped paths, obey the nearest nested `AGENTS.md` in addition to this root file.
+- Keep root instructions small; move workflow details to skills and path-specific architecture rules to scoped `AGENTS.md`.
 
-### 2-1. Feature Boundary
-- Feature path: `apps/web/src/features/<feature>`
-- Allowed subpaths only:
-  - `pages/`
-  - `components/`
-  - `hooks/`
-  - `api/`
-  - `store/`
-  - `utils/`
-  - `routes.jsx`
-  - `index.js`
-- Folder depth rule:
-  - Default: max depth 2
-  - One extra level under `components/` only when:
-    - the feature already has 12+ component files, or grouping is explicitly requested
-    - subfolder name is one of: `list`, `detail`, `form`, `dialog`, `table`, `chart`, `filters`, `cards`, `sections`
-    - no further nesting
-  - If another subfolder name is needed, ask first.
-
-### 2-2. Public Facade
-- `apps/web/src/features/<feature>/index.js` is the only public surface.
-- Named exports only.
-- `export *` is forbidden.
-- Cross-feature imports must use:
-  - `import { something } from "@/features/<otherFeature>"`
-- Explicit `@/features/<otherFeature>/index.js` import is forbidden.
-- Direct imports to another feature's internals are forbidden (`components/*`, `pages/*`, `api/*`, etc.).
-
-### 2-3. Import Rules
-- Prefer `@/` for project-internal absolute imports.
-- `components/*` alias is allowed only for `components/...` paths.
-- Do not mix `@/components/...` and `components/...` in one file.
-- Keep existing alias style when editing.
-- Project-internal absolute imports must resolve under:
-  - `apps/web/src/components/ui/*`
-  - `apps/web/src/components/layout/*`
-  - `apps/web/src/components/common/*`
-  - `apps/web/src/lib/*`
-  - `apps/web/src/features/<otherFeature>` (facade only)
-
-### 2-4. UI/Route/Data Rules
-- Do not manually edit `apps/web/src/components/ui/**` unless explicitly requested via shadcn CLI flow.
-- Every feature must expose `routes.jsx`.
-- Global routes only in `apps/web/src/routes/*`.
-- Routes may compose `components/layout/*`, but must not define layout components in `routes/*`.
-- Routes must not contain business logic/data logic/derived UI logic.
-- React Query is the single source of truth for server data.
-- Use array query keys, avoid redundant keys, and invalidate minimum scope.
-- Never mirror server data to Zustand.
-- Zustand is only for feature-local UI/interaction flow state.
-
-### 2-5. Styling/React/Layout Core
-- Tailwind only; use design tokens; use `dark:` for dark mode.
-- Use shadcn/Radix primitives from `apps/web/src/components/ui/*` before creating custom primitives.
-- Product UI decisions must follow `product-ui-design-system` skill.
-- Use semantic tokens (`bg-card`, `text-muted-foreground`, `border-border`, `text-destructive`, `bg-primary`, etc.) before raw colors.
-- Arbitrary HEX and inline style are forbidden unless strictly necessary; CSS variable-based dynamic sizing/coloring is allowed when library integration requires it.
-- Avoid premature optimization (`useMemo`, `useCallback`, `React.memo` only when required).
-- UI states must be explicit: loading, empty, error, disabled, selected, hover/focus, and dark mode when applicable.
-- Interactive controls must keep accessible labels, keyboard reachability, and visible focus states.
-- Layout core constraints:
-  - one scroll container per axis per region
-  - scrollable elements require `min-h-0`
-  - page skeleton: `h-screen flex flex-col` + fixed header + `flex-1 min-h-0 overflow-hidden`
-- Detailed layout recipes are in `compose-frontend-layout` skill.
-
-### 2-6. Frontend Verification
-- After frontend UI changes, run or recommend `scripts/agent/check_ui_consistency.sh`.
-- After feature import/export/routing changes, run or recommend `scripts/agent/check_frontend_boundaries.sh`.
-- Audit script findings are review candidates; do not fix legacy findings outside the requested scope.
-
-## 3. Backend Core Architecture
-
-### 3-1. Domain App Boundary
-- Domain app path: `apps/api/api/<feature>` (`api.<feature>`)
-- Allowed files/folders only:
-  - `apps.py`, `models.py`, `urls.py`, `callback_urls.py` (auth only)
-  - `views.py`, `serializers.py`, `selectors.py`, `permissions.py`, `admin.py`, `tests.py`
-  - `services/`, `migrations/`, `management/commands/`
-- No new backend folders outside approved paths.
-- Max depth 2, except `services/`, `migrations/`, `management/commands/`.
-- Shared/infrastructure packages only:
-  - `apps/api/api/common`
-  - `apps/api/api/auth`
-  - `apps/api/api/rag`
-  - `apps/api/api/management`
-
-### 3-2. Cross-Feature and Responsibilities
-- Cross-feature imports allowed only through other feature's `services/__init__.py` facade or `selectors.py`.
-- `views.py`: HTTP only
-- `serializers.py`: schema + validation only
-- `permissions.py`: DRF permissions only
-- `services/*`: business logic, writes, transactions, external calls
-- `selectors.py`: read-only ORM queries only
-- `models.py`: schema + pure domain rules only
-- Views/services must not execute direct read ORM queries; use selectors.
-
-### 3-3. Routing and API Shape
-- Use versioned API prefix `/api/v1/<route-scope>/...`
-- Exception: auth callbacks under `/auth/` (`api.auth.callback_urls`)
-- Global routing only in `apps/api/api/urls.py` as include registry.
-- Feature `urls.py` must define relative paths only.
-- Routes contain no business logic.
-
-### 3-4. Model/DB Core Rules
-- Fields: snake_case
-- Models: singular PascalCase
-- Every model sets `db_table = "<feature>_<entity>"`
-- Primary key: `id` (BigAutoField), UUID only when externally required
-- Timestamps timezone-aware UTC (`created_at` required; `updated_at`, `deleted_at` optional)
-- Index/constraint naming:
-  - `idx_<table>_<cols>`
-  - `uniq_<table>_<cols>`
-  - max length <= 30
-  - apply deterministic abbreviation/suffix rule
-- Full naming map/playbook is maintained in `create-django-feature` skill.
-
-### 3-5. Safety and Readability
-- Wrap multi-step writes in `transaction.atomic()`.
-- No writes in selectors/models.
-- Prefer explicit, linear, small single-purpose code.
-- Keep functions/classes small and single-purpose where practical (about 30–50 lines).
-- Add type hints and Korean docstrings to public services/selectors.
-
-### 3-6. Testing and Migrations
-- Update/add tests when business logic changes.
-- Prefer service/selector tests; keep view tests minimal.
-- Never edit applied migrations.
-- Tests must not directly import other domain internal modules.
-- Domain-specific commands stay in each feature app.
-- Shared commands use service/selector facade only.
-- Detailed execution sequence and commands are in `django-test-migration-flow` skill.
-
-## 4. Environment Core
+## 3. Environment Core
 - Assume offsite/local development may not have corporate network access.
 - Never hardcode intranet URLs.
 - External dependency URLs must remain env-driven.
@@ -203,7 +81,7 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Backend tests/commands must run in Docker Compose `api` container.
 - Detailed offsite sync steps are in `offsite-dev-contract-sync` skill.
 
-## 5. Output Scope Control
+## 4. Output Scope Control
 - Keep modifications strictly within requested scope.
 - Preserve public surfaces unless explicitly requested.
 - Avoid unrelated refactors.

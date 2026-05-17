@@ -2,7 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-WEB_SRC="$ROOT_DIR/apps/web/src"
+WEB_SRC="apps/web/src"
+ALLOWLIST="$ROOT_DIR/scripts/agent/ui-audit-allowlist.txt"
+
+cd "$ROOT_DIR"
 
 if [[ ! -d "$WEB_SRC" ]]; then
   echo "Missing frontend source directory: apps/web/src" >&2
@@ -10,18 +13,38 @@ if [[ ! -d "$WEB_SRC" ]]; then
 fi
 
 status=0
+allowlist_patterns="$(mktemp)"
+trap 'rm -f "$allowlist_patterns"' EXIT
+
+if [[ -f "$ALLOWLIST" ]]; then
+  sed -E '/^[[:space:]]*(#|$)/d' "$ALLOWLIST" > "$allowlist_patterns"
+fi
 
 check_pattern() {
   local title="$1"
   local pattern="$2"
   shift 2
+  local raw_results
+  local filtered_results
+  raw_results="$(mktemp)"
+  filtered_results="$(mktemp)"
 
   echo "== $title =="
-  if rg -n "$pattern" "$WEB_SRC" "$@" -g '*.jsx' -g '*.js' -g '*.css'; then
+  if rg --color never -n "$pattern" "$WEB_SRC" "$@" -g '*.jsx' -g '*.js' -g '*.css' > "$raw_results"; then
+    if [[ -s "$allowlist_patterns" ]]; then
+      grep -Ev -f "$allowlist_patterns" "$raw_results" > "$filtered_results" || true
+    else
+      cp "$raw_results" "$filtered_results"
+    fi
+  fi
+
+  if [[ -s "$filtered_results" ]]; then
+    cat "$filtered_results"
     status=1
   else
     echo "OK"
   fi
+  rm -f "$raw_results" "$filtered_results"
   echo
 }
 
@@ -45,7 +68,7 @@ check_pattern \
 echo "== Feature facade export-star usage =="
 facade_status=0
 while IFS= read -r facade_file; do
-  if rg -n 'export \*' "$facade_file"; then
+  if rg --color never -n 'export \*' "$facade_file"; then
     facade_status=1
   fi
 done < <(find "$WEB_SRC/features" -mindepth 2 -maxdepth 2 -type f -name 'index.js' | sort)

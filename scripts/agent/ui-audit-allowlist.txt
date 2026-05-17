@@ -1,0 +1,21 @@
+# 기존 코드에서 의도적이거나 별도 정리 범위로 분류한 UI audit 후보입니다.
+# 새 코드가 이 목록에 의존하지 않도록, 가능한 한 path + 구체 패턴으로 제한합니다.
+
+^apps/web/src/components/ui/
+^apps/web/src/components/common/Error04Illustration\.jsx:.*maskType
+^apps/web/src/components/common/ThemeColorSelector\.jsx:.*text-gray-500
+^apps/web/src/features/assistant/components/ChatWidget(Launcher|Panel)\.jsx:.*style=
+^apps/web/src/features/auth/components/CenteredPage\.jsx:.*h-screen
+^apps/web/src/features/emails/components/EmailInboxView\.jsx:.*style=
+^apps/web/src/features/emails/components/EmailMailboxMembersDatatable\.jsx:.*style=.*width
+^apps/web/src/features/errors/components/ErrorPage04\.jsx:.*h-screen
+^apps/web/src/features/home/components/GlobalNavbarShell\.jsx:.*h-screen
+^apps/web/src/features/home/components/Team\.jsx:.*style=
+^apps/web/src/features/line-dashboard/components/DataTable\.jsx:.*style=.*(width|tableLayout)
+^apps/web/src/features/line-dashboard/components/DataTable\.jsx:.*style=\{toWidthStyle
+^apps/web/src/features/line-dashboard/components/DataTableColumnRenderers\.jsx:.*style=.*width
+^apps/web/src/features/line-dashboard/components/chart/LineHistoryLegend\.jsx:.*backgroundColor
+^apps/web/src/features/line-dashboard/pages/LineDashboardOverviewPage\.jsx:.*(bg|text)-slate-
+^apps/web/src/features/timeline/components/BaseTimeline\.jsx:.*style=
+^apps/web/src/features/timeline/components/filters/TipTreeNode\.jsx:.*style=.*paddingLeft
+^apps/web/src/features/timeline/components/table/TimelineTable(Header|Row)\.jsx:.*style=.*width
