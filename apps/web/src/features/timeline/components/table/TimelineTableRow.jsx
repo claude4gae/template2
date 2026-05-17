@@ -23,6 +23,13 @@ export default function TimelineTableRow({
     onSelect(isSelected ? null : row.id);
   };
 
+  const handleRowKeyDown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleRowClick();
+    }
+  };
+
   const handleUrlClick = (event) => {
     event.stopPropagation();
     if (row.url) {
@@ -34,6 +41,10 @@ export default function TimelineTableRow({
     <div
       data-row-id={row.id}
       onClick={handleRowClick}
+      onKeyDown={handleRowKeyDown}
+      role="option"
+      aria-selected={isSelected}
+      tabIndex={0}
       className={`${baseClasses} ${selectionClasses}`}
     >
       <div
@@ -76,7 +87,8 @@ export default function TimelineTableRow({
           <button
             onClick={handleUrlClick}
             className="inline-flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-muted"
-            title="Open URL"
+            title="URL 열기"
+            aria-label="URL 열기"
           >
             <LinkIcon className="h-4 w-4 text-primary" />
           </button>

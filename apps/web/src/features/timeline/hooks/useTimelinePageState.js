@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { DEFAULT_TYPE_FILTERS } from "../utils/constants";
 import { useTimelineSelectionStore } from "../store/useTimelineSelectionStore";
 import { useTimelineStore } from "../store/useTimelineStore";
@@ -14,6 +14,7 @@ import { useEquipmentInfoQuery } from "./useEquipmentInfoQuery";
  */
 export function useTimelinePageState(params) {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     lineId,
     sdwtId,
@@ -24,6 +25,7 @@ export function useTimelinePageState(params) {
     setPrcGroup,
     setEqp,
     selectedRow,
+    resetSelection,
   } = useTimelineSelectionStore();
 
   const {
@@ -92,7 +94,7 @@ export function useTimelinePageState(params) {
   useEffect(() => {
     if (isValidating || !hasValidationResult) return;
 
-    const currentPath = window.location.pathname;
+    const currentPath = location.pathname;
     const isParamRoute =
       currentPath.includes("/timeline/") && currentPath.split("/").length > 2;
 
@@ -104,7 +106,11 @@ export function useTimelinePageState(params) {
     } else if (isParamRoute) {
       navigate("/timeline", { replace: true });
     }
-  }, [eqpId, navigate, isValidating, hasValidationResult]);
+  }, [eqpId, hasValidationResult, isValidating, location.pathname, navigate]);
+
+  useEffect(() => {
+    resetSelection();
+  }, [eqpId, resetSelection]);
 
   // EQP가 바뀔 때마다 TIP 필터를 초기화하여 예전 선택이 남지 않도록 한다.
   useEffect(() => {

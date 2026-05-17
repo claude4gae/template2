@@ -13,3 +13,5 @@ export const DEFAULT_TYPE_FILTERS = {
   [DATA_TYPES.CTTTM]: true,
   [DATA_TYPES.DRONE]: true,
 };
+
+export const DEFAULT_LOG_QUERY_OPTIONS = {};

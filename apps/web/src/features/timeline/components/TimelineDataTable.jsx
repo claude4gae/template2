@@ -58,7 +58,8 @@ export default function TimelineDataTable({
             <div
               ref={scrollContainerRef}
               className="h-full overflow-auto"
-              role="list"
+              role="listbox"
+              aria-label="타임라인 로그 목록"
             >
               {data.map((row) => (
                 <TimelineTableRow

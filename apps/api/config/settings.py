@@ -198,7 +198,7 @@ DATABASES = {
     },
 }
 
-TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 30) or 30
+TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 90) or 90
 
 
 # ===========================

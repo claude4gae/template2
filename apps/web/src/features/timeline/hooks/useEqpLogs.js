@@ -1,13 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { timelineApiClient } from "../api/client";
+import { useTimelineLogQuery } from "./useTimelineLogQuery";
 
-export const useEqpLogs = (eqpId) =>
-  useQuery({
-    queryKey: ["timeline", "logs", "eqp", eqpId],
-    queryFn: () =>
-      timelineApiClient("/logs/eqp", {
-        params: { eqpId },
-      }),
-    enabled: !!eqpId,
-    staleTime: 1000 * 60 * 5,
-  });
+export const useEqpLogs = (eqpId, logQueryOptions, options) =>
+  useTimelineLogQuery("eqp", eqpId, logQueryOptions, options);

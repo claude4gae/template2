@@ -60,10 +60,10 @@ export const timelineApiClient = async (
   const baseUrl = resolveBaseUrl();
   const fullUrl = buildTimelineUrl(baseUrl, path, params);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
   const executeRequest = async (attempt = 1) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     try {
       const response = await fetch(fullUrl, {
         headers: {
@@ -74,8 +74,6 @@ export const timelineApiClient = async (
         signal: controller.signal,
         ...opts,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -118,8 +116,6 @@ export const timelineApiClient = async (
 
       return response.json();
     } catch (error) {
-      clearTimeout(timeoutId);
-
       if (error.name === "AbortError") {
         throw new Error(`요청 시간이 초과되었습니다. (${timeout}ms)`);
       }
@@ -130,6 +126,8 @@ export const timelineApiClient = async (
       }
 
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 

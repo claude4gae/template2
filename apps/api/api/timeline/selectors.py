@@ -15,9 +15,12 @@ from django.conf import settings
 from django.db import connections
 
 TIMELINE_DB_ALIAS = "timeline"
+DEFAULT_LOG_QUERY_DAYS = 90
+MAX_LOG_LIMIT = 5000
 
 Row = Dict[str, object]
 LogRows = List[Dict[str, object]]
+LogFetcher = Callable[[str, object | None, object | None, int | None], LogRows]
 
 
 # =============================================================================
@@ -34,7 +37,11 @@ def _safe_text(value: object) -> str:
 def _period_date(days: int | None = None) -> str:
     """조회 기준일(YYYY-MM-DD)을 반환합니다."""
 
-    query_days = days if days is not None else settings.TIMELINE_QUERY_DAYS
+    query_days = (
+        days
+        if days is not None
+        else getattr(settings, "TIMELINE_QUERY_DAYS", DEFAULT_LOG_QUERY_DAYS)
+    )
     return datetime.strftime(datetime.now() - timedelta(days=query_days), "%Y-%m-%d")
 
 
@@ -86,6 +93,30 @@ def _build_text_record(row: Row, field_map: Sequence[tuple[str, str]]) -> Dict[s
         target_field: _safe_text(row.get(source_field))
         for target_field, source_field in field_map
     }
+
+
+def _build_time_clause(
+    field_name: str,
+    *,
+    start_at: object | None = None,
+    end_at: object | None = None,
+) -> tuple[str, List[object]]:
+    """로그 조회 시간 조건과 파라미터를 생성합니다."""
+
+    clause = f"{field_name} >= %s"
+    params: List[object] = [start_at or _period_date()]
+    if end_at is not None:
+        clause += f" and {field_name} <= %s"
+        params.append(end_at)
+    return clause, params
+
+
+def _build_limit_clause(limit: int | None = None) -> tuple[str, List[object]]:
+    """선택적으로 SQL limit 절과 파라미터를 생성합니다."""
+
+    if limit is None:
+        return "", []
+    return "limit %s", [limit]
 
 
 # =============================================================================
@@ -172,7 +203,7 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
         select distinct
             sdwt_prod as id
         from sdwt_eqp
-        where line_id = %s
+        where upper(line_id) = %s
           and sdwt_prod is not null
         order by sdwt_prod
         """,
@@ -325,7 +356,7 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
             sdwt_prod as sdwt_prod,
             prc_group as prc_group
         from sdwt_eqp
-        where eqp_cb = %s
+        where upper(eqp_cb) = %s
         limit 1
         """,
         [eqp_key],
@@ -350,12 +381,31 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
 # =============================================================================
 
 
-def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    query_date = _period_date()
+def _fetch_eqp_logs(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
+    time_clause, time_params = _build_time_clause(
+        "event_time",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    limit_clause, limit_params = _build_limit_clause(limit)
     rows = _fetch_all(
-        """
+        f"""
         select
-            concat('EQP-', row_number() over (order by event_time)) as id,
+            concat_ws(
+                '-',
+                'EQP',
+                eqp_cb,
+                to_char(event_time, 'YYYYMMDDHH24MISSUS'),
+                coalesce(event_type::text, ''),
+                coalesce(operator::text, ''),
+                md5(coalesce(comment::text, ''))
+            ) as id,
             eqp_cb as eqp_cb,
             'EQP' as log_type,
             event_type as event_type,
@@ -363,11 +413,12 @@ def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             operator as operator,
             comment as comment
         from eqp_status_hist
-        where event_time > %s
-          and eqp_cb = %s
-        order by event_time
+        where {time_clause}
+          and upper(eqp_cb) = %s
+        order by event_time desc
+        {limit_clause}
         """,
-        [query_date, eqp_id],
+        [*time_params, eqp_id, *limit_params],
     )
 
     return [
@@ -384,12 +435,33 @@ def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
-def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    query_date = _period_date()
+def _fetch_tip_logs(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
+    time_clause, time_params = _build_time_clause(
+        "gpm_update_date",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    limit_clause, limit_params = _build_limit_clause(limit)
     rows = _fetch_all(
-        """
+        f"""
         select
-            concat('TIP-', row_number() over (order by gpm_update_date)) as id,
+            concat_ws(
+                '-',
+                'TIP',
+                eqp_cb,
+                to_char(gpm_update_date, 'YYYYMMDDHH24MISSUS'),
+                coalesce(event_type::text, ''),
+                coalesce(process_id::text, ''),
+                coalesce(step_seq::text, ''),
+                coalesce(ppid::text, ''),
+                md5(coalesce(tip_comment::text, ''))
+            ) as id,
             eqp_cb as eqp_cb,
             'TIP' as log_type,
             event_type as event_type,
@@ -401,11 +473,12 @@ def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             step_seq as step,
             ppid as ppid
         from gpm_tip_hist
-        where gpm_update_date > %s
-          and eqp_cb = %s
-        order by gpm_update_date
+        where {time_clause}
+          and upper(eqp_cb) = %s
+        order by gpm_update_date desc
+        {limit_clause}
         """,
-        [query_date, eqp_id],
+        [*time_params, eqp_id, *limit_params],
     )
 
     return [
@@ -426,11 +499,22 @@ def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
-def _fetch_ctttm_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    period = _period_date()
+def _fetch_ctttm_logs(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
     base_url = getattr(settings, "DRONE_CTTTM_BASE_URL", "")
+    time_clause, time_params = _build_time_clause(
+        "inprg_date",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    limit_clause, limit_params = _build_limit_clause(limit)
     rows = _fetch_all(
-        """
+        f"""
         select
             workorder_id as id,
             eqp_id as eqp_id,
@@ -441,17 +525,22 @@ def _fetch_ctttm_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             description as comment,
             concat(%s, workorder_id, '&lineId=', line_id) as url
         from ctttm_workorder_list
-        where eqp_id = %s
-          and inprg_date > %s
-        order by inprg_date
+        where upper(eqp_id) = %s
+          and {time_clause}
+        order by inprg_date desc
+        {limit_clause}
         """,
-        [base_url, eqp_id, period],
+        [base_url, eqp_id, *time_params, *limit_params],
     )
 
     if not rows:
         return []
 
-    workorder_ids = list({row.get("id") for row in rows if row.get("id") is not None})
+    workorder_ids = list({
+        row.get("id")
+        for row in rows
+        if row.get("id") is not None
+    })
     summary_rows: List[Dict[str, object]] = []
     if workorder_ids:
         summary_rows = _fetch_all(
@@ -486,24 +575,36 @@ def _fetch_ctttm_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
-def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    period = _period_date()
+def _fetch_racb_logs(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
+    time_clause, time_params = _build_time_clause(
+        "create_date",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    limit_clause, limit_params = _build_limit_clause(limit)
     rows = _fetch_all(
-        """
+        f"""
         select
-            CONCAT(line_id, '-', eqp_cb, '-' , create_date, '-', 'update_date' ) as id,
+            CONCAT(line_id, '-', eqp_cb, '-', create_date, '-', racb_type_cd) as id,
             racb_type_cd as event_type,
             create_date as event_time,
             user_name as operator,
             title as comment,
             line_id as line_id,
-            eqp_cb as eqp_cb
+            eqp_cb as eqp_id
         from racb_list
-        where eqp_cb = %s
-          and create_date > %s
-        order by create_date
+        where upper(eqp_cb) = %s
+          and {time_clause}
+        order by create_date desc
+        {limit_clause}
         """,
-        [eqp_id, period],
+        [eqp_id, *time_params, *limit_params],
     )
 
     return [
@@ -522,7 +623,7 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
 
 
 # =============================================================================
-# default DB Drone 로그 조회
+# 기본 DB Drone 로그 조회
 # =============================================================================
 
 
@@ -557,9 +658,20 @@ def _build_drone_chamber_filters(eqp_id: str) -> tuple[str, str, List[object]]:
     )
 
 
-def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
-    period = _period_date()
+def _fetch_drone_logs(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
     base_eqp, match_clause, match_params = _build_drone_chamber_filters(eqp_id)
+    time_clause, time_params = _build_time_clause(
+        "sop.created_at",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    limit_clause, limit_params = _build_limit_clause(limit)
 
     rows = _fetch_all_on_default(
         f"""
@@ -573,12 +685,13 @@ def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             sop.line_id as line_id,
             sop.eqp_id as eqp_id
         from drone_sop as sop
-        where sop.created_at > %s
-          and sop.eqp_id = %s
+        where {time_clause}
+          and upper(sop.eqp_id) = %s
           {match_clause}
-        order by sop.created_at
+        order by sop.created_at desc
+        {limit_clause}
         """,
-        [period, base_eqp, *match_params],
+        [*time_params, base_eqp, *match_params, *limit_params],
     )
 
     return [
@@ -597,26 +710,55 @@ def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
-TIMELINE_LOG_FETCHERS: Dict[str, Callable[[str], LogRows]] = {
-    "eqp": lambda eqp_key: _fetch_eqp_logs(eqp_id=eqp_key),
-    "tip": lambda eqp_key: _fetch_tip_logs(eqp_id=eqp_key),
-    "ctttm": lambda eqp_key: _fetch_ctttm_logs(eqp_id=eqp_key),
-    "racb": lambda eqp_key: _fetch_racb_logs(eqp_id=eqp_key),
-    "drone": lambda eqp_key: _fetch_drone_logs(eqp_id=eqp_key),
+TIMELINE_LOG_FETCHERS: Dict[str, LogFetcher] = {
+    "eqp": lambda eqp_key, start_at, end_at, limit: _fetch_eqp_logs(
+        eqp_id=eqp_key,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    ),
+    "tip": lambda eqp_key, start_at, end_at, limit: _fetch_tip_logs(
+        eqp_id=eqp_key,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    ),
+    "ctttm": lambda eqp_key, start_at, end_at, limit: _fetch_ctttm_logs(
+        eqp_id=eqp_key,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    ),
+    "racb": lambda eqp_key, start_at, end_at, limit: _fetch_racb_logs(
+        eqp_id=eqp_key,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    ),
+    "drone": lambda eqp_key, start_at, end_at, limit: _fetch_drone_logs(
+        eqp_id=eqp_key,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    ),
 }
-TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "drone", "event")
+TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "drone")
 
 
-def _fetch_logs_by_type_normalized(*, eqp_key: str, type_key: str) -> LogRows:
+def _fetch_logs_by_type_normalized(
+    *,
+    eqp_key: str,
+    type_key: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> LogRows:
     """정규화가 끝난 설비 ID로 타입별 로그를 조회합니다."""
-
-    if type_key == "event":
-        return []
 
     fetcher = TIMELINE_LOG_FETCHERS.get(type_key)
     if fetcher is None:
         return []
-    return fetcher(eqp_key)
+    return fetcher(eqp_key, start_at, end_at, limit)
 
 
 # =============================================================================
@@ -624,7 +766,13 @@ def _fetch_logs_by_type_normalized(*, eqp_key: str, type_key: str) -> LogRows:
 # =============================================================================
 
 
-def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]:
+def get_logs_for_equipment(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> Dict[str, List[Dict[str, object]]]:
     """설비 로그(타입별)를 반환합니다.
 
     입력:
@@ -642,12 +790,25 @@ def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]
 
     eqp_key = normalize_id(eqp_id)
     return {
-        key: _fetch_logs_by_type_normalized(eqp_key=eqp_key, type_key=key)
+        key: _fetch_logs_by_type_normalized(
+            eqp_key=eqp_key,
+            type_key=key,
+            start_at=start_at,
+            end_at=end_at,
+            limit=limit,
+        )
         for key in TIMELINE_LOG_KEYS
     }
 
 
-def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
+def get_logs_by_type(
+    *,
+    eqp_id: str,
+    log_key: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
     """특정 타입 로그만 반환합니다.
 
     입력:
@@ -666,10 +827,22 @@ def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
 
     eqp_key = normalize_id(eqp_id)
     type_key = (log_key or "").strip().lower()
-    return _fetch_logs_by_type_normalized(eqp_key=eqp_key, type_key=type_key)
+    return _fetch_logs_by_type_normalized(
+        eqp_key=eqp_key,
+        type_key=type_key,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    )
 
 
-def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+def get_merged_logs(
+    *,
+    eqp_id: str,
+    start_at: object | None = None,
+    end_at: object | None = None,
+    limit: int | None = None,
+) -> List[Dict[str, object]]:
     """모든 타입 로그를 합쳐 정렬된 목록으로 반환합니다.
 
     입력:
@@ -688,10 +861,20 @@ def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     eqp_key = normalize_id(eqp_id)
     merged: List[Dict[str, object]] = []
     for key in TIMELINE_LOG_KEYS:
-        merged.extend(_fetch_logs_by_type_normalized(eqp_key=eqp_key, type_key=key))
+        merged.extend(
+            _fetch_logs_by_type_normalized(
+                eqp_key=eqp_key,
+                type_key=key,
+                start_at=start_at,
+                end_at=end_at,
+                limit=limit,
+            )
+        )
 
-    merged.sort(key=lambda log: str(log.get("eventTime") or ""))
-    return merged
+    merged.sort(key=lambda log: str(log.get("eventTime") or ""), reverse=True)
+    if limit is None:
+        return merged
+    return merged[:limit]
 
 
 __all__ = [
@@ -703,5 +886,7 @@ __all__ = [
     "list_lines",
     "list_prc_groups",
     "list_sdwt_for_line",
+    "DEFAULT_LOG_QUERY_DAYS",
+    "MAX_LOG_LIMIT",
     "normalize_id",
 ]

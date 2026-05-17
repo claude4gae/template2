@@ -1,13 +1,17 @@
 # =============================================================================
-# 모듈 설명: timeline 더미 엔드포인트를 제공합니다.
+# 모듈 설명: timeline API 엔드포인트를 제공합니다.
 # - 주요 클래스: TimelineLinesView, TimelineEquipmentInfoView, TimelineLogsView 등
-# - 불변 조건: 더미 데이터만 반환하며 외부 호출은 없습니다.
+# - 불변 조건: HTTP 계층은 selectors를 통해서만 조회합니다.
 # =============================================================================
 
-"""타임라인 더미 뷰."""
+"""타임라인 API 뷰."""
 from __future__ import annotations
 
+from datetime import datetime, time, timezone as datetime_timezone
+
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework.views import APIView
 
 from . import selectors
@@ -38,8 +42,86 @@ def _required_query_id(
     return value, None
 
 
+def _parse_log_limit(request: HttpRequest) -> tuple[int | None, JsonResponse | None]:
+    """로그 조회 limit 값을 검증하고, 입력된 경우에만 최대값 안으로 보정합니다."""
+
+    raw_limit = (request.GET.get("limit") or "").strip()
+    if not raw_limit:
+        return None, None
+
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        return 0, _missing_query_response("limit must be a positive integer")
+
+    if limit <= 0:
+        return 0, _missing_query_response("limit must be a positive integer")
+    return min(limit, selectors.MAX_LOG_LIMIT), None
+
+
+def _to_comparable_datetime(value: datetime) -> datetime:
+    """aware/naive datetime 비교가 가능하도록 UTC naive 값으로 통일합니다."""
+
+    if timezone.is_aware(value):
+        return value.astimezone(datetime_timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _parse_log_datetime(
+    request: HttpRequest,
+    key: str,
+    *,
+    is_end: bool = False,
+) -> tuple[str | None, datetime | None, JsonResponse | None]:
+    """로그 조회 시각 파라미터를 ISO 문자열과 비교용 datetime으로 변환합니다."""
+
+    raw_value = (request.GET.get(key) or "").strip()
+    if not raw_value:
+        return None, None, None
+
+    parsed_date = parse_date(raw_value)
+    if parsed_date is not None and len(raw_value) == 10:
+        boundary_time = time.max if is_end else time.min
+        value = datetime.combine(parsed_date, boundary_time)
+        return value.isoformat(), value, None
+
+    parsed_datetime = parse_datetime(raw_value)
+    if parsed_datetime is not None:
+        comparable = _to_comparable_datetime(parsed_datetime)
+        return comparable.isoformat(), comparable, None
+
+    return (
+        None,
+        None,
+        _missing_query_response(f"{key} must be a valid date or datetime"),
+    )
+
+
+def _log_query_options(
+    request: HttpRequest,
+) -> tuple[dict[str, object], JsonResponse | None]:
+    """로그 조회 공통 query option을 파싱합니다."""
+
+    limit, limit_error = _parse_log_limit(request)
+    if limit_error:
+        return {}, limit_error
+
+    start_at, start_comparable, start_error = _parse_log_datetime(request, "from")
+    if start_error:
+        return {}, start_error
+
+    end_at, end_comparable, end_error = _parse_log_datetime(request, "to", is_end=True)
+    if end_error:
+        return {}, end_error
+
+    if start_comparable and end_comparable and start_comparable > end_comparable:
+        return {}, _missing_query_response("from must be earlier than or equal to to")
+
+    return {"start_at": start_at, "end_at": end_at, "limit": limit}, None
+
+
 class TimelineLinesView(APIView):
-    """더미 라인 목록을 반환합니다."""
+    """라인 목록을 반환합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """라인 목록을 반환합니다.
@@ -133,7 +215,10 @@ class TimelinePrcGroupView(APIView):
         if not line_id or not sdwt_id:
             return _missing_query_response("lineId and sdwtId are required")
 
-        return JsonResponse(selectors.list_prc_groups(line_id=line_id, sdwt_id=sdwt_id), safe=False)
+        return JsonResponse(
+            selectors.list_prc_groups(line_id=line_id, sdwt_id=sdwt_id),
+            safe=False,
+        )
 
 
 class TimelineEquipmentsView(APIView):
@@ -246,7 +331,7 @@ class TimelineEquipmentInfoView(APIView):
 
 
 class _TimelineLogsByTypeView(APIView):
-    """log_key에 해당하는 더미 로그 배열을 반환하는 베이스 뷰입니다."""
+    """log_key에 해당하는 로그 배열을 반환하는 베이스 뷰입니다."""
 
     log_key: str = ""
 
@@ -276,7 +361,18 @@ class _TimelineLogsByTypeView(APIView):
         if error_response:
             return error_response
 
-        return JsonResponse(selectors.get_logs_by_type(eqp_id=eqp_id, log_key=self.log_key), safe=False)
+        log_options, option_error = _log_query_options(request)
+        if option_error:
+            return option_error
+
+        return JsonResponse(
+            selectors.get_logs_by_type(
+                eqp_id=eqp_id,
+                log_key=self.log_key,
+                **log_options,
+            ),
+            safe=False,
+        )
 
 
 class TimelineLogsView(_TimelineLogsByTypeView):
@@ -310,7 +406,17 @@ class TimelineLogsView(_TimelineLogsByTypeView):
         if error_response:
             return error_response
 
-        return JsonResponse(selectors.get_merged_logs(eqp_id=eqp_id), safe=False)
+        log_options, option_error = _log_query_options(request)
+        if option_error:
+            return option_error
+
+        return JsonResponse(
+            selectors.get_merged_logs(
+                eqp_id=eqp_id,
+                **log_options,
+            ),
+            safe=False,
+        )
 
 
 class TimelineEqpLogsView(_TimelineLogsByTypeView):

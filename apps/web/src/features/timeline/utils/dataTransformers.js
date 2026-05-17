@@ -1,21 +1,7 @@
 // src/features/timeline/utils/dataTransformers.js
 import { formatDateTime } from "./dateUtils";
+import { formatDuration } from "./logs";
 import { getTipGroupKey } from "./tipUtils";
-
-function formatDuration(duration) {
-  if (!duration || duration <= 0) return "-";
-
-  const totalSeconds = Math.floor(duration / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return [
-    hours.toString().padStart(2, "0"),
-    minutes.toString().padStart(2, "0"),
-    seconds.toString().padStart(2, "0"),
-  ].join(":");
-}
 
 function isLogVisible(log, typeFilters, selectedTipGroups) {
   if (!typeFilters[log.logType]) return false;

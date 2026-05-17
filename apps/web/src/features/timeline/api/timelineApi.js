@@ -20,8 +20,10 @@ export const timelineApi = {
   },
 
   // 로그 가져오기 - sdwtId 제거
-  fetchLogs: ({ lineId, eqpId }) =>
-    timelineApiClient("/logs", { params: { lineId, eqpId } }),
+  fetchLogs: ({ lineId, eqpId, ...logQueryOptions }) =>
+    timelineApiClient("/logs", {
+      params: { lineId, eqpId, ...logQueryOptions },
+    }),
 
   // EQP 정보 조회
   fetchEquipmentInfo: (lineId, eqpId) =>

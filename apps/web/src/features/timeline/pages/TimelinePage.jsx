@@ -45,7 +45,14 @@ export default function TimelinePage() {
   const { isSettingsOpen, setIsSettingsOpen } = settings;
 
   const { isValidating, validationError } = validation;
-  const { logsLoading, logsWithDuration, tableData, filteredTipLogs } = logs;
+  const {
+    logsLoading,
+    logsWithDuration,
+    tableData,
+    filteredTipLogs,
+    logErrors,
+    refetchFailedLogs,
+  } = logs;
 
   // 검증 중일 때 로딩 표시
   if (isValidating) {
@@ -91,6 +98,8 @@ export default function TimelinePage() {
             tableData={tableData}
             typeFilters={typeFilters}
             handleFilter={handleFilterChange}
+            logErrors={logErrors}
+            onRetryLogs={refetchFailedLogs}
           />
 
           <section className="grid min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border border-border bg-card p-3 shadow-sm">

@@ -1,7 +1,6 @@
-// src/features/timeline/components/logDetail/TipDetail.jsx
+// 파일 경로: src/features/timeline/components/logDetail/TipDetail.jsx
 import React from "react";
 import Field from "./Field";
-import UrlField from "./UrlField";
 
 export default function TipDetail({ log }) {
   return (
@@ -11,9 +10,11 @@ export default function TipDetail({ log }) {
       <Field label="TIP Event" value={log.eventType} />
       <Field label="Time" value={log.eventTime} />
       <Field label="Operator" value={log.operator} />
-      <Field label="Level" value={log.level} />
+      <Field label="Line" value={log.lineId} />
+      <Field label="Process" value={log.process} />
+      <Field label="Step" value={log.step} />
+      <Field label="PPID" value={log.ppid} />
       <Field label="Comment" value={log.comment} className="col-span-2" />
-      <UrlField url={log.url} />
     </>
   );
 }

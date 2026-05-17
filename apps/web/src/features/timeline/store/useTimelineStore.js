@@ -1,5 +1,26 @@
 import { create } from "zustand"
 
+const RANGE_SYNC_TOLERANCE_MS = 1
+
+function shouldSkipRangeSync(timeline, start, end) {
+  if (!timeline?.getWindow) return false
+
+  const current = timeline.getWindow()
+  const currentStart = new Date(current.start).getTime()
+  const currentEnd = new Date(current.end).getTime()
+  const nextStart = new Date(start).getTime()
+  const nextEnd = new Date(end).getTime()
+
+  if ([currentStart, currentEnd, nextStart, nextEnd].some(Number.isNaN)) {
+    return false
+  }
+
+  return (
+    Math.abs(currentStart - nextStart) <= RANGE_SYNC_TOLERANCE_MS &&
+    Math.abs(currentEnd - nextEnd) <= RANGE_SYNC_TOLERANCE_MS
+  )
+}
+
 export const useTimelineStore = create((set, get) => ({
   /* —— Timeline 전용 상태 —— */
   showLegend: false,
@@ -18,7 +39,8 @@ export const useTimelineStore = create((set, get) => ({
   syncRange: (self, start, end) => {
     const { pool } = get()
     pool.forEach((tl) => {
-      if (tl !== self) tl.setWindow(start, end, { animation: false })
+      if (tl === self || shouldSkipRangeSync(tl, start, end)) return
+      tl.setWindow(start, end, { animation: false })
     })
   },
 }))
