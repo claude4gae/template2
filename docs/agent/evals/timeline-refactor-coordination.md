@@ -1,7 +1,7 @@
 # Eval: Timeline Refactor Coordination
 
 ## Task
-`docs/refactor-agent-prompts/timeline.txt` 기준의 timeline feature 변경을 검토하거나 이어서 구현한다.
+현재 문서 체계(`docs/inventory.md`, `docs/modules/timeline.md`, `docs/api/timeline.md`) 기준으로 timeline feature 변경을 검토하거나 이어서 구현한다.
 
 ## Success Criteria
 - 기존 사용자 변경을 덮어쓰지 않는다.

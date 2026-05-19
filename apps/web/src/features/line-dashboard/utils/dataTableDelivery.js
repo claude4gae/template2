@@ -79,6 +79,7 @@ export function normalizeDeliveryRows(rowOriginal) {
         reason: normalizeTextValue(row?.reason),
         externalKey: normalizeTextValue(row?.externalKey ?? row?.external_key),
         sentComment: normalizeTextValue(row?.sentComment ?? row?.sent_comment),
+        sentStep: normalizeTextValue(row?.sentStep ?? row?.sent_step),
         sentAt: row?.sentAt ?? row?.sent_at ?? null,
         updatedAt: row?.updatedAt ?? row?.updated_at ?? null,
       }
@@ -314,6 +315,42 @@ export function isDeliveryAlreadyInformed(rowOriginal) {
     summary.status === "pending" ||
     summary.status === "unknown"
   )
+}
+
+function parseDeliveryTimestamp(value) {
+  if (value instanceof Date) {
+    const time = value.getTime()
+    return Number.isFinite(time) ? time : null
+  }
+  if (typeof value === "number") return Number.isFinite(value) ? value : null
+  if (typeof value !== "string") return null
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? time : null
+}
+
+export function findSuccessfulDeliveryStep(rowOriginal) {
+  const visibleChannels = normalizeDeliveryVisibleChannels(rowOriginal)
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  let latestSentTime = null
+  let latestSentStep = null
+
+  for (const row of deliveryRows) {
+    if (row.status !== "success") continue
+    if (visibleChannels && !visibleChannels.has(row.channel)) continue
+    if (!row.sentStep) continue
+
+    const sentTime = parseDeliveryTimestamp(row.sentAt)
+    if (sentTime === null) {
+      if (!latestSentStep) latestSentStep = row.sentStep
+      continue
+    }
+    if (latestSentTime === null || sentTime > latestSentTime) {
+      latestSentTime = sentTime
+      latestSentStep = row.sentStep
+    }
+  }
+
+  return latestSentStep
 }
 
 export function getDeliveryStatusLabel(summary) {

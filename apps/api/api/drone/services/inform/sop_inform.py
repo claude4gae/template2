@@ -145,6 +145,7 @@ def _run_messenger_inform(
         return 0
 
     sent_comment_by_delivery_id: dict[int, Any] = {}
+    sent_step_by_delivery_id: dict[int, str] = {}
     sent_count = 0
     for delivery in ready_deliveries:
         messenger_template_key = _normalize_string_value(delivery.config.get("messenger_template_key"))
@@ -187,12 +188,18 @@ def _run_messenger_inform(
                 config=messenger_config,
             )
             sent_comment_by_delivery_id[delivery.delivery_id] = delivery_row.get("comment")
+            sent_step = _normalize_string_value(delivery_row.get("metro_current_step"))
+            if sent_step:
+                sent_step_by_delivery_id[delivery.delivery_id] = sent_step
             sent_count += 1
         except Exception:
             logger.exception("Messenger send failed (sop_id=%s)", delivery.sop_id)
             _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_SEND_FAILED)
 
-    _mark_successful_deliveries_with_comments(sent_comment_by_id=sent_comment_by_delivery_id)
+    _mark_successful_deliveries_with_comments(
+        sent_comment_by_id=sent_comment_by_delivery_id,
+        sent_step_by_id=sent_step_by_delivery_id,
+    )
     return sent_count
 
 
@@ -222,6 +229,7 @@ def _run_mail_inform(
         return 0
 
     sent_comment_by_delivery_id: dict[int, Any] = {}
+    sent_step_by_delivery_id: dict[int, str] = {}
     sent_count = 0
     for delivery in ready_deliveries:
         template_key = _normalize_string_value(delivery.config.get("mail_template_key"))
@@ -250,12 +258,18 @@ def _run_mail_inform(
                 config=mail_config,
             )
             sent_comment_by_delivery_id[delivery.delivery_id] = delivery_row.get("comment")
+            sent_step = _normalize_string_value(delivery_row.get("metro_current_step"))
+            if sent_step:
+                sent_step_by_delivery_id[delivery.delivery_id] = sent_step
             sent_count += 1
         except Exception:
             logger.exception("Mail send failed (sop_id=%s)", delivery.sop_id)
             _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_SEND_FAILED)
 
-    _mark_successful_deliveries_with_comments(sent_comment_by_id=sent_comment_by_delivery_id)
+    _mark_successful_deliveries_with_comments(
+        sent_comment_by_id=sent_comment_by_delivery_id,
+        sent_step_by_id=sent_step_by_delivery_id,
+    )
     return sent_count
 
 

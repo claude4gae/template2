@@ -130,6 +130,28 @@ def _latest_success_sent_at(*, delivery_rows: list[dict[str, Any]]) -> datetime 
     return latest_sent_at
 
 
+def _latest_success_sent_step(*, delivery_rows: list[dict[str, Any]]) -> str | None:
+    """성공 delivery 중 가장 최근 발송 스텝을 반환합니다."""
+
+    latest_sent_at: datetime | None = None
+    latest_sent_step: str | None = None
+    for delivery in delivery_rows:
+        if delivery.get("status") != "success":
+            continue
+        sent_step = delivery.get("sentStep")
+        if not isinstance(sent_step, str) or not sent_step.strip():
+            continue
+        sent_at = delivery.get("sentAt")
+        if not isinstance(sent_at, datetime):
+            if latest_sent_step is None:
+                latest_sent_step = sent_step.strip()
+            continue
+        if latest_sent_at is None or sent_at > latest_sent_at:
+            latest_sent_at = sent_at
+            latest_sent_step = sent_step.strip()
+    return latest_sent_step
+
+
 def _extract_row_target(row: dict[str, Any]) -> str | None:
     """테이블에 표시할 SOP row의 target 값을 반환합니다."""
 
@@ -243,24 +265,25 @@ def _attach_delivery_summary_columns(
         channel for channel, flag in channel_flags.items() if flag is not None
     ]
 
+    visible_delivery_rows = [
+        delivery
+        for delivery in delivery_rows
+        if delivery.get("channel") not in hidden_channel_set
+    ]
     jira_success = next(
         (
             delivery
-            for delivery in delivery_rows
-            if "jira" not in hidden_channel_set
-            and delivery.get("channel") == "jira"
+            for delivery in visible_delivery_rows
+            if delivery.get("channel") == "jira"
             and delivery.get("status") == "success"
         ),
         None,
     )
     if jira_success:
         enriched["jira_key"] = jira_success.get("externalKey")
-        enriched["inform_step"] = jira_success.get("sentStep")
-    visible_delivery_rows = [
-        delivery
-        for delivery in delivery_rows
-        if delivery.get("channel") not in hidden_channel_set
-    ]
+    inform_step = _latest_success_sent_step(delivery_rows=visible_delivery_rows)
+    if inform_step:
+        enriched["inform_step"] = inform_step
     enriched["informed_at"] = _latest_success_sent_at(delivery_rows=visible_delivery_rows)
     return enriched
 

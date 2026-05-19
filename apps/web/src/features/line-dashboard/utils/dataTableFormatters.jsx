@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef } from "react"
 import { IconArrowNarrowRight } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
-import { isDeliveryAlreadyInformed } from "./dataTableDelivery"
+import { findSuccessfulDeliveryStep, isDeliveryAlreadyInformed } from "./dataTableDelivery"
 
 /* ============================================
  * 공통 상수
@@ -336,7 +336,9 @@ function MetroStepFlowCell({ rowData }) {
 
   const mainStep = normalizeStepValue(rowData.main_step)
   const metroSteps = parseMetroSteps(rowData.metro_steps)
-  const informStep = normalizeStepValue(rowData.inform_step)           // 위치 정보로만 사용
+  const informStep =
+    normalizeStepValue(rowData.inform_step) ||
+    normalizeStepValue(findSuccessfulDeliveryStep(rowData))
   const currentStep = normalizeStepValue(rowData.metro_current_step)
   const customEndStep = normalizeStepValue(rowData.custom_end_step)
   const metroEndStep = normalizeStepValue(rowData.metro_end_step)
@@ -363,14 +365,14 @@ function MetroStepFlowCell({ rowData }) {
   }
 
   // 인폼 라벨 결정
-  // - 표시 가능한 채널 전체 완료 → Inform 완료 (위치는 inform_step || endStep)
+  // - 표시 가능한 채널 전체 완료 → Inform 완료 (위치는 실제 발송 성공 step)
   // - 예약 상태이고 아직 전체 완료 아님 → 인폼예정 (위치는 custom_end_step || metro_end_step)
   let informLabelType = "none"  // 내부 상태: 없음 | 완료 | 예정
   let informLabelStep = null
 
   if (isInformComplete) {
     informLabelType = "done"
-    informLabelStep = informStep || endStep || null
+    informLabelStep = informStep
   } else if (needToSend) {
     if (customEndStep) {
       informLabelType = "planned"

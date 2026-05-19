@@ -121,6 +121,7 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
             update_parts.append(f'"{col}" = COALESCE({quoted_table}."{col}", EXCLUDED."{col}")')
             continue
         update_parts.append(f'"{col}" = COALESCE(EXCLUDED."{col}", {quoted_table}."{col}")')
+    update_parts.append('"updated_at" = NOW()')
     update_clause = ", ".join(update_parts)
 
     sql = f"""

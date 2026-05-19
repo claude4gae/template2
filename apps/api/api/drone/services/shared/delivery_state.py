@@ -448,6 +448,7 @@ def mark_channel_delivery_status(
     reason: str | None = None,
     external_key_by_id: dict[int, str] | None = None,
     sent_comment_by_id: dict[int, Any] | None = None,
+    sent_step_by_id: dict[int, str] | None = None,
 ) -> None:
     """target/channel 발송 상태를 일괄 갱신합니다."""
 
@@ -471,7 +472,12 @@ def mark_channel_delivery_status(
 
     normalized_external_key_by_id = external_key_by_id or {}
     normalized_sent_comment_by_id = sent_comment_by_id or {}
-    if not normalized_external_key_by_id and not normalized_sent_comment_by_id:
+    normalized_sent_step_by_id = sent_step_by_id or {}
+    if (
+        not normalized_external_key_by_id
+        and not normalized_sent_comment_by_id
+        and not normalized_sent_step_by_id
+    ):
         with transaction.atomic():
             DroneSopDelivery.objects.filter(id__in=normalized_ids).update(**base_updates)
             _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=normalized_ids)
@@ -487,6 +493,9 @@ def mark_channel_delivery_status(
                 updates["sent_comment"] = normalize_sent_comment(
                     normalized_sent_comment_by_id.get(delivery_id)
                 )
+            sent_step = normalized_sent_step_by_id.get(delivery_id)
+            if isinstance(sent_step, str) and sent_step.strip():
+                updates["sent_step"] = sent_step.strip()
             DroneSopDelivery.objects.filter(id=delivery_id).update(**updates)
         _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=normalized_ids)
 

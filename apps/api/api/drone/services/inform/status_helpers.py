@@ -48,13 +48,16 @@ def mark_successful_deliveries(*, delivery_ids: Sequence[int]) -> None:
 def mark_successful_deliveries_with_comments(
     *,
     sent_comment_by_id: dict[int, Any],
+    sent_step_by_id: dict[int, str] | None = None,
 ) -> None:
-    """성공 delivery ID별 발송 comment 스냅샷을 함께 기록합니다."""
+    """성공 delivery ID별 발송 코멘트/스텝 스냅샷을 함께 기록합니다."""
 
+    delivery_ids = sorted(set(sent_comment_by_id) | set(sent_step_by_id or {}))
     mark_channel_delivery_status(
-        delivery_ids=list(sent_comment_by_id.keys()),
+        delivery_ids=delivery_ids,
         status=DroneSopDelivery.Statuses.SUCCESS,
         sent_comment_by_id=sent_comment_by_id,
+        sent_step_by_id=sent_step_by_id,
     )
 
 

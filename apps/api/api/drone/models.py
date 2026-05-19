@@ -134,6 +134,15 @@ class DroneSOP(models.Model):
 
         if not self.pk:
             return None
+        prefetched_rows = self._prefetched_delivery_rows()
+        if prefetched_rows is not None:
+            for delivery in prefetched_rows:
+                if (
+                    delivery.channel == DroneSopDelivery.Channels.JIRA
+                    and delivery.status == DroneSopDelivery.Statuses.SUCCESS
+                ):
+                    return delivery
+            return None
         return (
             self.channel_deliveries.filter(
                 channel=DroneSopDelivery.Channels.JIRA,
@@ -163,6 +172,23 @@ class DroneSOP(models.Model):
 
         if not self.pk:
             return None
+        prefetched_rows = self._prefetched_delivery_rows()
+        if prefetched_rows is not None:
+            success_rows = [
+                delivery
+                for delivery in prefetched_rows
+                if delivery.status == DroneSopDelivery.Statuses.SUCCESS
+            ]
+            if not success_rows:
+                return None
+            success_rows.sort(
+                key=lambda delivery: (
+                    delivery.sent_at is None,
+                    delivery.sent_at,
+                    delivery.id or 0,
+                )
+            )
+            return success_rows[0].sent_at
         delivery = (
             self.channel_deliveries.filter(status=DroneSopDelivery.Statuses.SUCCESS)
             .order_by("sent_at", "id")
@@ -170,9 +196,20 @@ class DroneSOP(models.Model):
         )
         return delivery.sent_at if delivery else None
 
+    def _prefetched_delivery_rows(self) -> list["DroneSopDelivery"] | None:
+        """prefetch된 delivery row를 DB 조회 없이 ID 순서로 반환합니다."""
+
+        prefetched = getattr(self, "_prefetched_objects_cache", {}).get("channel_deliveries")
+        if prefetched is None:
+            return None
+        return sorted(list(prefetched), key=lambda delivery: delivery.id or 0)
+
     def _delivery_channel_rows(self, channel: str) -> list["DroneSopDelivery"]:
         """지정 채널의 delivery row를 ID 순서로 반환합니다."""
 
+        prefetched_rows = self._prefetched_delivery_rows()
+        if prefetched_rows is not None:
+            return [delivery for delivery in prefetched_rows if delivery.channel == channel]
         return list(self.channel_deliveries.filter(channel=channel).order_by("id"))
 
     @staticmethod
