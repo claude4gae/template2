@@ -322,6 +322,105 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(row["email"], "external-50008@samsung.com")
         self.assertEqual(row["userSdwtProd"], "external-group")
 
+    def test_account_user_pool_filters_by_department_before_group(self) -> None:
+        """사용자 pool 조회가 department 기준 소속 후보와 사용자 결과를 좁히는지 확인합니다."""
+
+        User = get_user_model()
+        now = timezone.now()
+        target_user = User.objects.create_user(
+            sabun="S52001",
+            password="test-password",
+            knox_id="knox-52001",
+            email="target@example.com",
+            username="대상사용자",
+        )
+        _set_current_affiliation(
+            target_user,
+            department="TargetDept",
+            line="L9",
+            user_sdwt_prod="target-group",
+        )
+        same_department_other_group = User.objects.create_user(
+            sabun="S52002",
+            password="test-password",
+            knox_id="knox-52002",
+            email="same-dept-other@example.com",
+            username="같은부서다른소속",
+        )
+        _set_current_affiliation(
+            same_department_other_group,
+            department="TargetDept",
+            line="L9",
+            user_sdwt_prod="target-other-group",
+        )
+        other_department_user = User.objects.create_user(
+            sabun="S52003",
+            password="test-password",
+            knox_id="knox-52003",
+            email="other-dept-same@example.com",
+            username="다른부서사용자",
+        )
+        _set_current_affiliation(
+            other_department_user,
+            department="OtherDept",
+            line="L9",
+            user_sdwt_prod="other-dept-group",
+        )
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="external-target-dept",
+            username="외부대상",
+            department="TargetDept",
+            predicted_user_sdwt_prod="target-group",
+            source_updated_at=now,
+            last_seen_at=now,
+        )
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="external-other-dept",
+            username="외부타부서",
+            department="OtherDept",
+            predicted_user_sdwt_prod="target-group",
+            source_updated_at=now,
+            last_seen_at=now,
+        )
+
+        self.client.force_login(self.user)
+        option_response = self.client.get(
+            reverse("account-users"),
+            {"department": "TargetDept", "includeExternalSnapshots": "true", "limit": 1},
+        )
+        load_response = self.client.get(
+            reverse("account-users"),
+            {
+                "department": "TargetDept",
+                "userSdwtProd": "target-group",
+                "contactField": "email",
+                "includeExternalSnapshots": "true",
+                "limit": "all",
+            },
+        )
+
+        self.assertEqual(option_response.status_code, 200)
+        option_payload = option_response.json()
+        self.assertIn("TargetDept", option_payload["departments"])
+        self.assertIn("OtherDept", option_payload["departments"])
+        self.assertIn("target-group", option_payload["userSdwtProds"])
+        self.assertIn("target-other-group", option_payload["userSdwtProds"])
+        self.assertNotIn("other-dept-group", option_payload["userSdwtProds"])
+        self.assertNotIn("group-a", option_payload["userSdwtProds"])
+
+        self.assertEqual(load_response.status_code, 200)
+        rows_by_key = {row["recipientKey"]: row for row in load_response.json()["results"]}
+        self.assertIn(f"user:{target_user.id}", rows_by_key)
+        self.assertIn("external:external-target-dept", rows_by_key)
+        self.assertNotIn(f"user:{same_department_other_group.id}", rows_by_key)
+        self.assertNotIn(f"user:{other_department_user.id}", rows_by_key)
+        self.assertNotIn("external:external-other-dept", rows_by_key)
+        self.assertEqual(rows_by_key[f"user:{target_user.id}"]["department"], "TargetDept")
+        self.assertEqual(rows_by_key[f"user:{target_user.id}"]["userSdwtProd"], "target-group")
+        self.assertEqual(rows_by_key["external:external-target-dept"]["recipientType"], "external")
+        self.assertEqual(rows_by_key["external:external-target-dept"]["department"], "TargetDept")
+        self.assertEqual(rows_by_key["external:external-target-dept"]["userSdwtProd"], "target-group")
+
     def test_account_user_pool_rejects_unknown_contact_field(self) -> None:
         """지원하지 않는 연락처 필드는 명시적으로 거부해야 합니다."""
 

@@ -55,6 +55,18 @@ def _normalize_text_list(values: Iterable[Any]) -> list[str]:
     return normalized
 
 
+def _collapse_text_values(values: Iterable[Any]) -> list[str]:
+    """표시값을 유지하면서 대소문자 비구분 중복을 제거합니다."""
+
+    display_by_key: dict[str, str] = {}
+    for value in values:
+        normalized = _normalize_text(value)
+        if not normalized:
+            continue
+        display_by_key.setdefault(normalized.casefold(), normalized)
+    return sorted(display_by_key.values())
+
+
 def _normalize_positive_int_set(values: Iterable[Any], *, allow_cast: bool = False) -> set[int]:
     """양의 정수 ID 집합을 중복 없이 정규화합니다."""
 
@@ -452,11 +464,16 @@ def list_active_user_ids_with_contact_by_ids(*, user_ids: Iterable[int], contact
     return valid_ids
 
 
-def list_distinct_active_user_sdwt_prod_values(*, include_external_snapshots: bool = False) -> list[str]:
+def list_distinct_active_user_sdwt_prod_values(
+    *,
+    include_external_snapshots: bool = False,
+    department: str = "",
+) -> list[str]:
     """활성 사용자 pool에 존재하는 user_sdwt_prod 목록을 반환합니다.
 
     입력:
     - include_external_snapshots: 외부 소속 스냅샷의 예측 소속 포함 여부
+    - department: 특정 department로 소속 목록을 좁힐 값
 
     반환:
     - list[str]: 정렬된 user_sdwt_prod 목록
@@ -472,11 +489,18 @@ def list_distinct_active_user_sdwt_prod_values(*, include_external_snapshots: bo
     # 1) 활성 사용자에서 소속 값 수집
     # -----------------------------------------------------------------------------
     User = get_user_model()
-    values = (
+    normalized_department = _normalize_text(department) or ""
+    queryset = (
         User.objects.filter(is_active=True)
         .exclude(current_affiliation__affiliation__user_sdwt_prod__isnull=True)
         .exclude(current_affiliation__affiliation__user_sdwt_prod__exact="")
-        .values_list("current_affiliation__affiliation__user_sdwt_prod", flat=True)
+    )
+    if normalized_department:
+        queryset = queryset.filter(
+            current_affiliation__affiliation__department__iexact=normalized_department
+        )
+    values = (
+        queryset.values_list("current_affiliation__affiliation__user_sdwt_prod", flat=True)
         .order_by("current_affiliation__affiliation__user_sdwt_prod")
         .distinct()
     )
@@ -486,10 +510,36 @@ def list_distinct_active_user_sdwt_prod_values(*, include_external_snapshots: bo
     # -----------------------------------------------------------------------------
     collapsed_values = set(_collapse_user_sdwt_prod_values(values))
     if include_external_snapshots:
-        external_values = ExternalAffiliationSnapshot.objects.exclude(
+        external_queryset = ExternalAffiliationSnapshot.objects.exclude(
             predicted_user_sdwt_prod__exact=""
-        ).values_list("predicted_user_sdwt_prod", flat=True)
+        )
+        if normalized_department:
+            external_queryset = external_queryset.filter(department__iexact=normalized_department)
+        external_values = external_queryset.values_list("predicted_user_sdwt_prod", flat=True)
         collapsed_values.update(_collapse_user_sdwt_prod_values(external_values))
+    return sorted(collapsed_values)
+
+
+def list_distinct_active_departments(*, include_external_snapshots: bool = False) -> list[str]:
+    """활성 사용자/외부 스냅샷의 department 목록을 조회합니다."""
+
+    User = get_user_model()
+    values = (
+        User.objects.filter(is_active=True)
+        .exclude(current_affiliation__affiliation__department__isnull=True)
+        .exclude(current_affiliation__affiliation__department__exact="")
+        .values_list("current_affiliation__affiliation__department", flat=True)
+        .order_by("current_affiliation__affiliation__department")
+        .distinct()
+    )
+    collapsed_values = set(_collapse_text_values(values))
+    if include_external_snapshots:
+        external_values = (
+            ExternalAffiliationSnapshot.objects.exclude(department__isnull=True)
+            .exclude(department__exact="")
+            .values_list("department", flat=True)
+        )
+        collapsed_values.update(_collapse_text_values(external_values))
     return sorted(collapsed_values)
 
 
@@ -541,6 +591,7 @@ def list_active_user_knox_lookup_keys_by_knox_ids(*, knox_ids: list[str]) -> set
 def _list_external_affiliation_pool(
     *,
     search: str = "",
+    department: str = "",
     user_sdwt_prod: str = "",
     limit: int | None = 50,
 ) -> list[dict[str, object]]:
@@ -548,10 +599,13 @@ def _list_external_affiliation_pool(
 
     safe_limit = None if limit is None else max(1, min(int(limit or 50), 500))
     normalized_search = _normalize_text(search) or ""
+    normalized_department = _normalize_text(department) or ""
     normalized_user_sdwt = _normalize_text(user_sdwt_prod) or ""
     active_knox_lookup_keys = _list_active_user_knox_lookup_keys()
 
     queryset = ExternalAffiliationSnapshot.objects.all()
+    if normalized_department:
+        queryset = queryset.filter(department__iexact=normalized_department)
     if normalized_user_sdwt:
         queryset = queryset.filter(predicted_user_sdwt_prod__iexact=normalized_user_sdwt)
     if normalized_search:
@@ -596,6 +650,7 @@ def _list_external_affiliation_pool(
 def list_active_user_pool(
     *,
     search: str = "",
+    department: str = "",
     user_sdwt_prod: str = "",
     contact_field: str = "",
     limit: int | None = 50,
@@ -605,6 +660,7 @@ def list_active_user_pool(
 
     입력:
     - search: 이름/사번/knox_id/email 검색어
+    - department: 특정 department 필터
     - user_sdwt_prod: 특정 소속 필터
     - contact_field: email 또는 knox_id 보유 사용자 필터
     - limit: 최대 반환 개수(None이면 제한 없음)
@@ -625,6 +681,7 @@ def list_active_user_pool(
     # -----------------------------------------------------------------------------
     safe_limit = None if limit is None else max(1, min(int(limit or 50), 500))
     normalized_search = _normalize_text(search) or ""
+    normalized_department = _normalize_text(department) or ""
     normalized_user_sdwt = _normalize_text(user_sdwt_prod) or ""
     normalized_contact_field = _normalize_text(contact_field) or ""
 
@@ -635,6 +692,10 @@ def list_active_user_pool(
     if normalized_user_sdwt:
         queryset = queryset.filter(
             current_affiliation__affiliation__user_sdwt_prod__iexact=normalized_user_sdwt
+        )
+    if normalized_department:
+        queryset = queryset.filter(
+            current_affiliation__affiliation__department__iexact=normalized_department
         )
     if normalized_contact_field in {"email", "knox_id"}:
         queryset = queryset.exclude(**{f"{normalized_contact_field}__isnull": True}).exclude(
@@ -702,6 +763,7 @@ def list_active_user_pool(
         results.extend(
             _list_external_affiliation_pool(
                 search=normalized_search,
+                department=normalized_department,
                 user_sdwt_prod=normalized_user_sdwt,
                 limit=limit,
             )

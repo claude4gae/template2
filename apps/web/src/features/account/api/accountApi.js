@@ -90,6 +90,7 @@ function normalizeTextValues(values) {
 
 export async function fetchAccountUserPool({
   search = "",
+  department = "",
   userSdwtProd = "",
   contactField = "",
   limit = 50,
@@ -97,6 +98,7 @@ export async function fetchAccountUserPool({
 } = {}) {
   const params = new URLSearchParams()
   if (search) params.set("search", search)
+  if (department) params.set("department", department)
   if (userSdwtProd) params.set("userSdwtProd", userSdwtProd)
   if (contactField) params.set("contactField", contactField)
   if (includeExternalSnapshots) params.set("includeExternalSnapshots", "true")
@@ -107,6 +109,7 @@ export async function fetchAccountUserPool({
   const payload = await unwrap(response, "Failed to load account users")
   return {
     results: normalizeUsers(payload?.results),
+    departments: normalizeTextValues(payload?.departments),
     userSdwtProds: normalizeTextValues(payload?.userSdwtProds),
   }
 }

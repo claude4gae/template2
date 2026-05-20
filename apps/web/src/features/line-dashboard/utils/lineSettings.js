@@ -150,10 +150,14 @@ export function getRecipientExternalKnoxId(user) {
 }
 
 export function getRecipientSecondaryText(user) {
+  const registration = user?.recipientType === "external" ? "미가입" : "가입"
+  const department = typeof user?.department === "string" && user.department.trim()
+    ? user.department.trim()
+    : "department 없음"
   const userSdwtProd = typeof user?.userSdwtProd === "string" && user.userSdwtProd.trim()
     ? user.userSdwtProd.trim()
     : "user_sdwt_prod 없음"
-  return user?.recipientType === "external" ? `미가입 ${userSdwtProd}` : userSdwtProd
+  return `${registration} · ${department} · ${userSdwtProd}`
 }
 
 export function getRecipientListText(user) {

@@ -337,8 +337,8 @@ function MetroStepFlowCell({ rowData }) {
   const mainStep = normalizeStepValue(rowData.main_step)
   const metroSteps = parseMetroSteps(rowData.metro_steps)
   const informStep =
-    normalizeStepValue(rowData.inform_step) ||
-    normalizeStepValue(findSuccessfulDeliveryStep(rowData))
+    normalizeStepValue(findSuccessfulDeliveryStep(rowData)) ||
+    normalizeStepValue(rowData.inform_step)
   const currentStep = normalizeStepValue(rowData.metro_current_step)
   const customEndStep = normalizeStepValue(rowData.custom_end_step)
   const metroEndStep = normalizeStepValue(rowData.metro_end_step)

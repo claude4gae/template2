@@ -23,11 +23,16 @@ export function RecipientSettingsCards({
   mailRecipientsError,
   recipientPickerOpen,
   recipientPickerTabs,
+  accountDepartmentValues,
   accountUserSdwtValues,
+  recipientSourceDepartments,
+  recipientSourceSdwtOptions,
   recipientSourceSdwt,
   onPickerOpenChange,
   onPickerTabChange,
+  onSourceDepartmentChange,
   onSourceSdwtChange,
+  isLoadingSourceGroups,
   isLoadingSourceUsers,
   onLoadSourceRecipients,
   recipientSearches,
@@ -72,13 +77,17 @@ export function RecipientSettingsCards({
           config={config}
           selectedUserSdwtProd={selectedUserSdwtProd}
           canManageRecipients={canManageRecipients}
-          accountUserSdwtValues={accountUserSdwtValues}
+          accountDepartmentValues={accountDepartmentValues}
+          accountUserSdwtValues={recipientSourceSdwtOptions[config.channel] || accountUserSdwtValues}
+          sourceDepartment={recipientSourceDepartments[config.channel] || ""}
           sourceSdwt={recipientSourceSdwt[config.channel] || ""}
           onOpenChange={(open) => onPickerOpenChange(config.channel, open)}
           onTabChange={(value) => onPickerTabChange(config.channel, value)}
+          onSourceDepartmentChange={(value) => onSourceDepartmentChange(config.channel, value)}
           onSourceSdwtChange={(value) => onSourceSdwtChange(config.channel, value)}
+          isLoadingSourceGroups={Boolean(isLoadingSourceGroups[config.channel])}
           isLoadingSourceUsers={Boolean(isLoadingSourceUsers[config.channel])}
-          onLoadSourceRecipients={(sourceSdwt) => onLoadSourceRecipients(config.channel, sourceSdwt)}
+          onLoadSourceRecipients={() => onLoadSourceRecipients(config.channel)}
           searchValue={recipientSearches[config.channel] || ""}
           onSearchChange={(value) => onRecipientSearchChange(config.channel, value)}
           isSearchingRecipients={Boolean(isSearchingRecipients[config.channel])}

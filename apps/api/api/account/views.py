@@ -737,7 +737,7 @@ class AccountUserPoolView(APIView):
     """수신인 선택 UI에서 사용할 account_user 기반 사용자 pool 조회."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """활성 사용자 검색 결과와 user_sdwt_prod 옵션을 반환합니다.
+        """활성 사용자 검색 결과와 department/user_sdwt_prod 옵션을 반환합니다.
 
         입력:
         - 요청: Django HttpRequest
@@ -754,7 +754,7 @@ class AccountUserPoolView(APIView):
 
         예시 요청:
         - 예시 요청: GET /api/v1/account/users?search=kim
-        - 예시 요청: GET /api/v1/account/users?userSdwtProd=PHOTO_B
+        - 예시 요청: GET /api/v1/account/users?department=PHOTO&userSdwtProd=PHOTO_B
 
         snake/camel 호환:
         - user_sdwt_prod / userSdwtProd (쿼리 키 매핑)
@@ -770,6 +770,7 @@ class AccountUserPoolView(APIView):
         # 2) 쿼리 파라미터 정규화
         # -----------------------------------------------------------------------------
         search = normalize_text(request.GET.get("search"))
+        department = normalize_text(request.GET.get("department"))
         user_sdwt_prod = normalize_text(request.GET.get("user_sdwt_prod"))
         if not user_sdwt_prod:
             user_sdwt_prod = normalize_text(request.GET.get("userSdwtProd"))
@@ -790,17 +791,23 @@ class AccountUserPoolView(APIView):
         # -----------------------------------------------------------------------------
         results = selectors.list_active_user_pool(
             search=search,
+            department=department,
             user_sdwt_prod=user_sdwt_prod,
             contact_field=contact_field,
             limit=limit,
             include_external_snapshots=include_external_snapshots,
         )
-        user_sdwt_prods = selectors.list_distinct_active_user_sdwt_prod_values(
+        departments = selectors.list_distinct_active_departments(
             include_external_snapshots=include_external_snapshots
+        )
+        user_sdwt_prods = selectors.list_distinct_active_user_sdwt_prod_values(
+            include_external_snapshots=include_external_snapshots,
+            department=department or "",
         )
         return JsonResponse(
             {
                 "results": results,
+                "departments": departments,
                 "userSdwtProds": user_sdwt_prods,
             }
         )

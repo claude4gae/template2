@@ -46,7 +46,9 @@ function RecipientPickerUserList({
 
   if (isLoading) {
     return (
-      <div className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}>
+      <div
+        className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}
+      >
         {loadingText}
       </div>
     )
@@ -54,14 +56,18 @@ function RecipientPickerUserList({
 
   if (users.length === 0) {
     return (
-      <div className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}>
+      <div
+        className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}
+      >
         {emptyText}
       </div>
     )
   }
 
   return (
-    <div className={`grid ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border`}>
+    <div
+      className={`grid ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border`}
+    >
       <label className="flex h-8 items-center gap-2 border-b px-3 text-xs font-medium">
         <Checkbox
           checked={checked}
@@ -104,11 +110,15 @@ export function RecipientPickerDialog({
   config,
   selectedUserSdwtProd,
   canManageRecipients,
+  accountDepartmentValues,
   accountUserSdwtValues,
+  sourceDepartment,
   sourceSdwt,
   onOpenChange,
   onTabChange,
+  onSourceDepartmentChange,
   onSourceSdwtChange,
+  isLoadingSourceGroups,
   isLoadingSourceUsers,
   onLoadSourceRecipients,
   searchValue,
@@ -129,10 +139,17 @@ export function RecipientPickerDialog({
     const recipientKey = getRecipientKey(user)
     return recipientKey && selectedIds.includes(recipientKey)
   }).length
+  const handleSourceDepartmentChange = (value) => {
+    onSourceDepartmentChange(value)
+  }
   const handleSourceSdwtChange = (value) => {
     onSourceSdwtChange(value)
-    onLoadSourceRecipients(value)
   }
+  const groupEmptyText = !sourceDepartment
+    ? "Department를 선택하세요."
+    : !sourceSdwt
+      ? "소속을 선택하고 사용자 불러오기를 누르세요."
+      : "사용자 불러오기를 누르세요."
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -154,13 +171,34 @@ export function RecipientPickerDialog({
             value="group"
             className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
           >
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+              <Select
+                value={sourceDepartment || undefined}
+                onValueChange={handleSourceDepartmentChange}
+                disabled={!canManageRecipients || accountDepartmentValues.length === 0 || isLoadingSourceGroups}
+              >
+                <SelectTrigger className="w-full" aria-label="Department 선택">
+                  <SelectValue placeholder="Department 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountDepartmentValues.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select
                 value={sourceSdwt || undefined}
                 onValueChange={handleSourceSdwtChange}
-                disabled={!canManageRecipients || accountUserSdwtValues.length === 0}
+                disabled={
+                  !canManageRecipients ||
+                  !sourceDepartment ||
+                  accountUserSdwtValues.length === 0 ||
+                  isLoadingSourceGroups
+                }
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="소속 선택">
                   <SelectValue placeholder="소속 선택" />
                 </SelectTrigger>
                 <SelectContent>
@@ -171,14 +209,26 @@ export function RecipientPickerDialog({
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canManageRecipients || !sourceDepartment || !sourceSdwt || isLoadingSourceUsers}
+                onClick={() => onLoadSourceRecipients()}
+              >
+                사용자 불러오기
+              </Button>
             </div>
 
             <RecipientPickerUserList
               users={groupUsers}
               selectedIds={selectedIds}
-              isLoading={isLoadingSourceUsers}
-              loadingText="소속 사용자를 불러오는 중입니다."
-              emptyText="소속을 선택하면 사용자를 불러옵니다."
+              isLoading={isLoadingSourceGroups || isLoadingSourceUsers}
+              loadingText={
+                isLoadingSourceGroups
+                  ? "소속 목록을 불러오는 중입니다."
+                  : "소속 사용자를 불러오는 중입니다."
+              }
+              emptyText={groupEmptyText}
               onToggleUser={onToggleUser}
               onToggleAll={(checked) => onToggleAll(groupUsers, checked)}
             />

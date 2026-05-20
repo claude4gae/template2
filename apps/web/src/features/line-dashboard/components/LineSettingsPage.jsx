@@ -129,16 +129,21 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     messenger: { group: [], search: [] },
   })
   const [recipientPickerSelectedIds, setRecipientPickerSelectedIds] = React.useState({ mail: [], messenger: [] })
+  const [recipientSourceDepartments, setRecipientSourceDepartments] = React.useState({ mail: "", messenger: "" })
   const [recipientSourceSdwt, setRecipientSourceSdwt] = React.useState({ mail: "", messenger: "" })
+  const [recipientSourceSdwtOptions, setRecipientSourceSdwtOptions] = React.useState({ mail: [], messenger: [] })
+  const [accountDepartmentValues, setAccountDepartmentValues] = React.useState([])
   const [accountUserSdwtValues, setAccountUserSdwtValues] = React.useState([])
   const [myRecipientTargets, setMyRecipientTargets] = React.useState([])
   const [myRecipientTargetsError, setMyRecipientTargetsError] = React.useState(null)
   const [recipientActionErrors, setRecipientActionErrors] = React.useState({ mail: null, messenger: null })
   const [isMyRecipientTargetsLoading, setIsMyRecipientTargetsLoading] = React.useState(false)
   const [isSearchingRecipients, setIsSearchingRecipients] = React.useState({ mail: false, messenger: false })
+  const [isLoadingSourceGroups, setIsLoadingSourceGroups] = React.useState({ mail: false, messenger: false })
   const [isLoadingSourceUsers, setIsLoadingSourceUsers] = React.useState({ mail: false, messenger: false })
   const [isSavingRecipients, setIsSavingRecipients] = React.useState({ mail: false, messenger: false })
   const recipientContextRef = React.useRef({ lineId, selectedUserSdwtProd })
+  const sourceGroupRequestRef = React.useRef({ mail: 0, messenger: 0 })
   const sourceLoadRequestRef = React.useRef({ mail: 0, messenger: 0 })
   recipientContextRef.current = { lineId, selectedUserSdwtProd }
 
@@ -225,9 +230,91 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setFormValues((prev) => ({ ...prev, [key]: value }))
   }, [])
 
+  const clearRecipientGroupResults = React.useCallback((channel) => {
+    const previousGroupIds = new Set(
+      (recipientPickerResults[channel]?.group || []).map(getRecipientKey).filter(Boolean),
+    )
+    setRecipientPickerResults((prev) => ({
+      ...prev,
+      [channel]: { ...(prev[channel] || { group: [], search: [] }), group: [] },
+    }))
+    setRecipientPickerSelectedIds((prev) => ({
+      ...prev,
+      [channel]: (prev[channel] || []).filter((recipientKey) => !previousGroupIds.has(recipientKey)),
+    }))
+  }, [recipientPickerResults])
+
+  const handleRecipientSourceDepartmentChange = React.useCallback(
+    async (channel, value) => {
+      const config = RECIPIENT_CHANNEL_CONFIG[channel]
+      const sourceDepartment = String(value || "").trim()
+      sourceGroupRequestRef.current[channel] += 1
+      sourceLoadRequestRef.current[channel] += 1
+      const requestId = sourceGroupRequestRef.current[channel]
+      const requestLineId = lineId
+      const requestTarget = selectedUserSdwtProd
+
+      setRecipientSourceDepartments((prev) => ({ ...prev, [channel]: sourceDepartment }))
+      setRecipientSourceSdwt((prev) => ({ ...prev, [channel]: "" }))
+      setRecipientSourceSdwtOptions((prev) => ({ ...prev, [channel]: [] }))
+      setIsLoadingSourceUsers((prev) => ({ ...prev, [channel]: false }))
+      clearRecipientGroupResults(channel)
+
+      if (!sourceDepartment) {
+        setIsLoadingSourceGroups((prev) => ({ ...prev, [channel]: false }))
+        setRecipientActionErrors((prev) => ({ ...prev, [channel]: null }))
+        return
+      }
+      if (!canManageRecipients) {
+        setIsLoadingSourceGroups((prev) => ({ ...prev, [channel]: false }))
+        setRecipientActionErrors((prev) => ({ ...prev, [channel]: config.permissionErrorText }))
+        return
+      }
+
+      setIsLoadingSourceGroups((prev) => ({ ...prev, [channel]: true }))
+      setRecipientActionErrors((prev) => ({ ...prev, [channel]: null }))
+      const isCurrentLoad = () =>
+        sourceGroupRequestRef.current[channel] === requestId &&
+        isCurrentRecipientContext(requestLineId, requestTarget)
+      try {
+        const { userSdwtProds } = await fetchAccountUserPool({
+          department: sourceDepartment,
+          contactField: config.contactField,
+          limit: 1,
+          includeExternalSnapshots: true,
+        })
+        if (!isCurrentLoad()) return
+        setRecipientSourceSdwtOptions((prev) => ({ ...prev, [channel]: userSdwtProds || [] }))
+        if (!userSdwtProds?.length) {
+          setRecipientActionErrors((prev) => ({ ...prev, [channel]: "Department에 소속이 없습니다." }))
+        }
+      } catch (requestError) {
+        if (!isCurrentLoad()) return
+        const message =
+          requestError instanceof Error ? requestError.message : "Failed to load departments"
+        setRecipientActionErrors((prev) => ({ ...prev, [channel]: message }))
+        showRequestErrorToast(message)
+      } finally {
+        if (isCurrentLoad()) {
+          setIsLoadingSourceGroups((prev) => ({ ...prev, [channel]: false }))
+        }
+      }
+    },
+    [
+      canManageRecipients,
+      clearRecipientGroupResults,
+      isCurrentRecipientContext,
+      lineId,
+      selectedUserSdwtProd,
+    ],
+  )
+
   const handleRecipientSourceSdwtChange = React.useCallback((channel, value) => {
+    sourceLoadRequestRef.current[channel] += 1
     setRecipientSourceSdwt((prev) => ({ ...prev, [channel]: value }))
-  }, [])
+    setIsLoadingSourceUsers((prev) => ({ ...prev, [channel]: false }))
+    clearRecipientGroupResults(channel)
+  }, [clearRecipientGroupResults])
 
   const handleRecipientSearchChange = React.useCallback((channel, value) => {
     setRecipientSearches((prev) => ({ ...prev, [channel]: value }))
@@ -321,6 +408,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [channelEnabled, jiraKey, lineId, needToSendRule, selectedUserSdwtProd])
 
   React.useEffect(() => {
+    sourceGroupRequestRef.current.mail += 1
+    sourceGroupRequestRef.current.messenger += 1
     sourceLoadRequestRef.current.mail += 1
     sourceLoadRequestRef.current.messenger += 1
     setRecipientDrafts({ mail: [], messenger: [] })
@@ -329,6 +418,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setRecipientPickerOpen({ mail: false, messenger: false })
     setRecipientPickerResults({ mail: { group: [], search: [] }, messenger: { group: [], search: [] } })
     setRecipientPickerSelectedIds({ mail: [], messenger: [] })
+    setRecipientSourceDepartments({ mail: "", messenger: "" })
+    setRecipientSourceSdwt({ mail: "", messenger: "" })
+    setRecipientSourceSdwtOptions({ mail: [], messenger: [] })
+    setIsLoadingSourceGroups({ mail: false, messenger: false })
     setIsLoadingSourceUsers({ mail: false, messenger: false })
     setIsSavingRecipients({ mail: false, messenger: false })
   }, [lineId, selectedUserSdwtProd])
@@ -361,11 +454,12 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
 
     async function loadRecipientOptions() {
       try {
-        const [{ userSdwtProds }, permissionContext] = await Promise.all([
+        const [{ departments, userSdwtProds }, permissionContext] = await Promise.all([
           fetchAccountUserPool({ limit: 1, includeExternalSnapshots: true }),
           fetchNotificationRecipientPermissions(),
         ])
         if (isActive) {
+          setAccountDepartmentValues(departments || [])
           setAccountUserSdwtValues(userSdwtProds || [])
           setIsGlobalOperator(Boolean(permissionContext?.isOperator))
         }
@@ -374,6 +468,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           const message =
             requestError instanceof Error ? requestError.message : "Failed to load user groups"
           setIsGlobalOperator(false)
+          setAccountDepartmentValues([])
+          setAccountUserSdwtValues([])
           setRecipientActionErrors({ mail: message, messenger: message })
         }
       }
@@ -715,9 +811,14 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     }))
   }, [canManageRecipients])
 
-  const handleLoadSourceRecipients = React.useCallback(async (channel, selectedSourceSdwt) => {
+  const handleLoadSourceRecipients = React.useCallback(async (channel) => {
     const config = RECIPIENT_CHANNEL_CONFIG[channel]
-    const sourceSdwt = selectedSourceSdwt || recipientSourceSdwt[channel]
+    const sourceDepartment = recipientSourceDepartments[channel]
+    const sourceSdwt = recipientSourceSdwt[channel]
+    if (!sourceDepartment) {
+      setRecipientActionErrors((prev) => ({ ...prev, [channel]: "Department를 먼저 선택하세요." }))
+      return
+    }
     if (!sourceSdwt) {
       setRecipientActionErrors((prev) => ({ ...prev, [channel]: "불러올 소속을 선택하세요." }))
       return
@@ -742,6 +843,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       isCurrentRecipientContext(requestLineId, requestTarget)
     try {
       const { results } = await fetchAccountUserPool({
+        department: sourceDepartment,
         userSdwtProd: requestSourceSdwt,
         contactField: config.contactField,
         limit: "all",
@@ -786,6 +888,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     isCurrentRecipientContext,
     lineId,
     recipientPickerResults,
+    recipientSourceDepartments,
     recipientSourceSdwt,
     selectedUserSdwtProd,
   ])
@@ -1187,11 +1290,16 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
                 mailRecipientsError={mailRecipientsError}
                 recipientPickerOpen={recipientPickerOpen}
                 recipientPickerTabs={recipientPickerTabs}
+                accountDepartmentValues={accountDepartmentValues}
                 accountUserSdwtValues={accountUserSdwtValues}
+                recipientSourceDepartments={recipientSourceDepartments}
+                recipientSourceSdwtOptions={recipientSourceSdwtOptions}
                 recipientSourceSdwt={recipientSourceSdwt}
                 onPickerOpenChange={handleRecipientPickerOpenChange}
                 onPickerTabChange={handleRecipientPickerTabChange}
+                onSourceDepartmentChange={handleRecipientSourceDepartmentChange}
                 onSourceSdwtChange={handleRecipientSourceSdwtChange}
+                isLoadingSourceGroups={isLoadingSourceGroups}
                 isLoadingSourceUsers={isLoadingSourceUsers}
                 onLoadSourceRecipients={handleLoadSourceRecipients}
                 recipientSearches={recipientSearches}
