@@ -2,9 +2,10 @@
 // 컬럼별로 서로 다른 UI 표현을 담당하는 렌더러 모음입니다.
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { ExternalLink } from "lucide-react"
+import { ExternalLink, ImageIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -139,7 +140,7 @@ function DefectImagePreview({ link, centered = false }) {
 
   return (
     <div className={`${centered ? "max-h-[min(78vh,760px)] w-[min(820px,calc(100vw-2rem))] p-3" : "max-h-[420px] w-[360px] max-w-[70vw] p-2"} overflow-y-auto rounded-xl border border-border bg-popover shadow-xl`}>
-      <div className="mb-3 flex items-center justify-between gap-2 text-sm">
+      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-2 border-b border-border bg-popover pb-2 text-sm">
         <span className="min-w-0 truncate font-medium text-popover-foreground" title={link?.label}>
           {link?.label || "Defect"}
         </span>
@@ -162,13 +163,13 @@ function DefectImagePreview({ link, centered = false }) {
           ) : null}
         </div>
       </div>
-      <div className={`grid ${centered && imageUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
+      <div className="grid grid-cols-2 gap-3">
         {imageUrls.map((src, index) => {
           const image = (
             <img
               src={src}
               alt={`${link?.label || "Defect"} preview ${index + 1}`}
-              className={`${centered ? "max-h-[620px]" : "aspect-square"} w-full object-contain`}
+              className="aspect-square w-full object-contain"
               loading="lazy"
               referrerPolicy="no-referrer"
             />
@@ -276,7 +277,7 @@ function DefectUrlHoverList({ links }) {
               aria-label={`Open defect preview ${link.label || index + 1}`}
             >
               <span className="min-w-0 truncate">{link.label || index + 1}</span>
-              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <ImageIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuItem>
         ))}
@@ -302,7 +303,7 @@ function DefectUrlPreviewLink({ link }) {
         title={`${link.label}: ${link.href}`}
         onClick={() => setOpen(true)}
       >
-        <ExternalLink className="h-4 w-4" />
+        <ImageIcon className="h-4 w-4" />
       </button>
       <CenteredDefectMapPreview link={link} open={open} onOpenChange={setOpen} />
     </>
@@ -446,14 +447,21 @@ const CellRenderers = {
   send_mail: ({ value, rowOriginal, meta }) =>
     <DeliveryChannelSummaryCell value={value} rowOriginal={rowOriginal} meta={meta} channelKey="send_mail" />,
 
-  status: ({ value, rowOriginal }) => {
+  status: ({ value, rowOriginal, meta }) => {
     const status = normalizeStatus(value)
     const label = STATUS_LABELS[status] ?? status ?? "Unknown"
     const { completed, total } = computeMetroProgress(rowOriginal, status)
     const percent = total > 0 ? Math.min(100, Math.max(0, (completed / total) * 100)) : 0
+    const recordId = getRecordId(rowOriginal)
+    const isStatusChanged = Boolean(recordId && meta?.rowRefreshAnimations?.[recordId]?.statusChanged)
 
     return (
-      <div className="flex w-full flex-col gap-1">
+      <div
+        className={cn(
+          "flex w-full flex-col gap-1 rounded-sm transition-shadow duration-700",
+          isStatusChanged && "ring-2 ring-primary/25 motion-safe:animate-pulse"
+        )}
+      >
         <div
           className="h-2 w-full overflow-hidden rounded-full bg-muted"
           role="progressbar"
@@ -463,7 +471,7 @@ const CellRenderers = {
           aria-valuetext={`${completed} of ${total} steps`}
         >
           <div
-            className="h-full rounded-full bg-primary transition-all"
+            className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
             style={{ width: `${percent}%` }}
             role="presentation"
           />

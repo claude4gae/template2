@@ -3,6 +3,18 @@ import * as React from "react"
 
 import { timeFormatter } from "../utils/dataTableConstants"
 
+function stableStringify(value) {
+  if (value == null) return ""
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
+  if (typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${key}:${stableStringify(value[key])}`)
+      .join("|")}}`
+  }
+  return String(value)
+}
+
 /**
  * DataTable 렌더링에 필요한 파생 상태를 한 곳에서 계산합니다.
  * - 필터/정렬 변화 시 첫 페이지로 돌려보내고, 페이지 범위를 벗어나지 않도록 가드합니다.
@@ -36,12 +48,21 @@ export function useDataTablePresentation({
   const isRefreshing = isLoadingRows && totalLoaded > 0
   const isInitialLoading = isLoadingRows && totalLoaded === 0
 
+  const pageResetKey = React.useMemo(
+    () => stableStringify({ filter, filters, sorting }),
+    [filter, filters, sorting]
+  )
+  const previousPageResetKeyRef = React.useRef(pageResetKey)
+
   // 필터/정렬이 바뀌면 첫 페이지로 이동해 사용자 혼란을 방지합니다.
   React.useEffect(() => {
+    if (previousPageResetKeyRef.current === pageResetKey) return
+    previousPageResetKeyRef.current = pageResetKey
+
     setPagination((previous) =>
       previous.pageIndex === 0 ? previous : { ...previous, pageIndex: 0 }
     )
-  }, [filter, sorting, filters, setPagination])
+  }, [pageResetKey, setPagination])
 
   // 현재 페이지가 전체 페이지 수를 넘어가지 않도록 방어합니다.
   React.useEffect(() => {

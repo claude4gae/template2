@@ -55,8 +55,64 @@ import {
   resolveCellAlignment,
   resolveHeaderAlignment,
 } from "../utils/dataTableTable"
+import { getRecordId } from "../utils/dataTableColumnNormalizers"
 import { formatTooltipValue } from "../utils/dataTableFormatters"
 import { useAuth } from "@/lib/auth"
+
+const REFRESH_ANIMATION_DURATION_MS = 2200
+
+const ROW_REFRESH_SIGNATURE_FIELDS = [
+  "status",
+  "main_step",
+  "metro_steps",
+  "metro_current_step",
+  "metro_end_step",
+  "custom_end_step",
+  "inform_step",
+]
+
+function stableStringifyForRefresh(value) {
+  if (value == null) return ""
+  if (Array.isArray(value)) return `[${value.map(stableStringifyForRefresh).join(",")}]`
+  if (typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${key}:${stableStringifyForRefresh(value[key])}`)
+      .join("|")}}`
+  }
+  return String(value)
+}
+
+function createRefreshDatasetKey({ lineId, lineFilterMode, recentHours }) {
+  return stableStringifyForRefresh({
+    lineId: lineId ?? null,
+    lineFilterMode: lineFilterMode ?? null,
+    recentHours: recentHours ?? null,
+  })
+}
+
+function createRowRefreshSignature(row) {
+  const signature = {}
+  for (const field of ROW_REFRESH_SIGNATURE_FIELDS) {
+    signature[field] = row?.[field] ?? null
+  }
+  return stableStringifyForRefresh(signature)
+}
+
+function createRowsByRecordId(sourceRows) {
+  const rowsById = new Map()
+  if (!Array.isArray(sourceRows)) return rowsById
+
+  for (const row of sourceRows) {
+    const recordId = getRecordId(row)
+    if (!recordId) continue
+    rowsById.set(recordId, {
+      refreshSignature: createRowRefreshSignature(row),
+    })
+  }
+
+  return rowsById
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
  * 1) 라벨/문구 상수
@@ -116,6 +172,7 @@ function TableBodyRows({
   isInitialLoading,
   rowsError,
   hasNoRows,
+  rowRefreshAnimations,
 }) {
   if (isInitialLoading) {
     return (
@@ -174,9 +231,18 @@ function TableBodyRows({
     )
   }
 
-  return visibleRows.map((row) => (
-    <TableRow key={row.id}>
-      {row.getVisibleCells().map((cell) => {
+  return visibleRows.map((row) => {
+    const rowAnimation = rowRefreshAnimations?.[row.id]
+
+    return (
+      <TableRow
+        key={row.id}
+        className={cn(
+          rowAnimation?.isNew &&
+            "bg-primary/5 transition-colors duration-1000 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1"
+        )}
+      >
+        {row.getVisibleCells().map((cell) => {
         const isEditable = Boolean(cell.column.columnDef.meta?.isEditable)
         const align = resolveCellAlignment(cell.column.columnDef.meta)
         const textAlignClass = getTextAlignClass(align)
@@ -190,32 +256,33 @@ function TableBodyRows({
         const shouldTruncate = !isProcessFlowCell
         const tooltip = shouldTruncate ? formatTooltipValue(raw) : undefined
 
-        return (
-          <TableCell
-            key={cell.id}
-            data-editable={isEditable ? "true" : "false"}
-            style={toWidthStyle(cell.column.getSize())}
-            className={cn(
-              "align-center",
-              textAlignClass,
-              !isEditable && "caret-transparent focus:outline-none",
-              isProcessFlowCell && "cursor-grab select-none active:cursor-grabbing"
-            )}
-          >
-            <div
+          return (
+            <TableCell
+              key={cell.id}
+              data-editable={isEditable ? "true" : "false"}
+              style={toWidthStyle(cell.column.getSize())}
               className={cn(
-                "max-w-full",
-                shouldTruncate ? "truncate" : "break-words"
+                "align-center",
+                textAlignClass,
+                !isEditable && "caret-transparent focus:outline-none",
+                isProcessFlowCell && "cursor-grab select-none active:cursor-grabbing"
               )}
-              title={tooltip}
             >
-              {content}
-            </div>
-          </TableCell>
-        )
-      })}
-    </TableRow>
-  ))
+              <div
+                className={cn(
+                  "max-w-full",
+                  shouldTruncate ? "truncate" : "break-words"
+                )}
+                title={tooltip}
+              >
+                {content}
+              </div>
+            </TableCell>
+          )
+        })}
+      </TableRow>
+    )
+  })
 }
 
 /**
@@ -303,12 +370,41 @@ export function DataTable({ lineId }) {
   /* 페이지네이션/컬럼 사이징 로컬 상태 */
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 15 })
   const [columnSizing, setColumnSizing] = React.useState({})
+  const [rowRefreshAnimations, setRowRefreshAnimations] = React.useState({})
+  const tableScrollRef = React.useRef(null)
+  const pendingScrollSnapshotRef = React.useRef(null)
+  const pendingRowsSnapshotRef = React.useRef(null)
+  const latestRowsByIdRef = React.useRef(new Map())
+  const previousIsLoadingRowsRef = React.useRef(isLoadingRows)
+  const settledDatasetKeyRef = React.useRef(null)
+  const skipNextRefreshAnimationRef = React.useRef(false)
+  const animationSequenceRef = React.useRef(0)
+  const animationTimersRef = React.useRef([])
+
+  const refreshDatasetKey = React.useMemo(
+    () =>
+      createRefreshDatasetKey({
+        lineId,
+        lineFilterMode,
+        recentHours: filters?.recent_hours ?? null,
+      }),
+    [filters?.recent_hours, lineFilterMode, lineId]
+  )
+
+  if (settledDatasetKeyRef.current === null) {
+    settledDatasetKeyRef.current = refreshDatasetKey
+  }
+
+  const tableMetaWithRefresh = React.useMemo(
+    () => ({ ...tableMeta, rowRefreshAnimations }),
+    [rowRefreshAnimations, tableMeta]
+  )
 
   /* TanStack Table 인스턴스 */
   const table = useReactTable({
     data: filteredRows,               // ✅ 보이는 데이터로 테이블 구성
     columns: columnDefs,              // ✅ config 기반 폭을 사용하는 컬럼 정의
-    meta: tableMeta,
+    meta: tableMetaWithRefresh,
     state: {
       sorting,
       globalFilter: filter,
@@ -322,11 +418,12 @@ export function DataTable({ lineId }) {
     globalFilterFn,
     autoResetPageIndex: false,
 
-    // Row models
+    // 행 모델 구성
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getRowId: (row, index) => getRecordId(row) ?? `unstable-${index}`,
 
     // 드래그 중 실시간 리사이즈 반영
     columnResizeMode: "onChange",
@@ -368,9 +465,142 @@ export function DataTable({ lineId }) {
     setFavoriteResetSignal((previous) => previous + 1)
   }, [resetFilters])
 
+  const clearRefreshSnapshots = React.useCallback(() => {
+    pendingScrollSnapshotRef.current = null
+    pendingRowsSnapshotRef.current = null
+  }, [])
+
+  const preserveTableRefreshState = React.useCallback(() => {
+    const scrollElement = tableScrollRef.current
+    if (scrollElement) {
+      pendingScrollSnapshotRef.current = {
+        datasetKey: refreshDatasetKey,
+        left: scrollElement.scrollLeft,
+        top: scrollElement.scrollTop,
+      }
+    }
+
+    pendingRowsSnapshotRef.current = {
+      datasetKey: refreshDatasetKey,
+      rowsById: latestRowsByIdRef.current,
+    }
+  }, [refreshDatasetKey])
+
   function handleRefresh() {
+    preserveTableRefreshState()
     void fetchRows()
   }
+
+  React.useEffect(() => {
+    if (settledDatasetKeyRef.current !== refreshDatasetKey) {
+      skipNextRefreshAnimationRef.current = true
+      clearRefreshSnapshots()
+      setRowRefreshAnimations({})
+    }
+  }, [clearRefreshSnapshots, refreshDatasetKey])
+
+  React.useEffect(() => {
+    return () => {
+      for (const timerId of animationTimersRef.current) {
+        window.clearTimeout(timerId)
+      }
+      animationTimersRef.current = []
+    }
+  }, [])
+
+  React.useEffect(() => {
+    const wasLoadingRows = previousIsLoadingRowsRef.current
+    if (
+      !wasLoadingRows &&
+      isLoadingRows &&
+      !skipNextRefreshAnimationRef.current &&
+      settledDatasetKeyRef.current === refreshDatasetKey
+    ) {
+      preserveTableRefreshState()
+    }
+    previousIsLoadingRowsRef.current = isLoadingRows
+  }, [isLoadingRows, preserveTableRefreshState, refreshDatasetKey])
+
+  React.useLayoutEffect(() => {
+    const snapshot = pendingScrollSnapshotRef.current
+    const scrollElement = tableScrollRef.current
+    if (!snapshot || !scrollElement || isLoadingRows) return
+    if (snapshot.datasetKey !== refreshDatasetKey) {
+      pendingScrollSnapshotRef.current = null
+      return
+    }
+
+    const maxTop = Math.max(scrollElement.scrollHeight - scrollElement.clientHeight, 0)
+    const maxLeft = Math.max(scrollElement.scrollWidth - scrollElement.clientWidth, 0)
+    scrollElement.scrollTop = Math.min(snapshot.top, maxTop)
+    scrollElement.scrollLeft = Math.min(snapshot.left, maxLeft)
+    pendingScrollSnapshotRef.current = null
+  }, [filteredRows, isLoadingRows, refreshDatasetKey])
+
+  React.useEffect(() => {
+    if (isLoadingRows) return
+
+    const nextRowsById = createRowsByRecordId(filteredRows)
+
+    if (skipNextRefreshAnimationRef.current || settledDatasetKeyRef.current !== refreshDatasetKey) {
+      skipNextRefreshAnimationRef.current = false
+      settledDatasetKeyRef.current = refreshDatasetKey
+      clearRefreshSnapshots()
+      latestRowsByIdRef.current = nextRowsById
+      return
+    }
+
+    const pendingRowsSnapshot = pendingRowsSnapshotRef.current
+    pendingRowsSnapshotRef.current = null
+
+    if (pendingRowsSnapshot?.datasetKey === refreshDatasetKey) {
+      const nextAnimations = {}
+
+      for (const [recordId, nextSnapshot] of nextRowsById.entries()) {
+        const previousSnapshot = pendingRowsSnapshot.rowsById.get(recordId)
+        if (!previousSnapshot) {
+          nextAnimations[recordId] = { isNew: true }
+          continue
+        }
+
+        if (previousSnapshot.refreshSignature !== nextSnapshot.refreshSignature) {
+          nextAnimations[recordId] = { statusChanged: true }
+        }
+      }
+
+      const animationIds = Object.keys(nextAnimations)
+      if (animationIds.length > 0) {
+        animationSequenceRef.current += 1
+        const sequence = animationSequenceRef.current
+        const sequencedAnimations = Object.fromEntries(
+          Object.entries(nextAnimations).map(([recordId, animation]) => [
+            recordId,
+            { ...animation, sequence },
+          ])
+        )
+
+        setRowRefreshAnimations((previous) => ({ ...previous, ...sequencedAnimations }))
+
+        const timerId = window.setTimeout(() => {
+          setRowRefreshAnimations((previous) => {
+            const remaining = { ...previous }
+            for (const recordId of animationIds) {
+              if (remaining[recordId]?.sequence === sequence) {
+                delete remaining[recordId]
+              }
+            }
+            return remaining
+          })
+          animationTimersRef.current = animationTimersRef.current.filter(
+            (storedTimerId) => storedTimerId !== timerId
+          )
+        }, REFRESH_ANIMATION_DURATION_MS)
+        animationTimersRef.current.push(timerId)
+      }
+    }
+
+    latestRowsByIdRef.current = nextRowsById
+  }, [clearRefreshSnapshots, filteredRows, isLoadingRows, refreshDatasetKey])
 
   /* ──────────────────────────────────────────────────────────────────────────
    * 7) 렌더
@@ -418,6 +648,7 @@ export function DataTable({ lineId }) {
       </div>
       {/* 테이블 */}
       <div
+        ref={tableScrollRef}
         className="flex-1 min-h-0 min-w-0 overflow-y-auto rounded-lg border bg-background"
         aria-busy={isRefreshing}
       >
@@ -499,6 +730,7 @@ export function DataTable({ lineId }) {
               isInitialLoading={isInitialLoading}
               rowsError={rowsError}
               hasNoRows={hasNoRows}
+              rowRefreshAnimations={rowRefreshAnimations}
             />
           </TableBody>
         </Table>

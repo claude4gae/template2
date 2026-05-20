@@ -20,6 +20,8 @@ import {
   normalizeLineFilterMode,
 } from "../utils/lineFilterMode"
 
+const TABLE_AUTO_REFETCH_INTERVAL_MS = 30_000
+
 /**
  * 테이블 데이터(컬럼/행/날짜 범위) 로딩을 담당하는 훅입니다.
  * - 날짜/최근 시간 범위를 정규화해 쿼리스트링을 만들고,
@@ -106,6 +108,7 @@ export function useTableQuery({ lineId }) {
   const tableQuery = useQuery({
     queryKey: tableQueryKey,
     keepPreviousData: true,
+    refetchInterval: TABLE_AUTO_REFETCH_INTERVAL_MS,
     queryFn: async () => {
       const params = new URLSearchParams({ table: selectedTable })
       if (effectiveFrom) params.set("from", effectiveFrom)
