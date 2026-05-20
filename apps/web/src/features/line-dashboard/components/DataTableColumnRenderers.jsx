@@ -72,11 +72,6 @@ function showLotIdCopyFailedToast() {
   })
 }
 
-function openExternalUrl(href) {
-  if (!href) return
-  window.open(href, "_blank", "noopener,noreferrer")
-}
-
 function normalizeImageRow(value) {
   const selectedRow = Number(value)
   if (!Number.isInteger(selectedRow) || selectedRow < 0) return null
@@ -123,8 +118,21 @@ function DefectImagePreview({ link, centered = false }) {
 
   if (!imageUrls.length) {
     return (
-      <div className={`${centered ? "h-56 w-[min(720px,calc(100vw-2rem))]" : "h-28 w-64"} flex items-center justify-center rounded-xl border border-dashed border-border bg-popover px-4 text-center text-sm text-muted-foreground shadow-xl`}>
-        Preview image 없음
+      <div className={`${centered ? "h-56 w-[min(720px,calc(100vw-2rem))]" : "h-28 w-64"} flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-popover px-4 text-center text-sm text-muted-foreground shadow-xl`}>
+        <span>Preview image 없음</span>
+        {link?.href ? (
+          <a
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-sm text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label={`Open defect URL ${link.label || ""} in a new tab`}
+            title={link.href}
+          >
+            URL
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        ) : null}
       </div>
     )
   }
@@ -135,9 +143,24 @@ function DefectImagePreview({ link, centered = false }) {
         <span className="min-w-0 truncate font-medium text-popover-foreground" title={link?.label}>
           {link?.label || "Defect"}
         </span>
-        <span className="shrink-0 text-muted-foreground">
-          {imageUrls.length} images
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-muted-foreground">
+            {imageUrls.length} images
+          </span>
+          {link?.href ? (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-sm text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label={`Open defect URL ${link.label || ""} in a new tab`}
+              title={link.href}
+            >
+              URL
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
+        </div>
       </div>
       <div className={`grid ${centered && imageUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
         {imageUrls.map((src, index) => {
@@ -178,12 +201,34 @@ function DefectImagePreview({ link, centered = false }) {
   )
 }
 
-function CenteredDefectMapPreview({ link, open }) {
+function CenteredDefectMapPreview({ link, open, onOpenChange }) {
+  React.useEffect(() => {
+    if (!open) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onOpenChange(false)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [onOpenChange, open])
+
   if (!open || typeof document === "undefined") return null
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center px-4 py-6">
-      <DefectImagePreview link={link} centered />
+    <div
+      className="fixed inset-0 z-[70] flex cursor-default items-center justify-center bg-background/40 px-4 py-6 backdrop-blur-[1px]"
+      onClick={() => onOpenChange(false)}
+    >
+      <div
+        className="cursor-auto"
+        role="presentation"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DefectImagePreview link={link} centered />
+      </div>
     </div>,
     document.body
   )
@@ -192,28 +237,7 @@ function CenteredDefectMapPreview({ link, open }) {
 function DefectUrlHoverList({ links }) {
   const [open, setOpen] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
-  const closeTimerRef = React.useRef(null)
-
-  const clearCloseTimer = React.useCallback(() => {
-    if (!closeTimerRef.current) return
-    window.clearTimeout(closeTimerRef.current)
-    closeTimerRef.current = null
-  }, [])
-
-  const openList = React.useCallback(() => {
-    clearCloseTimer()
-    setOpen(true)
-  }, [clearCloseTimer])
-
-  const scheduleClose = React.useCallback(() => {
-    clearCloseTimer()
-    closeTimerRef.current = window.setTimeout(() => {
-      setOpen(false)
-      closeTimerRef.current = null
-    }, 120)
-  }, [clearCloseTimer])
-
-  React.useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
+  const [previewOpen, setPreviewOpen] = React.useState(false)
 
   const activeLink = links[activeIndex] ?? links[0]
 
@@ -225,11 +249,6 @@ function DefectUrlHoverList({ links }) {
           className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border px-1.5 text-xs font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label={`${links.length} defect URLs`}
           title={`${links.length} defect URLs`}
-          onMouseEnter={openList}
-          onMouseLeave={scheduleClose}
-          onFocus={openList}
-          onBlur={scheduleClose}
-          onPointerDown={(event) => event.preventDefault()}
         >
           {links.length}
         </button>
@@ -237,74 +256,55 @@ function DefectUrlHoverList({ links }) {
       <DropdownMenuContent
         align="center"
         className="w-52 p-2"
-        onMouseEnter={openList}
-        onMouseLeave={scheduleClose}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {links.map((link, index) => (
-          <DropdownMenuItem key={`${link.href}:${index}`} asChild>
-            <a
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
+          <DropdownMenuItem
+            key={`${link.href}:${index}`}
+            asChild
+            onSelect={(event) => {
+              event.preventDefault()
+              setActiveIndex(index)
+              setPreviewOpen(true)
+              setOpen(false)
+            }}
+          >
+            <button
+              type="button"
               className="flex cursor-pointer items-center justify-between gap-2"
               title={link.href}
-              aria-label={`Open defect URL ${link.label || index + 1} in a new tab`}
-              onMouseEnter={() => setActiveIndex(index)}
-              onFocus={() => setActiveIndex(index)}
+              aria-label={`Open defect preview ${link.label || index + 1}`}
             >
               <span className="min-w-0 truncate">{link.label || index + 1}</span>
               <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            </a>
+            </button>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
-      <CenteredDefectMapPreview link={activeLink} open={open} />
+      <CenteredDefectMapPreview
+        link={activeLink}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+      />
     </DropdownMenu>
   )
 }
 
 function DefectUrlPreviewLink({ link }) {
   const [open, setOpen] = React.useState(false)
-  const closeTimerRef = React.useRef(null)
-
-  const clearCloseTimer = React.useCallback(() => {
-    if (!closeTimerRef.current) return
-    window.clearTimeout(closeTimerRef.current)
-    closeTimerRef.current = null
-  }, [])
-
-  const openPreview = React.useCallback(() => {
-    clearCloseTimer()
-    setOpen(true)
-  }, [clearCloseTimer])
-
-  const scheduleClose = React.useCallback(() => {
-    clearCloseTimer()
-    closeTimerRef.current = window.setTimeout(() => {
-      setOpen(false)
-      closeTimerRef.current = null
-    }, 120)
-  }, [clearCloseTimer])
-
-  React.useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
 
   return (
     <>
       <button
         type="button"
         className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        aria-label="Open defect URL in a new tab"
+        aria-label="Open defect preview"
         title={`${link.label}: ${link.href}`}
-        onMouseEnter={openPreview}
-        onMouseLeave={scheduleClose}
-        onFocus={openPreview}
-        onBlur={scheduleClose}
-        onClick={() => openExternalUrl(link.href)}
+        onClick={() => setOpen(true)}
       >
         <ExternalLink className="h-4 w-4" />
       </button>
-      <CenteredDefectMapPreview link={link} open={open} />
+      <CenteredDefectMapPreview link={link} open={open} onOpenChange={setOpen} />
     </>
   )
 }
