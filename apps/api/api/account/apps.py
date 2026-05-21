@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈 설명: account 앱 설정과 초기 시그널/기본 슈퍼유저 보정 로직을 제공합니다.
 # - 주요 클래스: AccountConfig
-# - 불변 조건: ready 단계에서 시그널 등록과 보정만 수행합니다.
+# - 불변 조건: ready 단계에서는 시그널 등록만 수행합니다.
 # =============================================================================
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ class AccountConfig(AppConfig):
     name = "api.account"
 
     def ready(self) -> None:
-        """앱 준비 시 시그널 등록과 기본 슈퍼유저 보정을 수행합니다.
+        """앱 준비 시 런타임 시그널만 등록합니다.
 
         입력:
         - 없음
@@ -29,7 +29,7 @@ class AccountConfig(AppConfig):
 
         부작용:
         - 사용자 생성 시 프로필 생성 시그널 등록
-        - 기본 슈퍼유저 생성 시도
+        - migrate 이후 기본 슈퍼유저 보정 시그널 등록
 
         오류:
         - 없음(내부에서 방어적으로 처리)
@@ -38,7 +38,7 @@ class AccountConfig(AppConfig):
         # 1) 사용자 생성 시 프로필 생성 시그널 연결
         # -----------------------------------------------------------------------------
         from django.contrib.auth import get_user_model
-        from django.db.models.signals import post_save
+        from django.db.models.signals import post_migrate, post_save
 
         from api.account.services import ensure_user_profile
 
@@ -80,9 +80,18 @@ class AccountConfig(AppConfig):
         )
 
         # -----------------------------------------------------------------------------
-        # 2) 기본 슈퍼유저 보정 실행
+        # 2) migrate 완료 후 기본 슈퍼유저 보정 연결
         # -----------------------------------------------------------------------------
-        self._ensure_default_superuser()
+        def ensure_default_superuser(sender, **kwargs) -> None:
+            """migrate 완료 후 기본 슈퍼유저를 보정합니다."""
+
+            self._ensure_default_superuser()
+
+        post_migrate.connect(
+            ensure_default_superuser,
+            sender=self,
+            dispatch_uid="account_ensure_default_superuser",
+        )
 
     def _ensure_default_superuser(self) -> None:
         """기본 슈퍼유저가 없을 때 환경변수 기반으로 생성합니다.

@@ -94,7 +94,7 @@ function TargetMappingSummary({
       >
         <div className="min-w-0">
           <Select
-            value={draft.userSdwtProd || undefined}
+            value={draft.userSdwtProd}
             onValueChange={(value) => onDraftChange("userSdwtProd", value)}
             disabled={isSelectDisabled}
           >
@@ -113,7 +113,7 @@ function TargetMappingSummary({
         <IconArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <Select
-            value={draft.sdwtProd || undefined}
+            value={draft.sdwtProd}
             onValueChange={(value) => onDraftChange("sdwtProd", value)}
             disabled={isSelectDisabled}
           >

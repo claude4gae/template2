@@ -20,7 +20,7 @@ import {
   normalizeLineFilterMode,
 } from "../utils/lineFilterMode"
 
-const TABLE_AUTO_REFETCH_INTERVAL_MS = 30_000
+const TABLE_AUTO_REFETCH_INTERVAL_MS = 10_000
 
 /**
  * 테이블 데이터(컬럼/행/날짜 범위) 로딩을 담당하는 훅입니다.
