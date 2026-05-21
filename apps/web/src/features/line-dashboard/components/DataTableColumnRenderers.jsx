@@ -270,7 +270,7 @@ function DefectUrlHoverList({ links }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="center"
-        className="w-52 p-2"
+        className="w-34 p-2"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {links.map((link, index) => (

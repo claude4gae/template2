@@ -9,20 +9,13 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select"
 
 function resolveSelectedOptionValue(values, selectedValue) {
   const normalizedSelectedValue = String(selectedValue || "").trim()
   if (!normalizedSelectedValue) return ""
   return values.includes(normalizedSelectedValue) ? normalizedSelectedValue : ""
-}
-
-function SelectTriggerText({ value, placeholder }) {
-  return (
-    <span className={value ? "truncate" : "truncate text-muted-foreground"}>
-      {value || placeholder}
-    </span>
-  )
 }
 
 function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
@@ -121,7 +114,7 @@ function TargetMappingSummary({
             disabled={isSelectDisabled}
           >
             <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
-              <SelectTriggerText value={selectedUserSdwtProd} placeholder="엔지니어 분임조 선택" />
+              <SelectValue placeholder="엔지니어 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
               {userOptionValues.map((value) => (
@@ -140,7 +133,7 @@ function TargetMappingSummary({
             disabled={isSelectDisabled}
           >
             <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
-              <SelectTriggerText value={selectedSdwtProd} placeholder="설비소속 분임조 선택" />
+              <SelectValue placeholder="설비소속 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
               {sdwtOptionValues.map((value) => (
