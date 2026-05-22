@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { ChevronDownIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -73,6 +79,96 @@ export function AppCategorySelect({ category, categoryOptions, onCategoryChange 
     setIsOpen(true)
   }
 
+  const handleEmptyCategoryOpenChange = (nextOpen) => {
+    setIsOpen(nextOpen)
+    setIsAddingCategory(nextOpen)
+    if (!nextOpen) closeCategoryInput()
+  }
+
+  const handleCancelCategoryInput = () => {
+    closeCategoryInput()
+    if (categorySelectOptions.length === 0) setIsOpen(false)
+  }
+
+  const renderCategoryInput = () => (
+    <div
+      className="grid gap-2 p-2"
+      onPointerDownCapture={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          id="app-category-new"
+          ref={newCategoryInputRef}
+          value={newCategoryName}
+          onChange={(event) => setNewCategoryName(event.target.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === "Enter") {
+              event.preventDefault()
+              handleAddCategory()
+            }
+            if (event.key === "Escape") {
+              event.preventDefault()
+              handleCancelCategoryInput()
+            }
+          }}
+          placeholder="새 카테고리 입력"
+          maxLength={MAX_CATEGORY_LENGTH}
+          className="h-8"
+          autoFocus
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={handleAddCategory}
+          disabled={!newCategoryName.trim()}
+          className="h-8 shrink-0"
+        >
+          추가
+        </Button>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={handleCancelCategoryInput}
+        className="h-7 justify-start px-2 text-xs text-muted-foreground"
+      >
+        취소
+      </Button>
+    </div>
+  )
+
+  if (categorySelectOptions.length === 0) {
+    return (
+      <DropdownMenu
+        open={isOpen}
+        onOpenChange={handleEmptyCategoryOpenChange}
+        modal={false}
+      >
+        <DropdownMenuTrigger asChild>
+          <Button
+            id="app-category-select"
+            type="button"
+            variant="outline"
+            aria-label="새 카테고리 추가"
+            className="w-full justify-between font-normal text-muted-foreground"
+          >
+            기존 카테고리 없음
+            <ChevronDownIcon className="size-4 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] p-0">
+          <div className="px-3 py-2 text-sm text-muted-foreground">
+            기존 카테고리 없음
+          </div>
+          {renderCategoryInput()}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
   return (
     <Select
       open={isOpen}
@@ -89,56 +185,8 @@ export function AppCategorySelect({ category, categoryOptions, onCategoryChange 
             {option}
           </SelectItem>
         ))}
-        {categorySelectOptions.length > 0 ? <SelectSeparator /> : null}
-        {isAddingCategory ? (
-          <div
-            className="grid gap-2 p-2"
-            onPointerDownCapture={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                id="app-category-new"
-                ref={newCategoryInputRef}
-                value={newCategoryName}
-                onChange={(event) => setNewCategoryName(event.target.value)}
-                onKeyDown={(event) => {
-                  event.stopPropagation()
-                  if (event.key === "Enter") {
-                    event.preventDefault()
-                    handleAddCategory()
-                  }
-                  if (event.key === "Escape") {
-                    event.preventDefault()
-                    closeCategoryInput()
-                  }
-                }}
-                placeholder="새 카테고리 입력"
-                maxLength={MAX_CATEGORY_LENGTH}
-                className="h-8"
-                autoFocus
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={handleAddCategory}
-                disabled={!newCategoryName.trim()}
-                className="h-8 shrink-0"
-              >
-                추가
-              </Button>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={closeCategoryInput}
-              className="h-7 justify-start px-2 text-xs text-muted-foreground"
-            >
-              취소
-            </Button>
-          </div>
-        ) : (
+        <SelectSeparator />
+        {isAddingCategory ? renderCategoryInput() : (
           <button
             type="button"
             className="relative flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"

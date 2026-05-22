@@ -389,10 +389,11 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(defect_entries[0]["step_seq"], "ST003")
         self.assertEqual(defect_entries[0]["map_url"], valid_map_url)
 
-    def test_build_drone_sop_row_fills_system_when_knox_and_user_missing(self) -> None:
-        """knox_id/user_sdwt_prod 누락 시 기본값이 채워지는지 확인합니다."""
+    def test_build_drone_sop_row_uses_operator_id_when_knox_and_user_missing(self) -> None:
+        """knox_id/user_sdwt_prod 누락 시 operator_id를 user_sdwt_prod로 사용합니다."""
         html = """
         <data>
+          <operator_id>EARSAUTO</operator_id>
           <comment>system-comment</comment>
         </data>
         """
@@ -400,10 +401,24 @@ class DroneSopPop3ParsingTests(TestCase):
         row = build_drone_sop_row(html=html, early_inform_map={})
         assert row is not None
         self.assertEqual(row["knox_id"], "System")
-        self.assertEqual(row["user_sdwt_prod"], "System")
+        self.assertEqual(row["user_sdwt_prod"], "EARSAUTO")
 
-    def test_build_drone_sop_row_keeps_system_knox_id_even_when_comment_is_long(self) -> None:
-        """fallback 시 comment 길이와 무관하게 knox_id가 System인지 확인합니다."""
+    def test_build_drone_sop_row_cleans_operator_id_markup_and_quotes(self) -> None:
+        """operator_id의 HTML 태그와 따옴표를 제거해 저장합니다."""
+        html = """
+        <data>
+          <operator_id><span class="keyword">EARS</span>"AUTO"</operator_id>
+          <comment>system-comment</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "System")
+        self.assertEqual(row["user_sdwt_prod"], "EARSAUTO")
+
+    def test_build_drone_sop_row_falls_back_to_system_when_operator_id_missing(self) -> None:
+        """operator_id도 없으면 기존처럼 System 소속 fallback을 사용합니다."""
         html = """
         <data>
           <comment>abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890</comment>
@@ -415,8 +430,8 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "System")
         self.assertEqual(row["user_sdwt_prod"], "System")
 
-    def test_build_drone_sop_row_uses_automation_comment_when_actor_missing(self) -> None:
-        """자동화 comment는 작성자 fallback 값으로 사용하는지 확인합니다."""
+    def test_build_drone_sop_row_overrides_user_sdwt_prod_from_automation_comment(self) -> None:
+        """자동화 comment 키워드는 user_sdwt_prod만 override합니다."""
         cases = [
             ("AUTO_SKEW", "AUTO_SKEW"),
             ("SSB FULLAUTO", "SSB FULLAUTO"),
@@ -432,14 +447,45 @@ class DroneSopPop3ParsingTests(TestCase):
             with self.subTest(comment=comment):
                 html = f"""
                 <data>
+                  <operator_id>EARSAUTO</operator_id>
                   <comment>{comment}</comment>
                 </data>
                 """
 
                 row = build_drone_sop_row(html=html, early_inform_map={})
                 assert row is not None
-                self.assertEqual(row["knox_id"], expected)
+                self.assertEqual(row["knox_id"], "System")
                 self.assertEqual(row["user_sdwt_prod"], expected)
+
+    def test_build_drone_sop_row_keeps_user_sdwt_prod_without_automation_comment(self) -> None:
+        """자동화 comment 키워드가 없으면 기존 user_sdwt_prod 값을 유지합니다."""
+        html = """
+        <data>
+          <knox_id>USER1</knox_id>
+          <user_sdwt_prod>ORIGINAL_SDWT</user_sdwt_prod>
+          <comment>normal comment</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "USER1")
+        self.assertEqual(row["user_sdwt_prod"], "ORIGINAL_SDWT")
+
+    def test_build_drone_sop_row_overrides_existing_user_sdwt_prod_from_comment(self) -> None:
+        """자동화 comment 키워드가 있으면 기존 user_sdwt_prod도 override합니다."""
+        html = """
+        <data>
+          <knox_id>USER1</knox_id>
+          <user_sdwt_prod>ORIGINAL_SDWT</user_sdwt_prod>
+          <comment>prefix AUTO_SKEW suffix</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "USER1")
+        self.assertEqual(row["user_sdwt_prod"], "AUTO_SKEW")
 
     def test_build_drone_sop_row_applies_needtosend_db_rule(self) -> None:
         """DB 규칙 키워드가 comment에 포함되면 needtosend가 1인지 확인합니다."""

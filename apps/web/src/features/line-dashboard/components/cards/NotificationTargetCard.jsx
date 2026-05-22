@@ -23,8 +23,8 @@ function getMappingValueLineLabel(labels, value) {
   return key ? labels?.[key] || "" : ""
 }
 
-function formatMappingLineLabel(optionLineId, currentLineId) {
-  return optionLineId === currentLineId ? `현재 Line · ${optionLineId}` : optionLineId
+function formatMappingLineLabel(optionLineId) {
+  return optionLineId
 }
 
 function findLineOption(lineOptions, lineId) {
@@ -59,7 +59,7 @@ function MappingAffiliationDropdown({
     }
   }, [activeLineId, lineOptions])
 
-  const selectedLineLabel = selectedLineId ? formatMappingLineLabel(selectedLineId, currentLineId) : ""
+  const selectedLineLabel = selectedLineId ? formatMappingLineLabel(selectedLineId) : ""
   const displayValue = selectedValue
     ? `${selectedLineLabel ? `${selectedLineLabel} · ` : ""}${selectedValue}`
     : placeholder
@@ -113,7 +113,7 @@ function MappingAffiliationDropdown({
                       <span className="flex h-4 w-4 items-center justify-center">
                         {isSelectedLine ? <IconCheck className="size-4 text-primary" aria-hidden /> : null}
                       </span>
-                      <span className="truncate">{formatMappingLineLabel(option.lineId, currentLineId)}</span>
+                      <span className="truncate">{formatMappingLineLabel(option.lineId)}</span>
                     </button>
                   )
                 })
@@ -135,7 +135,7 @@ function MappingAffiliationDropdown({
                 )}
                 title={activeLineId || "Line 미선택"}
               >
-                {activeLineId ? formatMappingLineLabel(activeLineId, currentLineId) : "Line 미선택"}
+                {activeLineId ? formatMappingLineLabel(activeLineId) : "Line 미선택"}
               </span>
             </div>
             {activeLineId ? (
@@ -410,6 +410,7 @@ export function NotificationTargetCard({
   newTargetDraft,
   maxTargetFieldLength,
   canCreateTarget,
+  isCreateTargetPermissionLoading = false,
   canManageMappings,
   isCreatingTarget,
   isCreatingMapping,
@@ -446,14 +447,14 @@ export function NotificationTargetCard({
         </p>
       </div>
 
-      {targetFormError || !canCreateTarget ? (
+      {targetFormError || (!canCreateTarget && !isCreateTargetPermissionLoading) ? (
         <div className="space-y-1">
           {targetFormError ? (
             <p className="text-xs text-destructive" role="alert">
               {targetFormError}
             </p>
           ) : null}
-          {!canCreateTarget ? (
+          {!canCreateTarget && !isCreateTargetPermissionLoading ? (
             <p className="text-[11px] text-muted-foreground">
               알림 Target 추가는 operator 권한과 선택된 line이 필요합니다.
             </p>

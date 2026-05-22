@@ -32,6 +32,7 @@ AUTOMATION_COMMENT_ACTOR_FALLBACKS = {
     "isop": "ISOP",
     "autonomous": "AUTONOMOUS",
 }
+QUOTE_TRANSLATION = str.maketrans("", "", "\"'“”‘’")
 
 
 def _normalize_blank(value: Any) -> Any:
@@ -57,14 +58,33 @@ def _normalize_blank(value: Any) -> Any:
     return value
 
 
-def _resolve_missing_actor_fallback(comment: Any) -> str:
-    """작성자 정보가 없는 메일의 fallback 표시값을 결정합니다.
+def _normalize_operator_id(value: Any) -> str | None:
+    """operator_id를 user_sdwt_prod fallback 값으로 정규화합니다.
+
+    인자:
+        value: 메일 본문에서 파싱한 operator_id 값.
+
+    반환:
+        따옴표를 제거한 operator_id 문자열 또는 None.
+
+    부작용:
+        없음. 순수 문자열 정규화입니다.
+    """
+
+    if value is None:
+        return None
+    normalized = str(value).translate(QUOTE_TRANSLATION).strip()
+    return normalized or None
+
+
+def _resolve_comment_user_sdwt_override(comment: Any) -> str | None:
+    """comment 키워드 기반 user_sdwt_prod override 값을 결정합니다.
 
     인자:
         comment: 메일 본문에서 파싱한 comment 값.
 
     반환:
-        자동화 문구 또는 기본 System 문자열.
+        자동화 키워드에 대응하는 user_sdwt_prod 또는 None.
 
     부작용:
         없음. 순수 문자열 판정입니다.
@@ -77,7 +97,7 @@ def _resolve_missing_actor_fallback(comment: Any) -> str:
     for keyword, fallback in AUTOMATION_COMMENT_ACTOR_FALLBACKS.items():
         if keyword in normalized_comment:
             return fallback
-    return SYSTEM_ACTOR_FALLBACK
+    return None
 
 
 def _extract_first_data_tag(html: str) -> dict[str, str]:
@@ -179,12 +199,18 @@ def build_drone_sop_row(
     user_sdwt_prod = normalized.get("user_sdwt_prod")
 
     # -------------------------------------------------------------------------
-    # 2-1) knox_id/user_sdwt_prod가 모두 없으면 기본값을 채웁니다.
+    # 2-1) 작성자 정보가 모두 없으면 operator_id를 소속 fallback으로 사용합니다.
     # -------------------------------------------------------------------------
     if not knox_value and not user_sdwt_prod:
-        actor_fallback = _resolve_missing_actor_fallback(normalized.get("comment"))
-        knox_value = actor_fallback
-        user_sdwt_prod = actor_fallback
+        knox_value = SYSTEM_ACTOR_FALLBACK
+        user_sdwt_prod = _normalize_operator_id(normalized.get("operator_id")) or SYSTEM_ACTOR_FALLBACK
+
+    # -------------------------------------------------------------------------
+    # 2-2) 자동화 comment 키워드가 있으면 user_sdwt_prod만 후처리합니다.
+    # -------------------------------------------------------------------------
+    comment_user_sdwt_override = _resolve_comment_user_sdwt_override(normalized.get("comment"))
+    if comment_user_sdwt_override:
+        user_sdwt_prod = comment_user_sdwt_override
 
     defect_png_url_source = sanitize_url(normalized.get("defect_png_url"))
     defect_url = serialize_defect_json_entries(

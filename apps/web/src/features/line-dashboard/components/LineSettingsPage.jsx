@@ -143,6 +143,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const { user } = useAuth()
   const [selectedUserSdwtProd, setSelectedUserSdwtProd] = React.useState("")
   const [isGlobalOperator, setIsGlobalOperator] = React.useState(false)
+  const [hasLoadedPermissionContext, setHasLoadedPermissionContext] = React.useState(false)
   const {
     entries,
     notificationTargets,
@@ -665,6 +666,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   React.useEffect(() => {
     let isActive = true
     setIsGlobalOperator(false)
+    setHasLoadedPermissionContext(false)
 
     async function loadRecipientOptions() {
       try {
@@ -676,12 +678,14 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           setAccountDepartmentValues(departments || [])
           setAccountUserSdwtValues(userSdwtProds || [])
           setIsGlobalOperator(Boolean(permissionContext?.isOperator))
+          setHasLoadedPermissionContext(true)
         }
       } catch (requestError) {
         if (isActive) {
           const message =
             requestError instanceof Error ? requestError.message : "Failed to load user groups"
           setIsGlobalOperator(false)
+          setHasLoadedPermissionContext(true)
           setAccountDepartmentValues([])
           setAccountUserSdwtValues([])
           setRecipientActionErrors({ mail: message, messenger: message })
@@ -1491,6 +1495,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       newTargetDraft={newTargetDraft}
       maxTargetFieldLength={MAX_TARGET_FIELD_LENGTH}
       canCreateTarget={canCreateTarget}
+      isCreateTargetPermissionLoading={!hasLoadedPermissionContext}
       canManageMappings={canManageMappings}
       isCreatingTarget={isCreatingTarget}
       isCreatingMapping={isCreatingMapping}
