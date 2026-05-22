@@ -176,6 +176,9 @@ def _load_csv_seed_rows(*, path: Path) -> list[dict[str, Any]]:
             reader = csv.DictReader(handle)
             if not reader.fieldnames:
                 raise CommandError("CSV file must include a header row")
+            deprecated_mapping_fields = {"mapping_sdwt_prod", "mapping_user_sdwt_prod"} & set(reader.fieldnames)
+            if deprecated_mapping_fields:
+                raise CommandError("CSV mappings must use the mappings JSON column")
 
             rows: list[dict[str, Any]] = []
             seen_targets: set[str] = set()

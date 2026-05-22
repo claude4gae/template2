@@ -3891,6 +3891,26 @@ class DroneSopJsonTargetSeedTests(TestCase):
         finally:
             os.unlink(file_path)
 
+    def test_seed_targets_from_csv_rejects_deprecated_mapping_columns(self) -> None:
+        """CSV seed command는 예전 mapping 분리 컬럼을 허용하지 않습니다."""
+
+        csv_body = "\n".join(
+            [
+                "department,line,target_user_sdwt_prod,mapping_sdwt_prod,mapping_user_sdwt_prod",
+                "Dept,LCSV,TARGET_A,SOURCE_A,USER_A",
+            ]
+        )
+        with NamedTemporaryFile("w", encoding="utf-8", suffix=".csv", delete=False) as handle:
+            handle.write(csv_body)
+            handle.write("\n")
+            file_path = handle.name
+
+        try:
+            with self.assertRaisesMessage(CommandError, "mappings JSON column"):
+                call_command("seed_drone_targets_from_file", "--file", file_path)
+        finally:
+            os.unlink(file_path)
+
 
 class DroneJiraKeyEndpointTests(TestCase):
     """Jira 키/템플릿 키 엔드포인트를 검증합니다."""

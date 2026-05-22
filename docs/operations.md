@@ -149,9 +149,9 @@ docker compose -f docker-compose.dev.yml exec -T api \
 - `drone_sop_needtosend_rule`
 - `drone_sop_target_recipient`
 
-CSV에서 하나의 target에 mapping이 여러 개인 경우 같은 `target_user_sdwt_prod`를 여러 행에
-반복하고 `mapping_sdwt_prod`, `mapping_user_sdwt_prod`만 행별로 바꿉니다.
-반복 행의 target/channel/rule 컬럼 값이 서로 다르면 command가 오류로 중단됩니다.
+CSV에서 하나의 target에 mapping이 여러 개인 경우 target row는 하나만 작성하고 `mappings`
+컬럼에 JSON 배열을 넣습니다. 같은 `target_user_sdwt_prod`가 여러 행에 반복되면 command가
+오류로 중단됩니다.
 
 JSON/CSV 파일은 `api` 컨테이너가 읽을 수 있는 경로에 배치해야 합니다.
 실제 실행 전에는 반드시 `--dry-run` 출력의 삭제/생성 카운트를 확인합니다.
