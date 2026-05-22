@@ -1088,8 +1088,8 @@ class DroneSopJiraUpdateTests(TestCase):
 class DroneSelectorCaseInsensitiveTests(TestCase):
     """sdwt/user/target 소속 비교의 대소문자 비구분 동작을 검증합니다."""
 
-    def test_list_distinct_line_ids_uses_drone_targets_and_observed_lines(self) -> None:
-        """line 선택지는 Drone target과 실제 SOP 관측 line을 병합해야 합니다."""
+    def test_list_distinct_line_ids_uses_drone_targets_only(self) -> None:
+        """line 선택지는 Drone target에 설정된 line만 반환해야 합니다."""
 
         _upsert_target(
             line_id="CUSTOM_LINE",
@@ -1105,7 +1105,7 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
 
         self.assertTrue(selectors.line_id_exists(line_id="l1"))
         self.assertTrue(selectors.line_id_exists(line_id="CUSTOM_LINE"))
-        self.assertEqual(selectors.list_distinct_line_ids(), ["CUSTOM_LINE", "L1"])
+        self.assertEqual(selectors.list_distinct_line_ids(), ["CUSTOM_LINE"])
 
     def test_selector_lookups_ignore_case_for_user_sdwt_prod_and_target(self) -> None:
         """소속/채널/수신자 조회가 대소문자를 무시하는지 확인합니다."""

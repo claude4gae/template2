@@ -1483,7 +1483,7 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
 
 
 def list_distinct_line_ids() -> list[str]:
-    """사이드바 필터용 Drone line_id 고유값 목록을 조회합니다.
+    """사이드바 필터용 Drone target line_id 고유값 목록을 조회합니다.
 
     반환:
         line_id 문자열 리스트.
@@ -1492,15 +1492,8 @@ def list_distinct_line_ids() -> list[str]:
         없음. 읽기 전용 조회입니다.
     """
 
-    values: list[Any] = []
-    values.extend(
+    values = (
         DroneSopTarget.objects.exclude(line_id__isnull=True)
-        .exclude(line_id__exact="")
-        .values_list("line_id", flat=True)
-        .distinct()
-    )
-    values.extend(
-        DroneSOP.objects.exclude(line_id__isnull=True)
         .exclude(line_id__exact="")
         .values_list("line_id", flat=True)
         .distinct()
