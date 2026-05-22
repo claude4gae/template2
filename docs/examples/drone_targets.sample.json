@@ -3,17 +3,70 @@
     {
       "department": "ENGR",
       "line": "L1",
-      "user_sdwt_prod": "ETCH_A"
+      "target_user_sdwt_prod": "ETCH_A",
+      "recipient_user_sdwt_prod": "ETCH_A",
+      "channels": {
+        "jira": {
+          "enabled": false,
+          "template_key": "common",
+          "jira_project_key": "DRONE"
+        },
+        "messenger": {
+          "enabled": true,
+          "template_key": "common",
+          "chatroom_id": null,
+          "force_new_chatroom": true
+        },
+        "mail": {
+          "enabled": true,
+          "template_key": "common"
+        }
+      },
+      "mappings": [
+        {
+          "sdwt_prod": "ETCH_A",
+          "user_sdwt_prod": "ETCH_A"
+        }
+      ],
+      "needtosend_rule": {
+        "enabled": false,
+        "comment_keyword": "$SETUP_EQP",
+        "ignore_sample_type": false
+      }
     },
     {
       "department": "설비",
       "line": "L1",
-      "user_sdwt_prod": "EQP_A"
-    },
-    {
-      "department": "ENGR",
-      "line": "L2",
-      "user_sdwt_prod": "PHOTO_A"
+      "target_user_sdwt_prod": "EQP_A",
+      "recipient_user_sdwt_prod": "EQP_A",
+      "channels": {
+        "jira": {
+          "enabled": false,
+          "template_key": "common",
+          "jira_project_key": "DRONE"
+        },
+        "messenger": {
+          "enabled": true,
+          "template_key": "common",
+          "chatroom_id": null,
+          "force_new_chatroom": true
+        },
+        "mail": {
+          "enabled": true,
+          "template_key": "common"
+        }
+      },
+      "mappings": [
+        {
+          "sdwt_prod": "EQP_A",
+          "user_sdwt_prod": "EQP_A"
+        }
+      ],
+      "needtosend_rule": {
+        "enabled": false,
+        "comment_keyword": "$SETUP_EQP",
+        "ignore_sample_type": false
+      }
     }
   ]
 }

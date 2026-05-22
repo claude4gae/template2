@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: Drone SOP JSON target 기반 알림 초기 세팅 커맨드
 # 주요 기능: JSON target 목록으로 Drone SOP/발송 이력/알림 설정 초기화 후 재생성
-# 불변 조건: 입력 JSON은 department/line/user_sdwt_prod만 요구합니다.
+# 불변 조건: recipients는 account 사용자 pool 기준으로 자동 생성합니다.
 # =============================================================================
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _normalize_text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _load_seed_rows(*, file_path: str) -> list[dict[str, str]]:
+def _load_seed_rows(*, file_path: str) -> list[dict[str, Any]]:
     """JSON 파일을 읽어 seed row 목록으로 검증/정규화합니다."""
 
     path = Path(file_path)
@@ -39,24 +39,22 @@ def _load_seed_rows(*, file_path: str) -> list[dict[str, str]]:
     if not isinstance(targets, list):
         raise CommandError("JSON field 'targets' must be a list")
 
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for index, target in enumerate(targets, start=1):
         if not isinstance(target, dict):
             raise CommandError(f"targets[{index}] must be an object")
-        department = _normalize_text(target.get("department"))
-        line = _normalize_text(target.get("line"))
-        user_sdwt_prod = _normalize_text(target.get("user_sdwt_prod"))
+        line = _normalize_text(target.get("line")) or _normalize_text(target.get("line_id"))
+        target_user_sdwt_prod = _normalize_text(target.get("target_user_sdwt_prod")) or _normalize_text(
+            target.get("user_sdwt_prod")
+        )
         if not line:
             raise CommandError(f"targets[{index}].line is required")
-        if not user_sdwt_prod:
-            raise CommandError(f"targets[{index}].user_sdwt_prod is required")
-        rows.append(
-            {
-                "department": department,
-                "line_id": line,
-                "user_sdwt_prod": user_sdwt_prod,
-            }
-        )
+        if not target_user_sdwt_prod:
+            raise CommandError(f"targets[{index}].target_user_sdwt_prod is required")
+        row = dict(target)
+        row["line_id"] = line
+        row["target_user_sdwt_prod"] = target_user_sdwt_prod
+        rows.append(row)
     return rows
 
 
@@ -71,7 +69,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--file",
             required=True,
-            help="department/line/user_sdwt_prod targets JSON 파일 경로입니다.",
+            help="Drone target/channel/mapping 설정 JSON 파일 경로입니다.",
         )
         parser.add_argument(
             "--template-key",
@@ -95,11 +93,14 @@ class Command(BaseCommand):
         rows = _load_seed_rows(file_path=str(options.get("file") or ""))
         dry_run = bool(options.get("dry_run"))
         with transaction.atomic():
-            result = services.seed_drone_sop_notification_defaults_from_rows(
-                rows=rows,
-                template_key=str(options.get("template_key") or "common"),
-                comment_keyword=str(options.get("comment_keyword") or "$SETUP_EQP"),
-            )
+            try:
+                result = services.seed_drone_sop_notification_defaults_from_rows(
+                    rows=rows,
+                    template_key=str(options.get("template_key") or "common"),
+                    comment_keyword=str(options.get("comment_keyword") or "$SETUP_EQP"),
+                )
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
             if dry_run:
                 transaction.set_rollback(True)
 

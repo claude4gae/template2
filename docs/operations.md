@@ -47,7 +47,6 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 | `seed_dummy_emails` | 개발용 샘플 메일 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `seed_drone_dummy_data` | Drone 개발용 샘플 데이터 생성 |
-| `seed_drone_affiliation_notifications` | Account 소속 기준 Drone 알림 target/channel/recipient seed |
 | `seed_drone_targets_from_file` | JSON 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
 | `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
 | `purge_drone_sop` | Drone SOP 데이터 전체 삭제 또는 dry-run 확인 |
@@ -58,7 +57,6 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy_emails
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data
-docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_affiliation_notifications
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
 docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
@@ -77,11 +75,48 @@ Drone SOP/발송 이력/알림 설정을 초기화한 뒤 다시 생성합니다
     {
       "department": "ENGR",
       "line": "L1",
-      "user_sdwt_prod": "ETCH_A"
+      "target_user_sdwt_prod": "ETCH_A",
+      "recipient_user_sdwt_prod": "ETCH_A",
+      "channels": {
+        "jira": {
+          "enabled": false,
+          "template_key": "common",
+          "jira_project_key": "DRONE"
+        },
+        "messenger": {
+          "enabled": true,
+          "template_key": "common",
+          "chatroom_id": null,
+          "force_new_chatroom": true
+        },
+        "mail": {
+          "enabled": true,
+          "template_key": "common"
+        }
+      },
+      "mappings": [
+        {
+          "sdwt_prod": "ETCH_A",
+          "user_sdwt_prod": "ETCH_A"
+        }
+      ],
+      "needtosend_rule": {
+        "enabled": false,
+        "comment_keyword": "$SETUP_EQP",
+        "ignore_sample_type": false
+      }
     }
   ]
 }
 ```
+
+주요 필드:
+
+- `target_user_sdwt_prod`: `drone_sop_target.target_user_sdwt_prod`
+- `recipient_user_sdwt_prod`: 수신인 자동 수집에 사용할 account 소속값
+- `channels`: `drone_sop_target_channel_config` 생성값
+- `mappings`: `drone_sop_target_mapping` 생성값
+- `needtosend_rule`: `drone_sop_needtosend_rule` 생성값
 
 사용 순서:
 

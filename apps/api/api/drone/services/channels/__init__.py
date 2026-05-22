@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .affiliation_seed import (
     DroneSopAffiliationSeedResult,
-    seed_drone_sop_affiliation_notification_defaults,
     seed_drone_sop_notification_defaults_from_rows,
 )
 from .recipients import (
@@ -35,7 +34,6 @@ __all__ = [
     "normalize_recipient_channel",
     "promote_drone_sop_external_recipients_for_user",
     "replace_drone_sop_channel_recipients",
-    "seed_drone_sop_affiliation_notification_defaults",
     "seed_drone_sop_notification_defaults_from_rows",
     "upsert_drone_sop_user_sdwt_channel",
 ]

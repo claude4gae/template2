@@ -6,42 +6,26 @@
 docker compose -f docker-compose.dev.yml exec -T api python manage.py <command> [options]
 ```
 
-## `seed_drone_affiliation_notifications`
+## `seed_drone_targets_from_file`
 
-`account_affiliation`과 `account_external_affiliation_snapshot` 기준으로 Drone SOP 알림 기본 설정을 생성합니다.
-
-### 동작
-
-- `account_affiliation.line/user_sdwt_prod`별 `DroneSopTarget`을 생성합니다.
-- `sdwt_prod == user_sdwt_prod == account_affiliation.user_sdwt_prod`인 `DroneSopTargetMapping`을 생성합니다.
-- 새 target의 채널 기본값을 생성합니다.
-  - Jira: 비활성
-  - Messenger/Teams: 활성
-  - Mail: 활성
-  - `template_key`: 기본 `common`
-- 자동예약 규칙을 생성합니다.
-  - `comment_keyword`: 기본 `$SETUP_EQP`
-  - `enabled`: `false`
-- 같은 `user_sdwt_prod`의 가입 사용자를 Mail/Messenger 수신인으로 추가합니다.
-- 같은 `predicted_user_sdwt_prod`의 외부 snapshot 사용자를 `external_knox_id` 수신인으로 추가합니다.
-- 기존 target, mapping, channel config, rule, recipient는 덮어쓰지 않고 없는 row만 추가합니다.
+JSON 파일 기준으로 Drone SOP/발송 이력/알림 설정을 초기화한 뒤 target, mapping,
+channel config, needtosend rule, recipient를 생성합니다.
 
 ### 사용법
 
 ```bash
-docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_affiliation_notifications --dry-run
-docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_affiliation_notifications
-docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_affiliation_notifications --line-id L1
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json
 ```
 
 ### 옵션
 
 | 옵션 | 기본값 | 설명 |
 | --- | --- | --- |
-| `--line-id` | 전체 | 특정 `account_affiliation.line`만 처리합니다. |
-| `--template-key` | `common` | 새 채널 설정의 template key입니다. |
-| `--comment-keyword` | `$SETUP_EQP` | 새 자동예약 규칙의 comment keyword입니다. |
-| `--dry-run` | off | 생성 결과를 계산한 뒤 DB 변경을 롤백합니다. |
+| `--file` | 필수 | `api` 컨테이너가 읽을 수 있는 JSON 파일 경로입니다. |
+| `--template-key` | `common` | JSON channel에 `template_key`가 없을 때 사용할 기본값입니다. |
+| `--comment-keyword` | `$SETUP_EQP` | JSON rule에 `comment_keyword`가 없을 때 사용할 기본값입니다. |
+| `--dry-run` | off | 삭제/생성 결과를 계산한 뒤 DB 변경을 롤백합니다. |
 
 ## `seed_drone_dummy_data`
 

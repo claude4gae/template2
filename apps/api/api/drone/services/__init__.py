@@ -53,7 +53,6 @@ from .channels import (
     normalize_recipient_channel,
     promote_drone_sop_external_recipients_for_user,
     replace_drone_sop_channel_recipients,
-    seed_drone_sop_affiliation_notification_defaults,
     seed_drone_sop_notification_defaults_from_rows,
     upsert_drone_sop_user_sdwt_channel,
 )
@@ -108,7 +107,6 @@ __all__ = [
     "run_drone_sop_pipeline_from_env",
     "run_drone_sop_pop3_ingest_from_env",
     "seed_legacy_delivery_rows",
-    "seed_drone_sop_affiliation_notification_defaults",
     "seed_drone_sop_notification_defaults_from_rows",
     "upsert_drone_sop_user_sdwt_channel",
     "update_early_inform_entry",

@@ -1,9 +1,9 @@
 # =============================================================================
 # 모듈: Drone SOP 알림 초기 설정
-# 주요 함수: seed_drone_sop_affiliation_notification_defaults, seed_drone_sop_notification_defaults_from_rows
+# 주요 함수: seed_drone_sop_notification_defaults_from_rows
 # 주요 가정: 기존 알림 설정을 초기화한 뒤 seed row 기준으로 다시 생성합니다.
 # =============================================================================
-"""account 소속 또는 외부 row 기반 Drone SOP 알림 초기 설정 서비스입니다."""
+"""외부 row 기반 Drone SOP 알림 초기 설정 서비스입니다."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .user_sdwt_channel import get_or_create_drone_sop_target_by_name
 
 @dataclass
 class DroneSopAffiliationSeedResult:
-    """account 소속 기반 Drone SOP 초기 설정 결과입니다."""
+    """Drone SOP 초기 설정 결과입니다."""
 
     affiliation_targets: int = 0
     targets_created: int = 0
@@ -87,18 +87,63 @@ def _normalize_text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _normalize_seed_target_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, str]]:
+_CHANNEL_DEFAULTS: dict[str, dict[str, Any]] = {
+    DroneSopTargetChannelConfig.Channels.JIRA: {
+        "enabled": False,
+        "template_key": "common",
+        "jira_project_key": None,
+        "chatroom_id": None,
+        "force_new_chatroom": False,
+    },
+    DroneSopTargetChannelConfig.Channels.MESSENGER: {
+        "enabled": True,
+        "template_key": "common",
+        "jira_project_key": None,
+        "chatroom_id": None,
+        "force_new_chatroom": True,
+    },
+    DroneSopTargetChannelConfig.Channels.MAIL: {
+        "enabled": True,
+        "template_key": "common",
+        "jira_project_key": None,
+        "chatroom_id": None,
+        "force_new_chatroom": False,
+    },
+}
+
+
+def _normalize_bool(value: Any, *, default: bool) -> bool:
+    """JSON boolean 값을 정규화하고 값이 없으면 기본값을 반환합니다."""
+
+    return value if isinstance(value, bool) else default
+
+
+def _normalize_int_or_none(value: Any) -> int | None:
+    """양의 정수 또는 None으로 chatroom_id 값을 정규화합니다."""
+
+    if value is None:
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def _normalize_seed_target_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """외부 seed row를 공통 내부 형식으로 정규화합니다."""
 
-    normalized_rows: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    normalized_rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for row in rows:
         department = _normalize_text(row.get("department"))
         line_id = _normalize_text(row.get("line_id")) or _normalize_text(row.get("line"))
-        user_sdwt_prod = _normalize_text(row.get("user_sdwt_prod"))
-        if not line_id or not user_sdwt_prod:
+        legacy_user_sdwt_prod = _normalize_text(row.get("user_sdwt_prod"))
+        target_user_sdwt_prod = _normalize_text(row.get("target_user_sdwt_prod")) or legacy_user_sdwt_prod
+        recipient_user_sdwt_prod = _normalize_text(row.get("recipient_user_sdwt_prod")) or legacy_user_sdwt_prod
+        if not recipient_user_sdwt_prod:
+            recipient_user_sdwt_prod = target_user_sdwt_prod
+        if not line_id or not target_user_sdwt_prod:
             continue
-        key = (line_id.casefold(), user_sdwt_prod.casefold())
+        key = target_user_sdwt_prod.casefold()
         if key in seen:
             continue
         seen.add(key)
@@ -106,32 +151,22 @@ def _normalize_seed_target_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[
             {
                 "department": department,
                 "line_id": line_id,
-                "user_sdwt_prod": user_sdwt_prod,
+                "target_user_sdwt_prod": target_user_sdwt_prod,
+                "recipient_user_sdwt_prod": recipient_user_sdwt_prod,
+                "channels": row.get("channels"),
+                "mappings": row.get("mappings"),
+                "needtosend_rule": row.get("needtosend_rule"),
             }
         )
     return normalized_rows
 
 
-def _iter_affiliation_targets(*, line_id: str = "") -> list[dict[str, str]]:
-    """account_affiliation에서 초기 설정 대상 line/user_sdwt_prod 목록을 조회합니다."""
-
-    normalized_line_id = _normalize_text(line_id)
-    rows = account_selectors.list_line_sdwt_pairs()
-    if normalized_line_id:
-        return [
-            row
-            for row in rows
-            if _normalize_text(row.get("line_id")).casefold() == normalized_line_id.casefold()
-        ]
-    return rows
-
-
-def _get_or_create_target_from_affiliation(
+def _create_seed_target(
     *,
     line_id: str,
     target_user_sdwt_prod: str,
 ) -> tuple[DroneSopTarget, bool, bool]:
-    """account 소속 target을 생성하거나 기존 target의 빈 line_id만 보완합니다."""
+    """seed target을 생성하거나 기존 target의 빈 line_id만 보완합니다."""
 
     existing = (
         DroneSopTarget.objects.select_for_update()
@@ -176,63 +211,128 @@ def _reset_notification_settings() -> dict[str, int]:
     }
 
 
-def _ensure_self_mapping(*, target: DroneSopTarget, value: str) -> tuple[bool, bool]:
-    """sdwt_prod와 user_sdwt_prod가 같은 self mapping을 없을 때만 생성합니다."""
+def _normalize_mapping_specs(*, raw_mappings: Any, fallback_value: str) -> list[dict[str, str]]:
+    """JSON mapping 목록을 DroneSopTargetMapping 생성 입력으로 정규화합니다."""
 
-    existing = (
-        DroneSopTargetMapping.objects.select_for_update()
-        .filter(sdwt_prod__iexact=value, user_sdwt_prod__iexact=value)
-        .order_by("id")
-        .first()
-    )
-    if existing is not None:
-        return False, existing.target_id != target.id
-    try:
-        with transaction.atomic():
-            DroneSopTargetMapping.objects.create(
-                sdwt_prod=value,
-                user_sdwt_prod=value,
-                target=target,
-            )
-            return True, False
-    except IntegrityError:
-        return False, True
+    if raw_mappings is None:
+        return [{"sdwt_prod": fallback_value, "user_sdwt_prod": fallback_value}]
+    if not isinstance(raw_mappings, list):
+        raise ValueError("mappings must be a list")
+
+    specs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for mapping in raw_mappings:
+        if not isinstance(mapping, Mapping):
+            raise ValueError("mapping entries must be objects")
+        sdwt_prod = _normalize_text(mapping.get("sdwt_prod"))
+        user_sdwt_prod = _normalize_text(mapping.get("user_sdwt_prod"))
+        if not sdwt_prod and not user_sdwt_prod:
+            raise ValueError("mapping requires sdwt_prod or user_sdwt_prod")
+        key = (sdwt_prod.casefold(), user_sdwt_prod.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        specs.append({"sdwt_prod": sdwt_prod, "user_sdwt_prod": user_sdwt_prod})
+    return specs
 
 
-def _ensure_channel_defaults(*, target: DroneSopTarget, template_key: str) -> int:
-    """target의 기본 채널 설정을 없는 row에만 생성합니다."""
+def _create_target_mappings(
+    *,
+    target: DroneSopTarget,
+    mapping_specs: list[dict[str, str]],
+    global_mapping_owner: dict[tuple[str, str], str],
+) -> int:
+    """정규화된 mapping 목록을 target에 연결해 생성합니다."""
 
-    specs = [
-        (DroneSopTargetChannelConfig.Channels.JIRA, False),
-        (DroneSopTargetChannelConfig.Channels.MESSENGER, True),
-        (DroneSopTargetChannelConfig.Channels.MAIL, True),
-    ]
     created_count = 0
-    for channel, enabled in specs:
-        _, created = DroneSopTargetChannelConfig.objects.get_or_create(
+    target_key = target.target_user_sdwt_prod.casefold()
+    for mapping in mapping_specs:
+        sdwt_prod = mapping["sdwt_prod"]
+        user_sdwt_prod = mapping["user_sdwt_prod"]
+        mapping_key = (sdwt_prod.casefold(), user_sdwt_prod.casefold())
+        owner = global_mapping_owner.get(mapping_key)
+        if owner and owner != target_key:
+            raise ValueError("duplicate mapping belongs to multiple targets")
+        if owner == target_key:
+            continue
+        global_mapping_owner[mapping_key] = target_key
+        DroneSopTargetMapping.objects.create(
+            sdwt_prod=sdwt_prod or None,
+            user_sdwt_prod=user_sdwt_prod or None,
             target=target,
-            channel=channel,
-            defaults={
-                "enabled": enabled,
-                "template_key": template_key,
-            },
         )
-        created_count += int(created)
+        created_count += 1
     return created_count
 
 
-def _ensure_needtosend_rule(*, target: DroneSopTarget, comment_keyword: str) -> bool:
-    """자동예약 기본 규칙을 없는 row에만 생성합니다."""
+def _normalize_channel_specs(*, raw_channels: Any, default_template_key: str) -> list[dict[str, Any]]:
+    """JSON channel 설정을 3개 채널 생성 spec으로 정규화합니다."""
 
-    _, created = DroneSopNeedToSendRule.objects.get_or_create(
+    if raw_channels is None:
+        raw_channels = {}
+    if not isinstance(raw_channels, Mapping):
+        raise ValueError("channels must be an object")
+
+    unknown_channels = set(raw_channels.keys()) - set(_CHANNEL_DEFAULTS.keys())
+    if unknown_channels:
+        raise ValueError("channels contains unsupported channel")
+
+    specs: list[dict[str, Any]] = []
+    for channel, defaults in _CHANNEL_DEFAULTS.items():
+        raw_config = raw_channels.get(channel) or {}
+        if not isinstance(raw_config, Mapping):
+            raise ValueError("channel config must be an object")
+        default_template = default_template_key or _normalize_text(defaults.get("template_key"))
+        template_key = _normalize_text(raw_config.get("template_key")) or default_template
+        specs.append(
+            {
+                "channel": channel,
+                "enabled": _normalize_bool(raw_config.get("enabled"), default=bool(defaults["enabled"])),
+                "template_key": template_key,
+                "jira_project_key": _normalize_text(raw_config.get("jira_project_key"))
+                or defaults.get("jira_project_key"),
+                "chatroom_id": _normalize_int_or_none(raw_config.get("chatroom_id")),
+                "force_new_chatroom": _normalize_bool(
+                    raw_config.get("force_new_chatroom"),
+                    default=bool(defaults["force_new_chatroom"]),
+                ),
+            }
+        )
+    return specs
+
+
+def _create_channel_configs(*, target: DroneSopTarget, channel_specs: list[dict[str, Any]]) -> int:
+    """정규화된 channel spec으로 target 채널 설정을 생성합니다."""
+
+    created_count = 0
+    for spec in channel_specs:
+        DroneSopTargetChannelConfig.objects.create(
+            target=target,
+            channel=spec["channel"],
+            enabled=spec["enabled"],
+            template_key=spec["template_key"],
+            jira_project_key=spec["jira_project_key"],
+            chatroom_id=spec["chatroom_id"],
+            force_new_chatroom=spec["force_new_chatroom"],
+        )
+        created_count += 1
+    return created_count
+
+
+def _create_needtosend_rule(*, target: DroneSopTarget, raw_rule: Any, comment_keyword: str) -> bool:
+    """JSON needtosend_rule 설정 또는 기본값으로 규칙을 생성합니다."""
+
+    if raw_rule is None:
+        raw_rule = {}
+    if not isinstance(raw_rule, Mapping):
+        raise ValueError("needtosend_rule must be an object")
+    DroneSopNeedToSendRule.objects.create(
         target=target,
-        defaults={
-            "enabled": False,
-            "comment_keyword": comment_keyword,
-            "ignore_sample_type": False,
-        },
+        enabled=_normalize_bool(raw_rule.get("enabled"), default=False),
+        comment_keyword=_normalize_text(raw_rule.get("comment_keyword")) or comment_keyword,
+        ignore_sample_type=_normalize_bool(raw_rule.get("ignore_sample_type"), default=False),
     )
-    return bool(created)
+    return True
 
 
 def _recipient_exists(
@@ -329,10 +429,10 @@ def seed_drone_sop_notification_defaults_from_rows(
     template_key: str = "common",
     comment_keyword: str = "$SETUP_EQP",
 ) -> DroneSopAffiliationSeedResult:
-    """외부 target row 기준 Drone SOP 알림 기본값을 초기화 후 생성합니다.
+    """외부 target row 기준 Drone SOP 알림 설정을 초기화 후 생성합니다.
 
     입력:
-    - rows: department/line_id/user_sdwt_prod 또는 department/line/user_sdwt_prod dict 목록
+    - rows: target/channel/mapping/rule 설정을 담은 dict 목록
     - template_key: 새 채널 설정에 사용할 template_key
     - comment_keyword: 새 자동예약 규칙에 사용할 comment keyword
 
@@ -363,34 +463,41 @@ def seed_drone_sop_notification_defaults_from_rows(
         result.dispatches_deleted = reset_counts["dispatches_deleted"]
         result.deliveries_deleted = reset_counts["deliveries_deleted"]
 
+        global_mapping_owner: dict[tuple[str, str], str] = {}
         for row in seed_rows:
             department = _normalize_text(row.get("department"))
-            target_user_sdwt_prod = _normalize_text(row.get("user_sdwt_prod"))
+            target_user_sdwt_prod = _normalize_text(row.get("target_user_sdwt_prod"))
+            recipient_user_sdwt_prod = _normalize_text(row.get("recipient_user_sdwt_prod")) or target_user_sdwt_prod
             row_line_id = _normalize_text(row.get("line_id"))
             if not target_user_sdwt_prod or not row_line_id:
                 continue
 
             result.affiliation_targets += 1
-            target, target_created, line_filled = _get_or_create_target_from_affiliation(
+            target, target_created, line_filled = _create_seed_target(
                 line_id=row_line_id,
                 target_user_sdwt_prod=target_user_sdwt_prod,
             )
             result.targets_created += int(target_created)
             result.target_lines_filled += int(line_filled)
 
-            mapping_created, mapping_skipped = _ensure_self_mapping(
-                target=target,
-                value=target_user_sdwt_prod,
+            mapping_specs = _normalize_mapping_specs(
+                raw_mappings=row.get("mappings"),
+                fallback_value=target_user_sdwt_prod,
             )
-            result.mappings_created += int(mapping_created)
-            result.skipped_existing_mappings += int(mapping_skipped)
-            result.channel_configs_created += _ensure_channel_defaults(
+            result.mappings_created += _create_target_mappings(
                 target=target,
-                template_key=normalized_template_key,
+                mapping_specs=mapping_specs,
+                global_mapping_owner=global_mapping_owner,
             )
+            channel_specs = _normalize_channel_specs(
+                raw_channels=row.get("channels"),
+                default_template_key=normalized_template_key,
+            )
+            result.channel_configs_created += _create_channel_configs(target=target, channel_specs=channel_specs)
             result.needtosend_rules_created += int(
-                _ensure_needtosend_rule(
+                _create_needtosend_rule(
                     target=target,
+                    raw_rule=row.get("needtosend_rule"),
                     comment_keyword=normalized_comment_keyword,
                 )
             )
@@ -398,14 +505,14 @@ def seed_drone_sop_notification_defaults_from_rows(
             mail_user_created, mail_external_created = _seed_channel_recipients(
                 target=target,
                 department=department,
-                target_user_sdwt_prod=target_user_sdwt_prod,
+                target_user_sdwt_prod=recipient_user_sdwt_prod,
                 channel=DroneSopTargetRecipient.Channels.MAIL,
                 contact_field="email",
             )
             messenger_user_created, messenger_external_created = _seed_channel_recipients(
                 target=target,
                 department=department,
-                target_user_sdwt_prod=target_user_sdwt_prod,
+                target_user_sdwt_prod=recipient_user_sdwt_prod,
                 channel=DroneSopTargetRecipient.Channels.MESSENGER,
                 contact_field="knox_id",
             )
@@ -415,23 +522,7 @@ def seed_drone_sop_notification_defaults_from_rows(
     return result
 
 
-def seed_drone_sop_affiliation_notification_defaults(
-    *,
-    line_id: str = "",
-    template_key: str = "common",
-    comment_keyword: str = "$SETUP_EQP",
-) -> DroneSopAffiliationSeedResult:
-    """account_affiliation 기준 Drone SOP 알림 target 기본값을 누락분만 생성합니다."""
-
-    return seed_drone_sop_notification_defaults_from_rows(
-        rows=_iter_affiliation_targets(line_id=line_id),
-        template_key=template_key,
-        comment_keyword=comment_keyword,
-    )
-
-
 __all__ = [
     "DroneSopAffiliationSeedResult",
-    "seed_drone_sop_affiliation_notification_defaults",
     "seed_drone_sop_notification_defaults_from_rows",
 ]
