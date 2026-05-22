@@ -18,6 +18,7 @@ from unittest.mock import Mock, patch
 import requests
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connection, IntegrityError, transaction
 from django.test import SimpleTestCase, TestCase
 from django.test.utils import CaptureQueriesContext, override_settings
@@ -3769,7 +3770,7 @@ class DroneSopJsonTargetSeedTests(TestCase):
         )
 
     def test_seed_targets_from_file_command_dry_run_rolls_back(self) -> None:
-        """JSON seed command의 dry-run 옵션은 DB 변경을 롤백합니다."""
+        """파일 seed command의 dry-run 옵션은 DB 변경을 롤백합니다."""
 
         payload = {
             "targets": [
@@ -3798,6 +3799,100 @@ class DroneSopJsonTargetSeedTests(TestCase):
 
         self.assertIn("dry-run:", output.getvalue())
         self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="SEED_A").exists())
+
+    def test_seed_targets_from_csv_groups_multiple_mapping_rows(self) -> None:
+        """CSV seed command는 같은 target의 여러 mapping 행을 하나로 묶습니다."""
+
+        csv_body = "\n".join(
+            [
+                (
+                    "department,line,target_user_sdwt_prod,recipient_user_sdwt_prod,"
+                    "jira_enabled,jira_template_key,jira_project_key,"
+                    "messenger_enabled,messenger_template_key,messenger_chatroom_id,"
+                    "messenger_force_new_chatroom,mail_enabled,mail_template_key,"
+                    "mapping_sdwt_prod,mapping_user_sdwt_prod,"
+                    "needtosend_enabled,needtosend_comment_keyword,needtosend_ignore_sample_type"
+                ),
+                (
+                    "Dept,LCSV,TARGET_A,SEED_A,true,jira-custom,DRONE,"
+                    "false,msg-custom,12345,false,true,mail-custom,"
+                    "SOURCE_SDWT,SOURCE_USER,true,$AUTO_SEND,true"
+                ),
+                (
+                    "Dept,LCSV,TARGET_A,SEED_A,true,jira-custom,DRONE,"
+                    "false,msg-custom,12345,false,true,mail-custom,"
+                    "SOURCE_ONLY,,true,$AUTO_SEND,true"
+                ),
+            ]
+        )
+        with NamedTemporaryFile("w", encoding="utf-8", suffix=".csv", delete=False) as handle:
+            handle.write(csv_body)
+            handle.write("\n")
+            file_path = handle.name
+
+        try:
+            output = StringIO()
+            call_command(
+                "seed_drone_targets_from_file",
+                "--file",
+                file_path,
+                stdout=output,
+            )
+        finally:
+            os.unlink(file_path)
+
+        target = DroneSopTarget.objects.get(target_user_sdwt_prod="TARGET_A")
+        self.assertIn("drone CSV target seed complete:", output.getvalue())
+        self.assertEqual(target.line_id, "LCSV")
+        self.assertEqual(
+            set(
+                DroneSopTargetMapping.objects.filter(target=target).values_list(
+                    "sdwt_prod",
+                    "user_sdwt_prod",
+                )
+            ),
+            {
+                ("SOURCE_SDWT", "SOURCE_USER"),
+                ("SOURCE_ONLY", None),
+            },
+        )
+
+        jira_config = target.channel_configs.get(channel=DroneSopTargetChannelConfig.Channels.JIRA)
+        messenger_config = target.channel_configs.get(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+        mail_config = target.channel_configs.get(channel=DroneSopTargetChannelConfig.Channels.MAIL)
+        self.assertTrue(jira_config.enabled)
+        self.assertEqual(jira_config.template_key, "jira-custom")
+        self.assertEqual(jira_config.jira_project_key, "DRONE")
+        self.assertFalse(messenger_config.enabled)
+        self.assertEqual(messenger_config.template_key, "msg-custom")
+        self.assertEqual(messenger_config.chatroom_id, 12345)
+        self.assertFalse(messenger_config.force_new_chatroom)
+        self.assertTrue(mail_config.enabled)
+        self.assertEqual(mail_config.template_key, "mail-custom")
+        self.assertTrue(target.needtosend_rule.enabled)
+        self.assertEqual(target.needtosend_rule.comment_keyword, "$AUTO_SEND")
+        self.assertTrue(target.needtosend_rule.ignore_sample_type)
+
+    def test_seed_targets_from_csv_rejects_conflicting_repeated_target_rows(self) -> None:
+        """CSV seed command는 같은 target의 설정 충돌을 오류로 처리합니다."""
+
+        csv_body = "\n".join(
+            [
+                "department,line,target_user_sdwt_prod,mapping_sdwt_prod,mapping_user_sdwt_prod,mail_enabled",
+                "Dept,LCSV,TARGET_A,SOURCE_A,USER_A,true",
+                "Dept,LCSV,TARGET_A,SOURCE_B,USER_B,false",
+            ]
+        )
+        with NamedTemporaryFile("w", encoding="utf-8", suffix=".csv", delete=False) as handle:
+            handle.write(csv_body)
+            handle.write("\n")
+            file_path = handle.name
+
+        try:
+            with self.assertRaisesMessage(CommandError, "conflicts with previous rows"):
+                call_command("seed_drone_targets_from_file", "--file", file_path)
+        finally:
+            os.unlink(file_path)
 
 
 class DroneJiraKeyEndpointTests(TestCase):

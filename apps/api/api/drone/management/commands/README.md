@@ -8,7 +8,7 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py <command> 
 
 ## `seed_drone_targets_from_file`
 
-JSON 파일 기준으로 Drone SOP/발송 이력/알림 설정을 초기화한 뒤 target, mapping,
+JSON 또는 CSV 파일 기준으로 Drone SOP/발송 이력/알림 설정을 초기화한 뒤 target, mapping,
 channel config, needtosend rule, recipient를 생성합니다.
 
 ### 사용법
@@ -16,15 +16,20 @@ channel config, needtosend rule, recipient를 생성합니다.
 ```bash
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.csv --dry-run
 ```
+
+CSV에서 하나의 target에 mapping이 여러 개인 경우 같은 `target_user_sdwt_prod`를 여러 행에
+반복하고 `mapping_sdwt_prod`, `mapping_user_sdwt_prod`만 행별로 바꿉니다. 반복 행의
+target/channel/rule 컬럼 값이 서로 다르면 command가 오류로 중단됩니다.
 
 ### 옵션
 
 | 옵션 | 기본값 | 설명 |
 | --- | --- | --- |
-| `--file` | 필수 | `api` 컨테이너가 읽을 수 있는 JSON 파일 경로입니다. |
-| `--template-key` | `common` | JSON channel에 `template_key`가 없을 때 사용할 기본값입니다. |
-| `--comment-keyword` | `$SETUP_EQP` | JSON rule에 `comment_keyword`가 없을 때 사용할 기본값입니다. |
+| `--file` | 필수 | `api` 컨테이너가 읽을 수 있는 JSON 또는 CSV 파일 경로입니다. |
+| `--template-key` | `common` | channel에 `template_key`가 없을 때 사용할 기본값입니다. |
+| `--comment-keyword` | `$SETUP_EQP` | rule에 `comment_keyword`가 없을 때 사용할 기본값입니다. |
 | `--dry-run` | off | 삭제/생성 결과를 계산한 뒤 DB 변경을 롤백합니다. |
 
 ## `seed_drone_dummy_data`

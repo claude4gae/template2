@@ -47,7 +47,7 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 | `seed_dummy_emails` | 개발용 샘플 메일 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `seed_drone_dummy_data` | Drone 개발용 샘플 데이터 생성 |
-| `seed_drone_targets_from_file` | JSON 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
+| `seed_drone_targets_from_file` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
 | `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
 | `purge_drone_sop` | Drone SOP 데이터 전체 삭제 또는 dry-run 확인 |
 
@@ -62,12 +62,14 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_dron
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
 ```
 
-### Drone JSON target seed
+### Drone JSON/CSV target seed
 
-`seed_drone_targets_from_file`은 JSON의 `department`, `line`, `user_sdwt_prod` 목록을 기준으로
+`seed_drone_targets_from_file`은 JSON/CSV의 `department`, `line`, `user_sdwt_prod` 목록을 기준으로
 Drone SOP/발송 이력/알림 설정을 초기화한 뒤 다시 생성합니다.
 
-입력 샘플은 `docs/examples/drone_targets.sample.json`에 있습니다.
+입력 샘플은 `docs/examples/drone_targets.sample.json`,
+`docs/examples/drone_targets.sample.csv`,
+`docs/examples/drone_targets.multi_mapping.sample.csv`에 있습니다.
 
 ```json
 {
@@ -128,6 +130,11 @@ docker compose -f docker-compose.dev.yml exec -T api \
 
 docker compose -f docker-compose.dev.yml exec -T api \
   python manage.py seed_drone_targets_from_file \
+  --file /app/config/drone_targets.csv \
+  --dry-run
+
+docker compose -f docker-compose.dev.yml exec -T api \
+  python manage.py seed_drone_targets_from_file \
   --file /app/config/drone_targets.json
 ```
 
@@ -142,7 +149,11 @@ docker compose -f docker-compose.dev.yml exec -T api \
 - `drone_sop_needtosend_rule`
 - `drone_sop_target_recipient`
 
-JSON 파일은 `api` 컨테이너가 읽을 수 있는 경로에 배치해야 합니다.
+CSV에서 하나의 target에 mapping이 여러 개인 경우 같은 `target_user_sdwt_prod`를 여러 행에
+반복하고 `mapping_sdwt_prod`, `mapping_user_sdwt_prod`만 행별로 바꿉니다.
+반복 행의 target/channel/rule 컬럼 값이 서로 다르면 command가 오류로 중단됩니다.
+
+JSON/CSV 파일은 `api` 컨테이너가 읽을 수 있는 경로에 배치해야 합니다.
 실제 실행 전에는 반드시 `--dry-run` 출력의 삭제/생성 카운트를 확인합니다.
 
 ## 환경 변수 파일

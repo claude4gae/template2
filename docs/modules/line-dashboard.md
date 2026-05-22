@@ -93,6 +93,8 @@ docker compose -f docker-compose.dev.yml exec -T api \
 샘플 파일:
 
 - `docs/examples/drone_targets.sample.json`
+- `docs/examples/drone_targets.sample.csv`
+- `docs/examples/drone_targets.multi_mapping.sample.csv`
 
 ## 관련 API
 
