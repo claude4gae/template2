@@ -26,10 +26,18 @@ function normalizeDefectUrlEntry(entry, index) {
     const stepDesc = String(entry.step_desc ?? "").trim()
     const combinedStepLabel = stepSeq && stepDesc ? `${stepSeq} - ${stepDesc}` : ""
     const label = String(combinedStepLabel || entry.label || stepSeq || stepDesc || index + 1).trim()
+    const listLabel = String(stepSeq || entry.label || stepDesc || index + 1).trim()
     const imageRows = Array.isArray(entry.image_rows) ? entry.image_rows : []
     const imageUrls = Array.isArray(entry.image_urls) ? entry.image_urls.map(toHttpUrl).filter(Boolean) : []
     const mapFile = String(entry.map_file ?? "").trim()
-    return { href, label: label || String(index + 1), imageRows, imageUrls, mapFile }
+    return {
+      href,
+      label: label || String(index + 1),
+      listLabel: listLabel || String(index + 1),
+      imageRows,
+      imageUrls,
+      mapFile,
+    }
   }
   return null
 }

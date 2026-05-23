@@ -288,9 +288,9 @@ function DefectUrlHoverList({ links }) {
               type="button"
               className="flex cursor-pointer items-center justify-between gap-2"
               title={link.href}
-              aria-label={`Open defect preview ${link.label || index + 1}`}
+              aria-label={`Open defect preview ${link.listLabel || link.label || index + 1}`}
             >
-              <span className="min-w-0 truncate">{link.label || index + 1}</span>
+              <span className="min-w-0 truncate">{link.listLabel || link.label || index + 1}</span>
               <ImageIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuItem>

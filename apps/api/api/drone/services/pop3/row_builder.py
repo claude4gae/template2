@@ -58,6 +58,15 @@ def _normalize_blank(value: Any) -> Any:
     return value
 
 
+def _normalize_user_sdwt_prod_value(value: Any) -> Any:
+    """user_sdwt_prod의 placeholder 문자열을 누락값으로 정규화합니다."""
+
+    normalized = _normalize_blank(value)
+    if isinstance(normalized, str) and normalized.strip().casefold() == "none":
+        return None
+    return normalized
+
+
 def _normalize_operator_id(value: Any) -> str | None:
     """operator_id를 user_sdwt_prod fallback 값으로 정규화합니다.
 
@@ -198,7 +207,7 @@ def build_drone_sop_row(
         knox_value = trimmed_knox if trimmed_knox else None
     else:
         knox_value = None
-    user_sdwt_prod = normalized.get("user_sdwt_prod")
+    user_sdwt_prod = _normalize_user_sdwt_prod_value(normalized.get("user_sdwt_prod"))
 
     # -------------------------------------------------------------------------
     # 2-1) 작성자 정보가 모두 없으면 operator_id를 소속 fallback으로 사용합니다.

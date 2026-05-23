@@ -405,6 +405,21 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "System")
         self.assertEqual(row["user_sdwt_prod"], "EARSAUTO")
 
+    def test_build_drone_sop_row_treats_literal_none_user_sdwt_prod_as_missing(self) -> None:
+        """user_sdwt_prod 문자열 None은 누락값으로 처리합니다."""
+        html = """
+        <data>
+          <operator_id>EARSAUTO</operator_id>
+          <user_sdwt_prod>None</user_sdwt_prod>
+          <comment>system-comment</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "System")
+        self.assertEqual(row["user_sdwt_prod"], "EARSAUTO")
+
     def test_build_drone_sop_row_cleans_operator_id_markup_and_quotes(self) -> None:
         """operator_id의 HTML 태그와 따옴표를 제거해 저장합니다."""
         html = """
