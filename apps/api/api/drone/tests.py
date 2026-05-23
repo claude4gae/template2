@@ -3168,9 +3168,16 @@ class DroneSopTargetRecipientTests(TestCase):
         payload = response.json()
         self.assertEqual(
             payload["mappingOptions"]["userSdwtProds"],
-            ["CUSTOM_ENV", "CUSTOM_TARGET", "EARSAUTO"],
+            ["CUSTOM_TARGET"],
         )
         self.assertEqual(payload["mappingOptions"]["sdwtProds"], ["CUSTOM_TARGET"])
+        self.assertEqual(
+            payload["mappingOptionLines"],
+            [
+                {"lineId": "L1", "userSdwtProds": ["CUSTOM_TARGET"]},
+                {"lineId": "System", "userSdwtProds": ["CUSTOM_ENV", "EARSAUTO"]},
+            ],
+        )
 
     def test_notification_target_endpoint_creates_custom_target(self) -> None:
         """외부 소속표에 없는 임의 line에도 커스텀 target을 생성할 수 있어야 합니다."""

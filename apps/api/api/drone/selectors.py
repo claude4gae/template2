@@ -917,7 +917,7 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
     )
     options = collapse_display_values(target_values)
     return {
-        "userSdwtProds": collapse_display_values([*target_values, *list_engr_mapping_values_from_env()]),
+        "userSdwtProds": options,
         "sdwtProds": options,
     }
 
@@ -949,13 +949,22 @@ def list_drone_sop_mapping_option_lines() -> list[dict[str, object]]:
             continue
         grouped.setdefault(line_id, []).append(target_value)
 
-    return [
+    option_lines = [
         {
             "lineId": line_id,
             "userSdwtProds": collapse_display_values(values),
         }
         for line_id, values in grouped.items()
     ]
+    system_values = list_engr_mapping_values_from_env()
+    if system_values:
+        option_lines.append(
+            {
+                "lineId": "System",
+                "userSdwtProds": system_values,
+            }
+        )
+    return option_lines
 
 
 def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
