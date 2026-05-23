@@ -29,7 +29,9 @@ export function useDataTablePresentation({
   filters,
   filter,
   sorting,
-  isLoadingRows,
+  isInitialLoadingRows,
+  isRefreshingRows,
+  datasetKey,
   rowsError,
   setPagination,
 }) {
@@ -38,19 +40,31 @@ export function useDataTablePresentation({
 
   const totalLoaded = rows.length
   const filteredTotal = filteredRows.length
-  const hasNoRows = !isLoadingRows && rowsError === null && columns.length === 0
+  const hasNoRows = !isInitialLoadingRows && rowsError === null && columns.length === 0
 
   const pageCount = table.getPageCount()
-  const currentPage = table.getState().pagination.pageIndex + 1
+  const latestPageCountRef = React.useRef(pageCount)
+  latestPageCountRef.current = pageCount
+  const paginationState = table.getState().pagination
+  const currentPage = paginationState.pageIndex + 1
   const totalPages = Math.max(pageCount, 1)
   const currentPageSize = table.getRowModel().rows.length
 
-  const isRefreshing = isLoadingRows && totalLoaded > 0
-  const isInitialLoading = isLoadingRows && totalLoaded === 0
+  const isRefreshing = isRefreshingRows && totalLoaded > 0
+  const isInitialLoading = isInitialLoadingRows && totalLoaded === 0
 
   const pageResetKey = React.useMemo(
     () => stableStringify({ filter, filters, sorting }),
     [filter, filters, sorting]
+  )
+  const pageClampKey = React.useMemo(
+    () =>
+      stableStringify({
+        datasetKey,
+        pageResetKey,
+        pageSize: paginationState.pageSize,
+      }),
+    [datasetKey, pageResetKey, paginationState.pageSize]
   )
   const previousPageResetKeyRef = React.useRef(pageResetKey)
 
@@ -64,13 +78,13 @@ export function useDataTablePresentation({
     )
   }, [pageResetKey, setPagination])
 
-  // 현재 페이지가 전체 페이지 수를 넘어가지 않도록 방어합니다.
+  // 데이터셋/필터/페이지 크기 전환 때만 페이지 범위를 보정합니다.
   React.useEffect(() => {
-    const maxIndex = Math.max(pageCount - 1, 0)
+    const maxIndex = Math.max(latestPageCountRef.current - 1, 0)
     setPagination((previous) =>
       previous.pageIndex > maxIndex ? { ...previous, pageIndex: maxIndex } : previous
     )
-  }, [pageCount, setPagination])
+  }, [pageClampKey, setPagination])
 
   const [lastUpdatedLabel, setLastUpdatedLabel] = React.useState(null)
 
@@ -80,10 +94,10 @@ export function useDataTablePresentation({
       setLastUpdatedLabel("Updating…")
       return
     }
-    if (!isLoadingRows) {
+    if (!isInitialLoadingRows && !isRefreshingRows) {
       setLastUpdatedLabel(timeFormatter.format(new Date()))
     }
-  }, [isLoadingRows, isRefreshing])
+  }, [isInitialLoadingRows, isRefreshing, isRefreshingRows])
 
   return {
     visibleColumns,

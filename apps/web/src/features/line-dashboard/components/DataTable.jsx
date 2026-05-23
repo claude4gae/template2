@@ -303,7 +303,8 @@ export function DataTable({ lineId }) {
     setSorting,
     lineFilterMode,
     setLineFilterMode,
-    isLoadingRows,
+    isInitialLoadingRows,
+    isRefreshingRows,
     rowsError,
     fetchRows,
     tableMeta,
@@ -375,7 +376,7 @@ export function DataTable({ lineId }) {
   const pendingScrollSnapshotRef = React.useRef(null)
   const pendingRowsSnapshotRef = React.useRef(null)
   const latestRowsByIdRef = React.useRef(new Map())
-  const previousIsLoadingRowsRef = React.useRef(isLoadingRows)
+  const previousIsRefreshingRowsRef = React.useRef(isRefreshingRows)
   const settledDatasetKeyRef = React.useRef(null)
   const skipNextRefreshAnimationRef = React.useRef(false)
   const animationSequenceRef = React.useRef(0)
@@ -452,7 +453,9 @@ export function DataTable({ lineId }) {
     filters,
     filter,
     sorting,
-    isLoadingRows,
+    isInitialLoadingRows,
+    isRefreshingRows,
+    datasetKey: refreshDatasetKey,
     rowsError,
     setPagination,
   })
@@ -509,22 +512,22 @@ export function DataTable({ lineId }) {
   }, [])
 
   React.useEffect(() => {
-    const wasLoadingRows = previousIsLoadingRowsRef.current
+    const wasRefreshingRows = previousIsRefreshingRowsRef.current
     if (
-      !wasLoadingRows &&
-      isLoadingRows &&
+      !wasRefreshingRows &&
+      isRefreshingRows &&
       !skipNextRefreshAnimationRef.current &&
       settledDatasetKeyRef.current === refreshDatasetKey
     ) {
       preserveTableRefreshState()
     }
-    previousIsLoadingRowsRef.current = isLoadingRows
-  }, [isLoadingRows, preserveTableRefreshState, refreshDatasetKey])
+    previousIsRefreshingRowsRef.current = isRefreshingRows
+  }, [isRefreshingRows, preserveTableRefreshState, refreshDatasetKey])
 
   React.useLayoutEffect(() => {
     const snapshot = pendingScrollSnapshotRef.current
     const scrollElement = tableScrollRef.current
-    if (!snapshot || !scrollElement || isLoadingRows) return
+    if (!snapshot || !scrollElement || isRefreshingRows) return
     if (snapshot.datasetKey !== refreshDatasetKey) {
       pendingScrollSnapshotRef.current = null
       return
@@ -535,10 +538,10 @@ export function DataTable({ lineId }) {
     scrollElement.scrollTop = Math.min(snapshot.top, maxTop)
     scrollElement.scrollLeft = Math.min(snapshot.left, maxLeft)
     pendingScrollSnapshotRef.current = null
-  }, [filteredRows, isLoadingRows, refreshDatasetKey])
+  }, [filteredRows, isRefreshingRows, refreshDatasetKey])
 
   React.useEffect(() => {
-    if (isLoadingRows) return
+    if (isInitialLoadingRows || isRefreshingRows) return
 
     const nextRowsById = createRowsByRecordId(filteredRows)
 
@@ -600,7 +603,7 @@ export function DataTable({ lineId }) {
     }
 
     latestRowsByIdRef.current = nextRowsById
-  }, [clearRefreshSnapshots, filteredRows, isLoadingRows, refreshDatasetKey])
+  }, [clearRefreshSnapshots, filteredRows, isInitialLoadingRows, isRefreshingRows, refreshDatasetKey])
 
   /* ──────────────────────────────────────────────────────────────────────────
    * 7) 렌더

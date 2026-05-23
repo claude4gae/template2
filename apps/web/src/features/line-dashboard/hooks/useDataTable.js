@@ -52,7 +52,8 @@ export function useDataTableState({ lineId }) {
     setToDate,
     appliedFrom,
     appliedTo,
-    isLoadingRows,
+    isInitialLoadingRows,
+    isRefreshingRows,
     rowsError,
     lastFetchedCount,
     fetchRows,
@@ -448,7 +449,7 @@ export function useDataTableState({ lineId }) {
 
   /* ────────────────────────────────────────────────────────────────────────
    * 훅 바깥에서 쓸 값들 반환
-   *  - isLoadingRows / rowsError / lastFetchedCount: 로드 상태와 피드백
+   *  - isInitialLoadingRows / isRefreshingRows / rowsError: 로드 상태와 피드백
    *  - fetchRows: 새로고침(리로드) 버튼 등에 연결 가능
    * ──────────────────────────────────────────────────────────────────────── */
   return {
@@ -467,7 +468,8 @@ export function useDataTableState({ lineId }) {
     setFilter,
     sorting,
     setSorting,
-    isLoadingRows,
+    isInitialLoadingRows,
+    isRefreshingRows,
     rowsError,
     lastFetchedCount,
     fetchRows,

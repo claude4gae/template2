@@ -1,6 +1,6 @@
 // 파일 경로: src/features/line-dashboard/hooks/useTableQuery.js
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { buildBackendUrl } from "@/lib/api"
 import { lineDashboardQueryKeys } from "../api/queryKeys"
@@ -36,7 +36,6 @@ export function useTableQuery({ lineId }) {
   const [lineFilterMode, setLineFilterModeState] = useState(DEFAULT_LINE_FILTER_MODE)
 
   const [recentHoursRange, setRecentHoursRangeState] = useState(() => createRecentHoursRange())
-  const [hydrationKey, setHydrationKey] = useState(0)
   const queryClient = useQueryClient()
 
   const setRecentHoursRange = useCallback((nextRange) => {
@@ -107,7 +106,7 @@ export function useTableQuery({ lineId }) {
 
   const tableQuery = useQuery({
     queryKey: tableQueryKey,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
     refetchInterval: TABLE_AUTO_REFETCH_INTERVAL_MS,
     queryFn: async () => {
       const params = new URLSearchParams({ table: selectedTable })
@@ -182,9 +181,6 @@ export function useTableQuery({ lineId }) {
         table: table ?? selectedTable,
       }
     },
-    onSuccess: () => {
-      setHydrationKey((previous) => previous + 1)
-    },
   })
 
   const setRows = useCallback(
@@ -234,7 +230,8 @@ export function useTableQuery({ lineId }) {
     appliedTo,
     recentHoursRange,
     setRecentHoursRange,
-    isLoadingRows: tableQuery.isFetching,
+    isInitialLoadingRows: tableQuery.isLoading,
+    isRefreshingRows: tableQuery.isFetching && !tableQuery.isLoading,
     rowsError: tableQuery.error
       ? tableQuery.error instanceof Error
         ? tableQuery.error.message
@@ -242,6 +239,6 @@ export function useTableQuery({ lineId }) {
       : null,
     lastFetchedCount: tableQuery.data?.rowCount ?? 0,
     fetchRows,
-    hydrationKey,
+    hydrationKey: tableQueryKey,
   }
 }
