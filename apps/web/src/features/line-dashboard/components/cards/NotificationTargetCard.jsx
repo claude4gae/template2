@@ -34,15 +34,31 @@ function findLineOption(lineOptions, lineId) {
   )) || null
 }
 
+function normalizeSelectedValues(values, fallbackValue = "") {
+  const sourceValues = Array.isArray(values) && values.length > 0 ? values : [fallbackValue]
+  const seenValues = new Set()
+  return sourceValues
+    .map((value) => String(value || "").trim())
+    .filter((value) => {
+      const key = value.toLowerCase()
+      if (!value || seenValues.has(key)) return false
+      seenValues.add(key)
+      return true
+    })
+}
+
 function MappingAffiliationDropdown({
   label,
   placeholder,
   currentLineId,
   selectedLineId,
   selectedValue,
+  selectedValues = [],
   lineOptions = [],
+  multiSelect = false,
   disabled,
   onSelect,
+  onMultiSelect,
 }) {
   const [open, setOpen] = React.useState(false)
   const [activeLineId, setActiveLineId] = React.useState(selectedLineId || currentLineId || "")
@@ -60,11 +76,17 @@ function MappingAffiliationDropdown({
   }, [activeLineId, lineOptions])
 
   const selectedLineLabel = selectedLineId ? formatMappingLineLabel(selectedLineId) : ""
-  const displayValue = selectedValue
-    ? `${selectedLineLabel ? `${selectedLineLabel} · ` : ""}${selectedValue}`
+  const normalizedSelectedValues = normalizeSelectedValues(selectedValues, selectedValue)
+  const displaySelectedValue = multiSelect && normalizedSelectedValues.length > 1
+    ? `${normalizedSelectedValues[0]} 외 ${normalizedSelectedValues.length - 1}개`
+    : selectedValue
+  const displayValue = displaySelectedValue
+    ? `${selectedLineLabel ? `${selectedLineLabel} · ` : ""}${displaySelectedValue}`
     : placeholder
   const activeLineOption = findLineOption(lineOptions, activeLineId)
   const activeValues = Array.isArray(activeLineOption?.values) ? activeLineOption.values : []
+  const activeSelectedValues = activeLineId === selectedLineId ? normalizedSelectedValues : []
+  const selectedValueSet = new Set(activeSelectedValues.map((value) => value.toLowerCase()))
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -142,13 +164,25 @@ function MappingAffiliationDropdown({
               <div className="flex max-h-52 flex-col gap-1 overflow-y-auto pr-1">
                 {activeValues.length > 0 ? (
                   activeValues.map((value) => {
-                    const isSelected = activeLineId === selectedLineId && value === selectedValue
+                    const valueKey = String(value || "").trim().toLowerCase()
+                    const isSelected = activeLineId === selectedLineId && (
+                      multiSelect ? selectedValueSet.has(valueKey) : value === selectedValue
+                    )
                     return (
                       <button
                         key={`${activeLineId}-${value}`}
                         type="button"
                         onClick={(event) => {
                           event.preventDefault()
+                          if (multiSelect) {
+                            const nextValues = selectedValueSet.has(valueKey)
+                              ? activeSelectedValues.filter((selected) => (
+                                  selected.toLowerCase() !== valueKey
+                                ))
+                              : [...activeSelectedValues, value]
+                            onMultiSelect?.({ lineId: activeLineId, values: nextValues })
+                            return
+                          }
                           onSelect?.({ lineId: activeLineId, value })
                           setOpen(false)
                         }}
@@ -263,7 +297,9 @@ function TargetMappingSummary({
   const isSelectDisabled = isControlDisabled || !hasOptions
   const selectedUserSdwtProd = resolveSelectedOptionValue(userOptionValues, draft.userSdwtProd)
   const selectedSdwtProd = resolveSelectedOptionValue(sdwtOptionValues, draft.sdwtProd)
-  const canSubmitMapping = Boolean(selectedUserSdwtProd && selectedSdwtProd)
+  const selectedUserSdwtProds = normalizeSelectedValues(draft.userSdwtProds, selectedUserSdwtProd)
+    .filter((value) => userOptionValues.includes(value))
+  const canSubmitMapping = Boolean(selectedUserSdwtProds.length > 0 && selectedSdwtProd)
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-md border bg-muted/30 px-3 py-2">
@@ -303,11 +339,19 @@ function TargetMappingSummary({
             currentLineId={lineId}
             selectedLineId={mappingUserLineId}
             selectedValue={selectedUserSdwtProd}
+            selectedValues={selectedUserSdwtProds}
             lineOptions={mappingUserLineOptions}
+            multiSelect
             disabled={isControlDisabled || !hasLineOptions}
             onSelect={({ lineId: nextLineId, value }) => {
               onMappingUserLineChange(nextLineId)
+              onDraftChange("userSdwtProds", [value])
               onDraftChange("userSdwtProd", value)
+            }}
+            onMultiSelect={({ lineId: nextLineId, values }) => {
+              onMappingUserLineChange(nextLineId)
+              onDraftChange("userSdwtProds", values)
+              onDraftChange("userSdwtProd", values[0] || "")
             }}
           />
         </div>
@@ -340,7 +384,7 @@ function TargetMappingSummary({
           className="h-8 shrink-0"
         >
           <IconPlus className="mr-1 size-3" />
-          추가
+          {selectedUserSdwtProds.length > 1 ? `${selectedUserSdwtProds.length}개 추가` : "추가"}
         </Button>
       </form>
       {!hasOptions ? (

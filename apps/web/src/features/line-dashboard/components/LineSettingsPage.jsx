@@ -194,7 +194,11 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [newTargetDraft, setNewTargetDraft] = React.useState("")
   const [targetFormError, setTargetFormError] = React.useState(null)
   const [isCreatingTarget, setIsCreatingTarget] = React.useState(false)
-  const [mappingDraft, setMappingDraft] = React.useState({ userSdwtProd: "", sdwtProd: "" })
+  const [mappingDraft, setMappingDraft] = React.useState({
+    userSdwtProd: "",
+    userSdwtProds: [],
+    sdwtProd: "",
+  })
   const [mappingFormError, setMappingFormError] = React.useState(null)
   const [mappingUserLineId, setMappingUserLineId] = React.useState("")
   const [mappingSdwtLineId, setMappingSdwtLineId] = React.useState("")
@@ -527,9 +531,27 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [lineId])
 
   React.useEffect(() => {
-    setMappingUserLineId(lineId || "")
-    setMappingSdwtLineId(lineId || "")
-  }, [lineId, selectedUserSdwtProd])
+    if (!lineId || !selectedUserSdwtProd) {
+      setMappingUserLineId("")
+      setMappingSdwtLineId("")
+      setMappingDraft({ userSdwtProd: "", userSdwtProds: [], sdwtProd: "" })
+      return
+    }
+
+    const defaultUserOption = mappingUserLineOptions.find((option) => option.lineId === lineId) || mappingUserLineOptions[0]
+    const defaultSdwtOption = mappingSdwtLineOptions.find((option) => option.lineId === lineId) || mappingSdwtLineOptions[0]
+    const defaultUserValue = defaultUserOption?.values?.[0] || ""
+    const defaultSdwtValue = defaultSdwtOption?.values?.[0] || ""
+
+    setMappingUserLineId(defaultUserOption?.lineId || lineId || "")
+    setMappingSdwtLineId(defaultSdwtOption?.lineId || lineId || "")
+    setMappingDraft({
+      userSdwtProd: defaultUserValue,
+      userSdwtProds: defaultUserValue ? [defaultUserValue] : [],
+      sdwtProd: defaultSdwtValue,
+    })
+    setMappingFormError(null)
+  }, [lineId, mappingSdwtLineOptions, mappingUserLineOptions, selectedUserSdwtProd])
 
   React.useEffect(() => {
     if (!lineId) {
@@ -555,14 +577,36 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
 
   React.useEffect(() => {
     setMappingDraft((prev) => {
-      const nextUserSdwtProd = effectiveMappingOptions.userSdwtProds.includes(prev.userSdwtProd)
-        ? prev.userSdwtProd
-        : findMappingDefaultOption(effectiveMappingOptions.userSdwtProds, selectedUserSdwtProd)
+      const previousUserSdwtProds = Array.isArray(prev.userSdwtProds) ? prev.userSdwtProds : []
+      const nextUserSdwtProds = previousUserSdwtProds.filter((value) => (
+        effectiveMappingOptions.userSdwtProds.includes(value)
+      ))
+      const nextUserSdwtProd = nextUserSdwtProds[0] || (
+        effectiveMappingOptions.userSdwtProds.includes(prev.userSdwtProd)
+          ? prev.userSdwtProd
+          : findMappingDefaultOption(effectiveMappingOptions.userSdwtProds, selectedUserSdwtProd)
+      )
+      const resolvedUserSdwtProds = nextUserSdwtProds.length > 0
+        ? nextUserSdwtProds
+        : nextUserSdwtProd
+          ? [nextUserSdwtProd]
+          : []
       const nextSdwtProd = effectiveMappingOptions.sdwtProds.includes(prev.sdwtProd)
         ? prev.sdwtProd
         : findMappingDefaultOption(effectiveMappingOptions.sdwtProds, selectedUserSdwtProd)
-      if (prev.userSdwtProd === nextUserSdwtProd && prev.sdwtProd === nextSdwtProd) return prev
-      return { userSdwtProd: nextUserSdwtProd, sdwtProd: nextSdwtProd }
+      if (
+        prev.userSdwtProd === nextUserSdwtProd &&
+        prev.sdwtProd === nextSdwtProd &&
+        previousUserSdwtProds.length === resolvedUserSdwtProds.length &&
+        previousUserSdwtProds.every((value, index) => value === resolvedUserSdwtProds[index])
+      ) {
+        return prev
+      }
+      return {
+        userSdwtProd: nextUserSdwtProd,
+        userSdwtProds: resolvedUserSdwtProds,
+        sdwtProd: nextSdwtProd,
+      }
     })
     setMappingFormError(null)
     setIsCreatingMapping(false)
@@ -764,13 +808,19 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
 
   const handleCreateTargetMapping = React.useCallback(async (event) => {
     event.preventDefault()
-    const normalizedUserSdwtProd = mappingDraft.userSdwtProd.trim()
+    const normalizedUserSdwtProds = (
+      Array.isArray(mappingDraft.userSdwtProds) && mappingDraft.userSdwtProds.length > 0
+        ? mappingDraft.userSdwtProds
+        : [mappingDraft.userSdwtProd]
+    )
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
     const normalizedSdwtProd = mappingDraft.sdwtProd.trim()
     if (!selectedUserSdwtProd) {
       setMappingFormError("알림 Target을 먼저 선택하세요.")
       return
     }
-    if (!normalizedUserSdwtProd) {
+    if (normalizedUserSdwtProds.length === 0) {
       setMappingFormError("분임조원 값을 입력하세요.")
       return
     }
@@ -779,7 +829,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       return
     }
     if (
-      normalizedUserSdwtProd.length > MAX_TARGET_FIELD_LENGTH ||
+      normalizedUserSdwtProds.some((value) => value.length > MAX_TARGET_FIELD_LENGTH) ||
       normalizedSdwtProd.length > MAX_TARGET_FIELD_LENGTH
     ) {
       setMappingFormError("지정 조합 값은 64자 이하로 입력하세요.")
@@ -789,16 +839,18 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       setMappingFormError("지정 조합 추가 권한이 없습니다.")
       return
     }
-    const hasDuplicate = notificationTargets.some(
-      (target) =>
-        Array.isArray(target.mappings) &&
-        target.mappings.some(
-          (mapping) =>
-            sameUserSdwtProd(mapping.userSdwtProd, normalizedUserSdwtProd) &&
-            sameUserSdwtProd(mapping.sdwtProd, normalizedSdwtProd),
-        ),
+    const duplicateUserSdwtProds = normalizedUserSdwtProds.filter((userSdwtProd) =>
+      notificationTargets.some(
+        (target) =>
+          Array.isArray(target.mappings) &&
+          target.mappings.some(
+            (mapping) =>
+              sameUserSdwtProd(mapping.userSdwtProd, userSdwtProd) &&
+              sameUserSdwtProd(mapping.sdwtProd, normalizedSdwtProd),
+          ),
+      ),
     )
-    if (hasDuplicate) {
+    if (duplicateUserSdwtProds.length > 0) {
       setMappingFormError(DUPLICATE_TARGET_MAPPING_MESSAGE)
       return
     }
@@ -806,14 +858,17 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setIsCreatingMapping(true)
     setMappingFormError(null)
     try {
-      const target = await createTargetMapping({
-        targetUserSdwtProd: selectedUserSdwtProd,
-        userSdwtProd: normalizedUserSdwtProd,
-        sdwtProd: normalizedSdwtProd,
-      })
-      if (target?.targetUserSdwtProd) {
-        showTargetMappingCreateToast(normalizedUserSdwtProd, normalizedSdwtProd)
+      for (const userSdwtProd of normalizedUserSdwtProds) {
+        await createTargetMapping({
+          targetUserSdwtProd: selectedUserSdwtProd,
+          userSdwtProd,
+          sdwtProd: normalizedSdwtProd,
+        })
       }
+      const toastUserLabel = normalizedUserSdwtProds.length > 1
+        ? `${normalizedUserSdwtProds[0]} 외 ${normalizedUserSdwtProds.length - 1}개`
+        : normalizedUserSdwtProds[0]
+      showTargetMappingCreateToast(toastUserLabel, normalizedSdwtProd)
     } catch (requestError) {
       const message =
         requestError instanceof Error ? requestError.message : "Failed to create target mapping"
@@ -831,6 +886,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     createTargetMapping,
     mappingDraft.sdwtProd,
     mappingDraft.userSdwtProd,
+    mappingDraft.userSdwtProds,
     notificationTargets,
     selectedUserSdwtProd,
   ])
