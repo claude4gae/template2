@@ -78,27 +78,6 @@ function buildMappingOptionsFromValues(values) {
   return { userSdwtProds: uniqueValues, sdwtProds: uniqueValues }
 }
 
-const ENGR_ONLY_MAPPING_VALUES = ["EARSAUTO", "system"]
-
-function mergeMappingOptionValues(values, extraValues) {
-  const mergedValues = []
-  const seenValues = new Set()
-  const sourceValues = [
-    ...(Array.isArray(values) ? values : []),
-    ...(Array.isArray(extraValues) ? extraValues : []),
-  ]
-
-  sourceValues.forEach((value) => {
-    const normalizedValue = normalizeMappingOptionValue(value)
-    const key = normalizedValue.toLowerCase()
-    if (!normalizedValue || seenValues.has(key)) return
-    seenValues.add(key)
-    mergedValues.push(normalizedValue)
-  })
-
-  return mergedValues
-}
-
 function buildMappingLineOptions({ lineRows, currentLineId, currentValues }) {
   const currentLine = normalizeMappingOptionValue(currentLineId)
   const normalizedCurrentLineId = normalizeMappingOptionValue(currentLineId).toLowerCase()
@@ -276,10 +255,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     () => buildMappingLineOptions({
       lineRows: mappingOptionLines,
       currentLineId: lineId,
-      currentValues: mergeMappingOptionValues(
-        mappingOptions?.userSdwtProds,
-        ENGR_ONLY_MAPPING_VALUES,
-      ),
+      currentValues: mappingOptions?.userSdwtProds,
     }),
     [lineId, mappingOptionLines, mappingOptions?.userSdwtProds],
   )

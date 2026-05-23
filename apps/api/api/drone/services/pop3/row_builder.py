@@ -17,6 +17,7 @@ from ..shared.notify_resolver import (
     load_user_sdwt_prod_map_index,
     resolve_target_user_sdwt_prods,
 )
+from ..shared.user_sdwt_overrides import resolve_comment_user_sdwt_override
 from .config import NeedToSendRule
 from .defect_json import serialize_defect_json_entries
 from .needtosend import (
@@ -26,12 +27,7 @@ from .needtosend import (
 from .utils import sanitize_url
 
 SYSTEM_ACTOR_FALLBACK = "System"
-AUTOMATION_COMMENT_ACTOR_FALLBACKS = {
-    "auto_skew": "AUTO_SKEW",
-    "ssb fullauto": "SSB FULLAUTO",
-    "isop": "ISOP",
-    "autonomous": "AUTONOMOUS",
-}
+RPA_ACTOR_FALLBACK = "RPA"
 QUOTE_TRANSLATION = str.maketrans("", "", "\"'“”‘’")
 
 
@@ -84,7 +80,7 @@ def _normalize_operator_id(value: Any) -> str | None:
         return None
     normalized = str(value).translate(QUOTE_TRANSLATION).strip()
     if ".rpa" in normalized.casefold():
-        return "RPA"
+        return RPA_ACTOR_FALLBACK
     return normalized or None
 
 
@@ -104,11 +100,7 @@ def _resolve_comment_user_sdwt_override(comment: Any) -> str | None:
     # -------------------------------------------------------------------------
     # 1) 전체 comment 문구에서 자동화 키워드를 찾습니다.
     # -------------------------------------------------------------------------
-    normalized_comment = str(comment or "").strip().casefold()
-    for keyword, fallback in AUTOMATION_COMMENT_ACTOR_FALLBACKS.items():
-        if keyword in normalized_comment:
-            return fallback
-    return None
+    return resolve_comment_user_sdwt_override(comment)
 
 
 def _extract_first_data_tag(html: str) -> dict[str, str]:

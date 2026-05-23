@@ -52,6 +52,7 @@ from .services.history.payload import (
     normalize_daily_row,
 )
 from .services.shared.delivery_snapshot import build_sop_delivery_eligible_q
+from .services.shared.user_sdwt_overrides import list_engr_mapping_values_from_env
 
 _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "id",
@@ -916,7 +917,7 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
     )
     options = collapse_display_values(target_values)
     return {
-        "userSdwtProds": options,
+        "userSdwtProds": collapse_display_values([*target_values, *list_engr_mapping_values_from_env()]),
         "sdwtProds": options,
     }
 

@@ -461,6 +461,15 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "System")
         self.assertEqual(row["user_sdwt_prod"], "System")
 
+    @patch.dict(
+        os.environ,
+        {
+            "DRONE_SOP_USER_SDWT_OVERRIDE_MAP": (
+                '{"auto_skew":"AUTO_SKEW","ssb fullauto":"SSB FULLAUTO","isop":"ISOP"}'
+            ),
+        },
+        clear=False,
+    )
     def test_build_drone_sop_row_overrides_user_sdwt_prod_from_automation_comment(self) -> None:
         """자동화 comment 키워드는 user_sdwt_prod만 override합니다."""
         cases = [
@@ -503,6 +512,7 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "USER1")
         self.assertEqual(row["user_sdwt_prod"], "ORIGINAL_SDWT")
 
+    @patch.dict(os.environ, {"DRONE_SOP_USER_SDWT_OVERRIDE_MAP": '{"auto_skew":"AUTO_SKEW"}'}, clear=False)
     def test_build_drone_sop_row_overrides_existing_user_sdwt_prod_from_comment(self) -> None:
         """자동화 comment 키워드가 있으면 기존 user_sdwt_prod도 override합니다."""
         html = """
@@ -517,6 +527,21 @@ class DroneSopPop3ParsingTests(TestCase):
         assert row is not None
         self.assertEqual(row["knox_id"], "USER1")
         self.assertEqual(row["user_sdwt_prod"], "AUTO_SKEW")
+
+    @patch.dict(os.environ, {"DRONE_SOP_USER_SDWT_OVERRIDE_MAP": '{"custom-auto":"CUSTOM_AUTO"}'}, clear=False)
+    def test_build_drone_sop_row_uses_env_comment_override_map(self) -> None:
+        """환경변수 override map이 comment 기반 user_sdwt_prod에 반영됩니다."""
+        html = """
+        <data>
+          <operator_id>EARSAUTO</operator_id>
+          <comment>prefix custom-auto suffix</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "System")
+        self.assertEqual(row["user_sdwt_prod"], "CUSTOM_AUTO")
 
     def test_build_drone_sop_row_applies_needtosend_db_rule(self) -> None:
         """DB 규칙 키워드가 comment에 포함되면 needtosend가 1인지 확인합니다."""
@@ -3027,6 +3052,14 @@ class DroneSopTargetRecipientTests(TestCase):
         targets = response.json()["targets"]
         self.assertEqual([row["targetUserSdwtProd"] for row in targets], ["DIFF_A"])
 
+    @patch.dict(
+        os.environ,
+        {
+            "DRONE_SOP_ENGR_FALLBACK_VALUES": "",
+            "DRONE_SOP_USER_SDWT_OVERRIDE_MAP": "",
+        },
+        clear=False,
+    )
     def test_notification_target_endpoint_uses_drone_targets_for_mapping_options(self) -> None:
         """알림 target 및 지정 조합 옵션은 Drone target 기준으로 반환합니다."""
 
@@ -3111,6 +3144,33 @@ class DroneSopTargetRecipientTests(TestCase):
                 {"lineId": "L2", "userSdwtProds": ["OTHER_LINE_TARGET"]},
             ],
         )
+
+    @patch.dict(
+        os.environ,
+        {
+            "DRONE_SOP_ENGR_FALLBACK_VALUES": "EARSAUTO",
+            "DRONE_SOP_USER_SDWT_OVERRIDE_MAP": '{"custom-key":"CUSTOM_ENV"}',
+        },
+        clear=False,
+    )
+    def test_notification_target_endpoint_uses_env_for_engr_mapping_options(self) -> None:
+        """Engr 지정 조합 옵션은 환경변수 fallback과 override map을 반영합니다."""
+
+        _upsert_target(
+            line_id="L1",
+            target_user_sdwt_prod="CUSTOM_TARGET",
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.get(reverse("line-dashboard-notification-targets"), {"lineId": "L1"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["mappingOptions"]["userSdwtProds"],
+            ["CUSTOM_ENV", "CUSTOM_TARGET", "EARSAUTO"],
+        )
+        self.assertEqual(payload["mappingOptions"]["sdwtProds"], ["CUSTOM_TARGET"])
 
     def test_notification_target_endpoint_creates_custom_target(self) -> None:
         """외부 소속표에 없는 임의 line에도 커스텀 target을 생성할 수 있어야 합니다."""
