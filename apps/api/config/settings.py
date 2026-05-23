@@ -172,13 +172,13 @@ ASGI_APPLICATION = "config.asgi.application"
 
 # =====
 # DB 설정 (PostgreSQL 전용)
-#  - 컨테이너 네트워크 기준 기본값: HOST=postgres, DB=appdata, USER=airflow, PASSWORD=airflow
+#  - 컨테이너 네트워크 기준 기본값: HOST=airflow-postgres, DB=dashboard, USER=airflow, PASSWORD=airflow
 #  - 필요 시 환경변수로 덮어쓰기 가능
 # =====
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DJANGO_DB_NAME") or env("DB_NAME") or "appdata",
+        "NAME": env("DJANGO_DB_NAME") or env("DB_NAME") or "dashboard",
         "USER": env("DJANGO_DB_USER") or env("DB_USER") or "airflow",
         "PASSWORD": env("DJANGO_DB_PASSWORD") or env("DB_PASSWORD") or "airflow",
         "HOST": env("DJANGO_DB_HOST") or env("DB_HOST") or "airflow-postgres",
