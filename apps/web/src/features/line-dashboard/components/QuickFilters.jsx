@@ -15,10 +15,11 @@ export function QuickFilters({
   onGlobalFilterChange,
   globalFilterPlaceholder = "Search rows",
   statusSidebar = null,
+  trailingControls = null,
 }) {
   const hasSections = sections.length > 0
   const showGlobalFilter = typeof onGlobalFilterChange === "function"
-  const showContainer = hasSections || showGlobalFilter
+  const showContainer = hasSections || showGlobalFilter || Boolean(trailingControls)
   const hasGlobalValue = showGlobalFilter && Boolean(globalFilterValue)
   const [isCollapsed, setIsCollapsed] = React.useState(false)
 
@@ -72,6 +73,7 @@ export function QuickFilters({
           filters={filters}
           onToggle={onToggle}
           statusSidebar={statusSidebar}
+          trailingControls={trailingControls}
           globalFilterValue={globalFilterValue}
           onGlobalFilterChange={onGlobalFilterChange}
           globalFilterPlaceholder={globalFilterPlaceholder}

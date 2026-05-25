@@ -1386,9 +1386,6 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
             target_user_sdwt_prod=target_user_sdwt_prod,
         )
 
-        if not self._can_update_recipients(user=request.user):
-            return JsonResponse({"error": "forbidden"}, status=403)
-
         # -----------------------------------------------------------------------------
         # 3) 수신인 조회 및 응답 반환
         # -----------------------------------------------------------------------------

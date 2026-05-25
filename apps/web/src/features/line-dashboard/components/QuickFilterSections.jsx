@@ -38,13 +38,14 @@ export function QuickFilterSections({
   filters,
   onToggle,
   statusSidebar = null,
+  trailingControls = null,
   globalFilterValue,
   onGlobalFilterChange,
   globalFilterPlaceholder = "Search rows",
 }) {
   const hasSections = Array.isArray(sections) && sections.length > 0
   const showGlobalFilter = typeof onGlobalFilterChange === "function"
-  if (!hasSections && !showGlobalFilter) return null
+  if (!hasSections && !showGlobalFilter && !trailingControls) return null
 
   const sectionBlocks = hasSections
     ? sections.map((section) => (
@@ -72,6 +73,14 @@ export function QuickFilterSections({
           />
         </div>
       </QuickFilterFieldset>
+    )
+  }
+
+  if (trailingControls) {
+    sectionBlocks.push(
+      <div key="__trailing_controls__" className="flex items-end">
+        {trailingControls}
+      </div>
     )
   }
 

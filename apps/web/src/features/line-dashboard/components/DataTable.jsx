@@ -60,6 +60,15 @@ import { formatTooltipValue } from "../utils/dataTableFormatters"
 import { useAuth } from "@/lib/auth"
 
 const REFRESH_ANIMATION_DURATION_MS = 2200
+const COMPACT_MODE_HIDDEN_COLUMN_IDS = [
+  "line_id",
+  "sdwt_prod",
+  "user_sdwt_prod",
+  "proc_id",
+  "sample_group",
+  "status",
+  "knox_id",
+]
 
 const ROW_REFRESH_SIGNATURE_FIELDS = [
   "status",
@@ -166,6 +175,54 @@ const toWidthStyle = (size) => {
   return { width, minWidth: width, maxWidth: width }
 }
 
+function CompactModeToggle({ checked, onCheckedChange }) {
+  const toggleId = "line-dashboard-compact-mode"
+
+  return (
+    <div
+      className="flex flex-col gap-1"
+      role="group"
+      aria-labelledby={`${toggleId}-label`}
+    >
+      <span
+        id={`${toggleId}-label`}
+        className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+      >
+        Mode
+      </span>
+      <div className="flex h-8 items-center gap-1 rounded-md border border-input bg-background px-1">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label="컴팩트 모드"
+          onClick={() => onCheckedChange(!checked)}
+          className={cn(
+            "inline-flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-medium text-foreground whitespace-nowrap transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
+            checked && "text-primary"
+          )}
+        >
+          <span>Compact</span>
+          <span
+            aria-hidden
+            className={cn(
+              "relative h-3.5 w-6 rounded-full transition-colors",
+              checked ? "bg-primary" : "bg-muted"
+            )}
+          >
+            <span
+              className={cn(
+                "absolute left-0.5 top-0.5 size-2.5 rounded-full bg-background shadow-sm transition-transform",
+                checked && "translate-x-2.5"
+              )}
+            />
+          </span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function TableBodyRows({
   table,
   emptyStateColSpan,
@@ -239,22 +296,22 @@ function TableBodyRows({
         key={row.id}
         className={cn(
           rowAnimation?.isNew &&
-            "bg-primary/5 transition-colors duration-1000 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1"
+          "bg-primary/5 transition-colors duration-1000 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1"
         )}
       >
         {row.getVisibleCells().map((cell) => {
-        const isEditable = Boolean(cell.column.columnDef.meta?.isEditable)
-        const align = resolveCellAlignment(cell.column.columnDef.meta)
-        const textAlignClass = getTextAlignClass(align)
-        const isProcessFlowCell = cell.column.id === "process_flow"
+          const isEditable = Boolean(cell.column.columnDef.meta?.isEditable)
+          const align = resolveCellAlignment(cell.column.columnDef.meta)
+          const textAlignClass = getTextAlignClass(align)
+          const isProcessFlowCell = cell.column.id === "process_flow"
 
-        const raw = cell.getValue()
-        const shouldRenderNullish = RENDER_NULLISH_CELL_IDS.has(cell.column.id)
-        const content = isNullishDisplay(raw) && !shouldRenderNullish
-          ? EMPTY.text
-          : flexRender(cell.column.columnDef.cell, cell.getContext())
-        const shouldTruncate = !isProcessFlowCell
-        const tooltip = shouldTruncate ? formatTooltipValue(raw) : undefined
+          const raw = cell.getValue()
+          const shouldRenderNullish = RENDER_NULLISH_CELL_IDS.has(cell.column.id)
+          const content = isNullishDisplay(raw) && !shouldRenderNullish
+            ? EMPTY.text
+            : flexRender(cell.column.columnDef.cell, cell.getContext())
+          const shouldTruncate = !isProcessFlowCell
+          const tooltip = shouldTruncate ? formatTooltipValue(raw) : undefined
 
           return (
             <TableCell
@@ -371,6 +428,7 @@ export function DataTable({ lineId }) {
   /* 페이지네이션/컬럼 사이징 로컬 상태 */
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 15 })
   const [columnSizing, setColumnSizing] = React.useState({})
+  const [isCompactMode, setIsCompactMode] = React.useState(false)
   const [rowRefreshAnimations, setRowRefreshAnimations] = React.useState({})
   const tableScrollRef = React.useRef(null)
   const pendingScrollSnapshotRef = React.useRef(null)
@@ -400,6 +458,12 @@ export function DataTable({ lineId }) {
     () => ({ ...tableMeta, rowRefreshAnimations }),
     [rowRefreshAnimations, tableMeta]
   )
+  const columnVisibility = React.useMemo(() => {
+    if (!isCompactMode) return {}
+    return Object.fromEntries(
+      COMPACT_MODE_HIDDEN_COLUMN_IDS.map((columnId) => [columnId, false])
+    )
+  }, [isCompactMode])
 
   /* TanStack Table 인스턴스 */
   const table = useReactTable({
@@ -411,6 +475,7 @@ export function DataTable({ lineId }) {
       globalFilter: filter,
       pagination,
       columnSizing,
+      columnVisibility,
     },
     onSortingChange: setSorting,
     onGlobalFilterChange: setFilter,
@@ -621,6 +686,12 @@ export function DataTable({ lineId }) {
         onChangeLineFilterMode={setLineFilterMode}
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
+        compactModeToggle={
+          <CompactModeToggle
+            checked={isCompactMode}
+            onCheckedChange={setIsCompactMode}
+          />
+        }
         favorites={{
           filters,
           favorites,

@@ -180,7 +180,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   } = useLineSettings({
     lineId,
     userSdwtProd: selectedUserSdwtProd,
-    loadRecipients: isRecipientSettings && isGlobalOperator,
+    loadRecipients: isRecipientSettings,
   })
 
   const [formValues, setFormValues] = React.useState({ mainStep: "", customEndStep: "" })

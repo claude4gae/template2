@@ -21,6 +21,7 @@ from api.drone.models import (
     DroneSOP,
     DroneSopTarget,
     DroneSopTargetMapping,
+    DroneSopTargetRecipient,
     build_sop_key,
 )
 
@@ -211,6 +212,56 @@ def _seed_rules(*, targets: list[str]) -> dict[str, int]:
         created += int(target_row is None)
         updated += int(bool(was_updated) and target_row is not None)
     return {"created": created, "updated": updated}
+
+
+def _seed_recipient_snapshots(*, prefix: str, targets: list[str]) -> dict[str, int]:
+    """외부 수신인 선택/표시용 소속 스냅샷을 업서트합니다."""
+
+    now = timezone.now()
+    records: list[dict[str, object]] = []
+    for index, target in enumerate(targets, start=1):
+        records.extend(
+            [
+                {
+                    "knox_id": f"{prefix.lower()}-{index:02d}-mail",
+                    "username": f"{target} Mail Receiver",
+                    "department": "DUMMY",
+                    "user_sdwt_prod": target,
+                    "source_updated_at": now,
+                },
+                {
+                    "knox_id": f"{prefix.lower()}-{index:02d}-msg",
+                    "username": f"{target} Messenger Receiver",
+                    "department": "DUMMY",
+                    "user_sdwt_prod": target,
+                    "source_updated_at": now,
+                },
+            ]
+        )
+    return account_services.sync_external_affiliations(records=records)
+
+
+def _seed_recipients(*, prefix: str, targets: list[str]) -> dict[str, int]:
+    """target/channel 기준 외부 수신인 샘플을 업서트합니다."""
+
+    created = 0
+    existing = 0
+    for index, target in enumerate(targets, start=1):
+        target_row = drone_services.get_or_create_drone_sop_target_by_name(target_user_sdwt_prod=target)
+        specs = [
+            (DroneSopTargetRecipient.Channels.MAIL, f"{prefix.lower()}-{index:02d}-mail"),
+            (DroneSopTargetRecipient.Channels.MESSENGER, f"{prefix.lower()}-{index:02d}-msg"),
+        ]
+        for channel, external_knox_id in specs:
+            _, was_created = DroneSopTargetRecipient.objects.get_or_create(
+                target=target_row,
+                channel=channel,
+                external_knox_id=external_knox_id,
+                defaults={"user_id": None},
+            )
+            created += int(was_created)
+            existing += int(not was_created)
+    return {"created": created, "existing": existing}
 
 
 def _seed_early_inform(*, prefix: str) -> dict[str, int]:
@@ -550,6 +601,8 @@ class Command(BaseCommand):
             map_result = _seed_maps(prefix=prefix, targets=targets)
             channel_result = _seed_channels(prefix=prefix, targets=targets)
             rule_result = _seed_rules(targets=targets)
+            snapshot_result = _seed_recipient_snapshots(prefix=prefix, targets=targets)
+            recipient_result = _seed_recipients(prefix=prefix, targets=targets)
             early_result = _seed_early_inform(prefix=prefix)
             sop_result = _seed_sop_rows(prefix=prefix, targets=targets)
 
@@ -561,6 +614,8 @@ class Command(BaseCommand):
                 f"maps={map_result} "
                 f"channels={channel_result} "
                 f"rules={rule_result} "
+                f"recipient_snapshots={snapshot_result} "
+                f"recipients={recipient_result} "
                 f"early_inform={early_result} "
                 f"sop={sop_result}"
             )

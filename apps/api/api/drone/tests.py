@@ -2889,8 +2889,8 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(payload["channel"], "mail")
         self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
 
-    def test_notification_recipient_endpoint_forbids_non_operator_read(self) -> None:
-        """운영자가 아닌 사용자는 수신인 목록도 조회할 수 없어야 합니다."""
+    def test_notification_recipient_endpoint_allows_non_operator_read(self) -> None:
+        """운영자가 아닌 사용자도 수신인 목록은 조회할 수 있어야 합니다."""
 
         _create_target_recipient(
             target_user_sdwt_prod="ETCH_A",
@@ -2904,8 +2904,12 @@ class DroneSopTargetRecipientTests(TestCase):
             {"lineId": "L1", "targetUserSdwtProd": "ETCH_A", "channel": "mail"},
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["error"], "forbidden")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["lineId"], "L1")
+        self.assertEqual(payload["targetUserSdwtProd"], "ETCH_A")
+        self.assertEqual(payload["channel"], "mail")
+        self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
 
     def test_notification_recipient_endpoint_forbids_non_operator_update(self) -> None:
         """운영자가 아닌 사용자는 수신인을 저장할 수 없어야 합니다."""
@@ -4003,6 +4007,74 @@ class DroneSopJsonTargetSeedTests(TestCase):
                 call_command("seed_drone_targets_from_file", "--file", file_path)
         finally:
             os.unlink(file_path)
+
+
+class DroneSopDummySeedCommandTests(TestCase):
+    """Drone 통합 검증용 더미 데이터 커맨드를 검증합니다."""
+
+    def test_seed_drone_dummy_data_populates_required_tables(self) -> None:
+        """더미 seed command가 Drone 기능 테스트용 주요 테이블을 채웁니다."""
+
+        output = StringIO()
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "development", "DRONE_SEED_ALLOWED": "1"}):
+            call_command(
+                "seed_drone_dummy_data",
+                "--prefix",
+                "DTEST",
+                "--reset",
+                stdout=output,
+            )
+
+        self.assertIn("recipients=", output.getvalue())
+        self.assertEqual(DroneSOP.objects.filter(line_id__startswith="DTEST-").count(), 11)
+        self.assertEqual(
+            DroneSopTarget.objects.filter(target_user_sdwt_prod__startswith="DTEST_").count(),
+            4,
+        )
+        self.assertEqual(
+            DroneSopTargetMapping.objects.filter(
+                target__target_user_sdwt_prod__startswith="DTEST_",
+            ).count(),
+            4,
+        )
+        self.assertEqual(
+            DroneSopTargetChannelConfig.objects.filter(
+                target__target_user_sdwt_prod__startswith="DTEST_",
+            ).count(),
+            12,
+        )
+        self.assertEqual(
+            DroneSopTargetRecipient.objects.filter(
+                target__target_user_sdwt_prod__startswith="DTEST_",
+            ).count(),
+            8,
+        )
+        self.assertEqual(
+            DroneEarlyInform.objects.filter(line_id__startswith="DTEST-").count(),
+            2,
+        )
+        self.assertTrue(
+            DroneSopTargetDispatch.objects.filter(
+                sop__line_id__startswith="DTEST-",
+                target_code_snapshot="DTEST_ALPHA",
+            ).exists()
+        )
+        self.assertTrue(
+            DroneSopDelivery.objects.filter(
+                sop__line_id__startswith="DTEST-",
+                dispatch__target_code_snapshot="DTEST_ALPHA",
+            ).exists()
+        )
+
+        recipients = selectors.list_drone_sop_channel_recipients(
+            line_id="DTEST-L1",
+            target_user_sdwt_prod="DTEST_ALPHA",
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+        )
+        self.assertEqual(len(recipients), 1)
+        self.assertEqual(recipients[0]["externalKnoxId"], "dtest-01-mail")
+        self.assertEqual(recipients[0]["email"], "dtest-01-mail@samsung.com")
 
 
 class DroneJiraKeyEndpointTests(TestCase):

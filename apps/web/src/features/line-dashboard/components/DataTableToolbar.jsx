@@ -19,6 +19,7 @@ export function DataTableToolbar({
   isRefreshing,
   onRefresh,
   favorites,
+  compactModeToggle = null,
 }) {
   const {
     filters,
@@ -45,6 +46,7 @@ export function DataTableToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-end gap-2">
+        {compactModeToggle}
         <div className="flex flex-col items-start gap-1">
           <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Line Filter
