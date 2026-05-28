@@ -20,6 +20,8 @@ import { useLineOptionsQuery } from "../hooks/useLineOptionsQuery"
 export function LineDashboardShell({
   contentMaxWidthClass = "max-w-10xl",
   scrollAreaClassName = "overflow-y-auto",
+  paddingClassName,
+  innerClassName,
 }) {
   return (
     <RequireAuth>
@@ -27,6 +29,8 @@ export function LineDashboardShell({
         <LineDashboardShellContent
           contentMaxWidthClass={contentMaxWidthClass}
           scrollAreaClassName={scrollAreaClassName}
+          paddingClassName={paddingClassName}
+          innerClassName={innerClassName}
         />
         <ChatWidget />
       </>
@@ -34,7 +38,12 @@ export function LineDashboardShell({
   )
 }
 
-function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }) {
+function LineDashboardShellContent({
+  contentMaxWidthClass,
+  scrollAreaClassName,
+  paddingClassName,
+  innerClassName,
+}) {
   const { user } = useAuth()
   const {
     data: lineOptions = [],
@@ -61,13 +70,22 @@ function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }
           lineOptions={lineOptions}
           contentMaxWidthClass={contentMaxWidthClass}
           scrollAreaClassName={scrollAreaClassName}
+          paddingClassName={paddingClassName}
+          innerClassName={innerClassName}
         />
       </ActiveLineProvider>
     </DepartmentProvider>
   )
 }
 
-function LineDashboardShellLayout({ navigation, lineOptions, contentMaxWidthClass, scrollAreaClassName }) {
+function LineDashboardShellLayout({
+  navigation,
+  lineOptions,
+  contentMaxWidthClass,
+  scrollAreaClassName,
+  paddingClassName,
+  innerClassName,
+}) {
   const { activeLineId, onSelect } = useLineSwitcher()
   const lineSwitcherOptions = buildLineSwitcherOptions(lineOptions)
 
@@ -84,6 +102,8 @@ function LineDashboardShellLayout({ navigation, lineOptions, contentMaxWidthClas
       sidebarSecondary={<NavProjects projects={navigation.projects} />}
       contentMaxWidthClass={contentMaxWidthClass}
       scrollAreaClassName={scrollAreaClassName}
+      paddingClassName={paddingClassName}
+      innerClassName={innerClassName}
     >
       <Outlet />
     </AppShellLayout>

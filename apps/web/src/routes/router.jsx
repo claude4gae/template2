@@ -6,6 +6,7 @@ import { AuthAutoLoginGate } from "@/lib/auth"
 import { appstoreRoutes } from "@/features/appstore"
 import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
+import { fdcTrendRoutes } from "@/features/fdc-trend"
 import { GlobalNavbarShell, homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
@@ -19,6 +20,7 @@ import { accountRoutes } from "@/features/account"
 const protectedFeatureRoutes = [
   ...teamstaffRoutes,
   ...lineDashboardRoutes,
+  ...fdcTrendRoutes,
   ...l3SpiderRoutes,
   ...appstoreRoutes,
   ...emailsRoutes,
