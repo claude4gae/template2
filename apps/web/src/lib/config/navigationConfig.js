@@ -84,14 +84,14 @@ const EMAILS_GROUP_BASE = Object.freeze({
 
 const FDC_TREND_GROUP = Object.freeze({
   key: "fdc-trend",
-  title: "FDC Trend",
+  title: "L0 Spider",
   url: "/fdc_trend",
   icon: Activity,
   isActive: true,
   scope: "global",
   items: [
     {
-      title: "이상 Trend",
+      title: "이상 FDC Trend",
       url: "/fdc_trend",
       scope: "global",
     },

@@ -1,4 +1,4 @@
-# ExecPlan: FDC Trend UI
+# ExecPlan: L0 Spider UI
 
 ## 목표
 - 라인 탭, 분임조 탭, 스텝별 이상 Trend 리스트, scatter chart 상세를 한 화면에서 탐색하는 React UI를 구현한다.
@@ -6,7 +6,7 @@
 ## 현재 상태
 - `apps/web/src/features/*`는 feature별 `routes.jsx`와 `index.js` public facade를 사용한다.
 - 업무형 화면은 Tailwind/shadcn 토큰과 `AppShellLayout`/`LineDashboardShell` 패턴을 따른다.
-- FDC Trend용 API/DB 계약은 아직 확인되지 않았다.
+- L0 Spider용 API/DB 계약은 아직 확인되지 않았다.
 
 ## 범위
 - 수정할 영역: `apps/web/src/features/fdc-trend`, 전역 라우터, navigation config, 기존 shell의 선택 layout prop.
@@ -20,8 +20,8 @@
 - API/env/auth contract 변경은 없다.
 
 ## 실행 단계
-- [x] FDC Trend mock data와 selector 유틸 작성
-- [x] FDC Trend page 구현
+- [x] L0 Spider mock data와 selector 유틸 작성
+- [x] L0 Spider page 구현
 - [x] feature route/facade 추가
 - [x] 전역 route와 navigation에 연결
 - [x] lint/audit 검증
@@ -35,6 +35,6 @@
 - 대응: mock data와 selector를 page에서 분리해 교체 범위를 줄인다.
 
 ## 진행 기록
-- 2026-05-28: FDC Trend UI 구현 계획 작성.
+- 2026-05-28: L0 Spider UI 구현 계획 작성.
 - 2026-05-28: `features/fdc-trend` 화면, route/facade, navigation 연결 추가.
 - 2026-05-28: 의존성 설치 후 `web:lint`, `web:build`, `agent:audit:web-boundary`, `agent:audit:ui` 통과. `recharts` build resolve를 위해 누락된 `react-is` dependency를 추가.

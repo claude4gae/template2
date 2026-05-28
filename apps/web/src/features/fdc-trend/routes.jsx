@@ -1,5 +1,5 @@
 // 파일 경로: src/features/fdc-trend/routes.jsx
-// FDC Trend feature 라우트 정의입니다.
+// L0 Spider feature 라우트 정의입니다.
 import { LineDashboardShell } from "@/features/line-dashboard"
 
 import { FdcTrendPage } from "./pages/FdcTrendPage"
