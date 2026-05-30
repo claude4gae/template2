@@ -24,9 +24,11 @@
 | `DJANGO_DB_*` / 기본 DB | `DJANGO_DB_ENGINE`, `DJANGO_DB_NAME`, `DJANGO_DB_USER`, `DJANGO_DB_PASSWORD`, `DJANGO_DB_HOST`, `DJANGO_DB_PORT` | Django 기본 PostgreSQL |
 | `TIMELINE_DB_*` / Timeline DB | `TIMELINE_DB_ENGINE`, `TIMELINE_DB_NAME`, `TIMELINE_DB_USER`, `TIMELINE_DB_PASSWORD`, `TIMELINE_DB_HOST`, `TIMELINE_DB_PORT`, `TIMELINE_QUERY_DAYS` | Timeline 전용 PostgreSQL과 기본 조회 기간 |
 | `L3_SPIDER_*` / L3 Spider 파일 데이터 | `L3_SPIDER_DATA_ROOT`, `L3_SPIDER_MAX_CHART_POINTS_PER_PANEL` | read-only mount된 `daily_anomaly` Parquet 데이터 경로와 차트 sampling 제한 |
-| `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR` | FTP 등으로 수신한 파일의 테이블별 root 경로. 하위 `incoming/processing` 사용 |
+| `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_HOST_PATH`, `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR` | FTP 등으로 수신한 파일의 host mount와 테이블별 root 경로. 하위 `incoming/processing` 사용 |
+| `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
 | Airflow trigger | `AIRFLOW_TRIGGER_TOKEN` | 수집/동기화 trigger 보호용 Bearer token |
+| Airflow data movement DAG | `DATA_MOVEMENT_LOAD_SCHEDULE`, `DATA_MOVEMENT_LOAD_HTTP_TIMEOUT`, `DATA_MOVEMENT_LOAD_LIMIT`, `DATA_MOVEMENT_LOAD_DRY_RUN` | `data_movement_file_load` DAG의 polling 주기와 실행 옵션 |
 | Emails POP3/OCR | `EMAIL_POP3_*`, `EMAIL_OCR_INTERNAL_TOKEN`, `EMAIL_EXCLUDED_SUBJECT_PREFIXES` | 메일 수집과 OCR worker |
 | Drone POP3/Jira/Mail/Messenger | `DRONE_*`, `KNOX_MESSENGER_*` | Drone SOP 수집과 채널별 전송 |
 | Assistant/RAG/LLM | `ASSISTANT_*`, `RAG_*` | RAG 검색, RAG 문서 등록/삭제, LLM 답변 |

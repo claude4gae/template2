@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/v1/assistant/", include("api.assistant.urls")),
     path("api/v1/timeline/", include("api.timeline.urls")),
     path("api/v1/emails/", include("api.emails.urls")),
+    path("api/v1/data-movement/", include("api.data_movement.urls")),
     path("api/v1/appstore/", include("api.appstore.urls")),
     path("api/v1/account/", include("api.account.urls")),
     path("api/v1/voc/", include("api.voc.urls")),

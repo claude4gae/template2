@@ -110,6 +110,7 @@ INSTALLED_APPS = [
     "api.assistant",
     "api.auth.apps.AuthConfig",
     "api.common",
+    "api.data_movement",
     "api.data_movement.ct_process_comment",
     "api.data_movement.ctttm_workorder_list",
     "api.data_movement.m_tkin_prevent",

@@ -11,6 +11,7 @@
 | Auth | `/api/v1/auth/` | `apps/api/api/auth/urls.py` | `login`, `logout`, `me`, `config`, empty redirect |
 | Account | `/api/v1/account/` | `apps/api/api/account/urls.py` | `overview`, `affiliation`, `affiliation/approve`, `affiliation/requests`, `affiliation/members`, `affiliation/reconfirm`, `external-affiliations/sync`, `access/grants`, `access/manageable`, `users`, `line-sdwt-options` |
 | Emails | `/api/v1/emails/` | `apps/api/api/emails/urls.py` | `inbox/`, `sent/`, `mailboxes/`, `mailboxes/summary/`, `mailboxes/members/`, `unassigned/`, `unassigned/claim/`, `ingest/`, `outbox/process/`, `assets/ocr/claim/`, `assets/ocr/update/`, `bulk-delete/`, `move/`, `<email_id>/`, `<email_id>/assets/<sequence>/`, `<email_id>/html/` |
+| Data Movement | `/api/v1/data-movement/` | `apps/api/api/data_movement/urls.py` | `<table_name>/load/` |
 | Assistant | `/api/v1/assistant/` | `apps/api/api/assistant/urls.py` | `chat`, `rag-indexes` |
 | Line Dashboard / Drone | `/api/v1/line-dashboard/` | `apps/api/api/drone/urls.py` | `early-inform`, `tables`, `tables/update`, `jira-keys`, `notification-targets`, `notification-target-mappings`, `jira-user-sdwt-prods`, `notification-recipients`, `notification-recipient-permissions`, `my-notification-recipient-targets`, `history`, `line-ids`, `sop/<sop_id>/instant-inform`, `sop/<sop_id>/retry-channel`, `sop/ingest/pop3/trigger`, `sop/precheck`, `sop/trigger` |
 | L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `summary`, `data` |
@@ -48,6 +49,9 @@
 | `api.appstore` | `AppStoreApp`, `AppStoreLike`, `AppStoreComment`, `AppStoreCommentLike` |
 | `api.drone` | `DroneSOP`, `DroneSopTarget`, `DroneSopTargetChannelConfig`, `DroneSopNeedToSendRule`, `DroneSopTargetMapping`, `DroneSopTargetRecipient`, `DroneSopTargetDispatch`, `DroneSopDelivery`, `DroneEarlyInform` |
 | `api.emails` | `Email`, `EmailOutbox`, `EmailAsset` |
+| `api.data_movement.m_tkin_prevent` | `MTkinPrevent`, `MTkinPreventLoadJob` |
+| `api.data_movement.ctttm_workorder_list` | `CtttmWorkorderList`, `CtttmWorkorderListLoadJob` |
+| `api.data_movement.ct_process_comment` | `CtProcessComment`, `CtProcessCommentLoadJob` |
 | `api.voc` | `VocPost`, `VocReply` |
 | `api.auth`, `api.assistant`, `api.rag`, `api.timeline`, `api.l3_spider`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
 
@@ -57,6 +61,9 @@
 | --- | --- | --- |
 | `seed_dummy_emails` | `apps/api/api/emails/management/commands/seed_dummy_emails.py` | 로컬 개발용 더미 이메일 생성과 dummy RAG 등록 |
 | `process_email_outbox` | `apps/api/api/emails/management/commands/process_email_outbox.py` | pending `EmailOutbox`를 RAG insert/delete 호출로 처리 |
+| `load_m_tkin_prevent` | `apps/api/api/data_movement/m_tkin_prevent/management/commands/load_m_tkin_prevent.py` | `m_tkin_prevent` deflate CSV 파일 적재 |
+| `load_ctttm_workorder_list` | `apps/api/api/data_movement/ctttm_workorder_list/management/commands/load_ctttm_workorder_list.py` | `ctttm_workorder_list` deflate CSV 파일 적재 |
+| `load_ct_process_comment` | `apps/api/api/data_movement/ct_process_comment/management/commands/load_ct_process_comment.py` | `ct_process_comment` deflate CSV 파일 적재 |
 | `seed_drone_dummy_data` | `apps/api/api/drone/management/commands/seed_drone_dummy_data.py` | Drone 개발용 샘플 데이터 생성 |
 | `seed_drone_targets_from_file` | `apps/api/api/drone/management/commands/seed_drone_targets_from_file.py` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 대상/채널/수신자 생성 |
 | `prune_drone_sop` | `apps/api/api/drone/management/commands/prune_drone_sop.py` | 보관 기간을 초과한 Drone SOP 데이터 정리 |
@@ -75,4 +82,4 @@
 | `env/web.prod.env` | 운영 web 설정 템플릿 |
 | `minio.env` | 로컬 MinIO 계정과 endpoint |
 
-주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `TIMELINE_DB_*`, `L3_SPIDER_*`, `DATA_MOVEMENT_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.
+주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `TIMELINE_DB_*`, `L3_SPIDER_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.

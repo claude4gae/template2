@@ -46,6 +46,9 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 | --- | --- |
 | `seed_dummy_emails` | 개발용 샘플 메일 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
+| `load_m_tkin_prevent` | `m_tkin_prevent` incoming 파일 적재 |
+| `load_ctttm_workorder_list` | `ctttm_workorder_list` incoming 파일 적재 |
+| `load_ct_process_comment` | `ct_process_comment` incoming 파일 적재 |
 | `seed_drone_dummy_data` | Drone 개발용 샘플 데이터 생성 |
 | `seed_drone_targets_from_file` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
 | `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
@@ -56,10 +59,63 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 ```bash
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy_emails
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_m_tkin_prevent
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ctttm_workorder_list
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ct_process_comment
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
 docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
+```
+
+## Data Movement Airflow DAG
+
+`airflow/dags/data_movement_file_load.py`는 기본 1분 주기로 아래 endpoint를 호출합니다.
+
+```text
+POST /api/v1/data-movement/m_tkin_prevent/load/
+POST /api/v1/data-movement/ctttm_workorder_list/load/
+POST /api/v1/data-movement/ct_process_comment/load/
+```
+
+`ct_process_comment`는 workorder 목록을 참조하므로 DAG에서 `ctttm_workorder_list` 이후 실행됩니다.
+스케줄과 실행 옵션은 Airflow 환경 변수로 조정합니다.
+
+```text
+DATA_MOVEMENT_LOAD_SCHEDULE=*/1 * * * *
+DATA_MOVEMENT_LOAD_HTTP_TIMEOUT=1800
+DATA_MOVEMENT_LOAD_LIMIT=
+DATA_MOVEMENT_LOAD_DRY_RUN=false
+```
+
+### Data Movement FTP
+
+Compose의 `ftp` service는 API와 같은 host path를 공유합니다.
+기본 host path는 `./data/data_movement`이며 API 컨테이너에서는 `/data/data_movement`로 보입니다.
+
+```bash
+docker compose -f docker-compose.dev.yml up -d ftp
+```
+
+FTP 접속 기본값:
+
+```text
+host=<compose host>
+port=6380
+user=ftpuser
+password=ftp1234
+passive ports=8076-8079
+```
+
+운영/공유 환경에서는 아래 값을 env로 반드시 바꿉니다.
+
+```text
+FTP_USER
+FTP_PASS
+FTP_PASV_ADDRESS
+FTP_PASV_MIN_PORT
+FTP_PASV_MAX_PORT
+DATA_MOVEMENT_HOST_PATH
 ```
 
 ### Drone JSON/CSV target seed

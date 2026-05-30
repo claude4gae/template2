@@ -1,0 +1,50 @@
+# Data Movement 모듈
+
+`api.data_movement`는 FTP 등으로 수신한 deflate CSV 파일을 PostgreSQL 테이블로 적재합니다.
+
+## 디렉터리
+
+테이블별 root 아래 `incoming/`에 완료 파일을 둡니다. loader는 파일을 `processing/`으로 atomic move한 뒤 처리하고, 성공/실패 후 처리 파일을 삭제합니다.
+Compose 기본 host path는 `./data/data_movement`이고, API 컨테이너에서는 `/data/data_movement`로 mount됩니다.
+
+| 테이블 | 기본 root | 파일 패턴 |
+| --- | --- | --- |
+| `m_tkin_prevent` | `/data/data_movement/m_tkin_prevent` | `*.csv.deflate` |
+| `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list` | `CT_*_WORKORDER_*.csv.deflate` |
+| `ct_process_comment` | `/data/data_movement/ct_process_comment` | `*_CT_PROCESS_COMMENT_*.csv.deflate` |
+
+## 실행 방식
+
+- 수동 실행: Django management command
+- 자동 실행: Airflow DAG `data_movement_file_load`
+- 내부 API: `POST /api/v1/data-movement/<table_name>/load/`
+- 파일 수신: Compose `ftp` service
+
+## Airflow 순서
+
+`ct_process_comment`는 `ctttm_workorder_list`의 workorder 목록을 기준으로 적재 대상을 필터링합니다.
+따라서 DAG는 `ctttm_workorder_list` 성공 후 `ct_process_comment`를 실행합니다.
+`m_tkin_prevent`는 독립적으로 실행됩니다.
+
+## 주의사항
+
+전송 중인 파일이 `incoming/*.csv.deflate`로 보이면 안 됩니다. 업로드 프로세스는 임시 파일명으로 전송한 뒤 완료 시 `incoming/`의 최종 파일명으로 rename해야 합니다.
+
+## FTP
+
+Compose의 `ftp` service는 `repo.samsungds.net/docker.io/fauria/vsftpd` 이미지를 사용합니다.
+FTP에서 보이는 `data_movement` 디렉터리는 API의 `/data/data_movement`와 같은 host path입니다.
+
+기본 접속 설정은 env로 바꿀 수 있습니다.
+
+```text
+FTP_USER=ftpuser
+FTP_PASS=ftp1234
+FTP_PORT=6380
+FTP_PASV_ADDRESS=127.0.0.1
+FTP_PASV_MIN_PORT=8076
+FTP_PASV_MAX_PORT=8079
+DATA_MOVEMENT_HOST_PATH=./data/data_movement
+```
+
+운영에서는 `FTP_PASS`와 `FTP_PASV_ADDRESS`를 반드시 배포 환경에 맞게 설정합니다.
