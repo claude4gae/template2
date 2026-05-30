@@ -176,7 +176,7 @@ ASGI_APPLICATION = "config.asgi.application"
 
 # =====
 # DB 설정 (PostgreSQL 전용)
-#  - 컨테이너 네트워크 기준 기본값: HOST=airflow-postgres, DB=dashboard, USER=airflow, PASSWORD=airflow
+#  - 컨테이너 네트워크 기준 기본값: HOST=airflow-postgres, PORT=8010, DB=dashboard, USER=airflow, PASSWORD=airflow
 #  - 필요 시 환경변수로 덮어쓰기 가능
 # =====
 DATABASES = {
@@ -186,7 +186,7 @@ DATABASES = {
         "USER": env("DJANGO_DB_USER") or env("DB_USER") or "airflow",
         "PASSWORD": env("DJANGO_DB_PASSWORD") or env("DB_PASSWORD") or "airflow",
         "HOST": env("DJANGO_DB_HOST") or env("DB_HOST") or "airflow-postgres",
-        "PORT": env("DJANGO_DB_PORT") or env("DB_PORT") or "5432",
+        "PORT": env("DJANGO_DB_PORT") or env("DB_PORT") or "8010",
         # 요청 종료 시 기본 DB 연결을 닫아 idle session 누적을 방지합니다.
         "CONN_MAX_AGE": env_int("DJANGO_DB_CONN_MAX_AGE", 0) or 0
     },
