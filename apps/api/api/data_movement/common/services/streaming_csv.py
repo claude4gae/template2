@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import codecs
 import csv
+import sys
 import zlib
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Mapping, Sequence
+
+
+def _raise_csv_field_limit() -> None:
+    """원천 CSV의 긴 설명/댓글 필드를 읽을 수 있도록 field limit을 확장합니다."""
+
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:
+            limit = limit // 10
 
 
 def iter_deflate_text_lines(
@@ -184,6 +197,8 @@ def write_selected_deflate_csv(
     has_header: bool = False,
 ) -> int:
     """deflate CSV에서 DB 적재 대상 컬럼만 추출해 새 CSV 파일로 씁니다."""
+
+    _raise_csv_field_limit()
 
     resolved_sources = column_sources or {}
     selected_indexes = _build_selected_indexes(

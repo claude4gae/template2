@@ -11,6 +11,7 @@ TEMP_TABLE_NAME = "tmp_ctttm_workorder_list"
 FILE_PATTERN = "*CT_*_WORKORDER_*.csv.deflate"
 SOURCE_FILE_PATTERN = r"^(?:\d+_)?CT_(?P<source>MNU|MST)_WORKORDER_(?P<file_timestamp>\d{8}_\d{4})\.csv\.deflate$"
 REPLACE_COLUMN = "source_type"
+FILE_SEPARATOR = "\x03"
 DEFAULT_TABLE_DIR = Path(settings.DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR)
 
 FILE_COLUMNS = [

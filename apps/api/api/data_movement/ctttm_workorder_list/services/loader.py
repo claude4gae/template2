@@ -226,6 +226,7 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path) -> tuple[Path, i
             min_datetime_filters={
                 spec.CREATE_DATE_FILTER_COLUMN: _create_date_cutoff(),
             },
+            separator=spec.FILE_SEPARATOR,
         )
     except Exception:
         selected_path.unlink(missing_ok=True)

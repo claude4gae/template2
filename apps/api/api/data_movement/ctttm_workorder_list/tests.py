@@ -24,7 +24,7 @@ from api.data_movement.ctttm_workorder_list.services.loader import LoadFileOutco
 def _write_deflate_csv(path: Path, rows: list[list[str]]) -> None:
     """테스트용 deflate CSV 파일을 생성합니다."""
 
-    payload = "\n".join(",".join(row) for row in rows).encode("utf-8")
+    payload = "\n".join(spec.FILE_SEPARATOR.join(row) for row in rows).encode("utf-8")
     path.write_bytes(zlib.compress(payload))
 
 
@@ -108,6 +108,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 min_datetime_filters={
                     spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
                 },
+                separator=spec.FILE_SEPARATOR,
             )
 
             self.assertEqual(row_count, 1)
