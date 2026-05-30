@@ -11,10 +11,10 @@ TEMP_TABLE_NAME = "tmp_ctttm_workorder_list"
 FILE_PATTERN = "*CT_*_WORKORDER_*.csv.deflate"
 SOURCE_FILE_PATTERN = r"^(?:\d+_)?CT_(?P<source>MNU|MST)_WORKORDER_(?P<file_timestamp>\d{8}_\d{4})\.csv\.deflate$"
 REPLACE_COLUMN = "source_type"
-FILE_SEPARATOR = "\x03"
+FILE_SEPARATOR = "`"
 DEFAULT_TABLE_DIR = Path(settings.DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR)
 
-FILE_COLUMNS = [
+MST_FILE_COLUMNS = [
     "workorder_id",
     "line_id",
     "jp_no",
@@ -72,6 +72,65 @@ FILE_COLUMNS = [
     "pbu_detail_yn",
 ]
 
+MNU_FILE_COLUMNS = [
+    "workorder_id",
+    "line_id",
+    "description",
+    "asset",
+    "work_type",
+    "status",
+    "status_chg_date",
+    "area_name",
+    "wappr_date",
+    "appr_date",
+    "inprg_date",
+    "qual_date",
+    "comp_date",
+    "close_date",
+    "qual_cnt",
+    "reinprg_seq",
+    "dirty_type",
+    "data_in_total",
+    "data_in_current",
+    "report_status",
+    "pm_type",
+    "ppid",
+    "tttm_chk",
+    "mnu_type",
+    "erdtsum_lot_cnt",
+    "trace_lot_cnt",
+    "pbu_lot_cnt",
+    "create_date",
+    "create_user",
+    "update_date",
+    "update_user",
+    "use_yn",
+    "inform_id",
+    "if_status",
+    "if_update_user",
+    "if_update_date",
+    "npw_lot_cnt",
+    "sdwt_name",
+    "related_workorder_id",
+    "related_line_id",
+    "related_update_user",
+    "related_update_date",
+    "inform_auto_gen_yn",
+    "max_comment_date",
+    "ne_lot_cnt",
+    "nt_lot_cnt",
+    "sendfab_mail_batch_yn",
+    "pbu_detail_yn",
+    "reticleid",
+]
+
+FILE_COLUMNS_BY_SOURCE = {
+    "MST": MST_FILE_COLUMNS,
+    "MNU": MNU_FILE_COLUMNS,
+}
+
+FILE_COLUMNS = MST_FILE_COLUMNS
+
 DB_COLUMNS = [
     "workorder_id",
     "line_id",
@@ -92,3 +151,12 @@ ROW_FILTERS = {
 
 CREATE_DATE_FILTER_COLUMN = "create_date"
 CREATE_DATE_LOOKBACK_DAYS = 180
+
+
+def get_file_columns(*, source_type: str) -> list[str]:
+    """source_type에 맞는 원천 파일 컬럼 목록을 반환합니다."""
+
+    try:
+        return FILE_COLUMNS_BY_SOURCE[source_type]
+    except KeyError as exc:
+        raise ValueError(f"지원하지 않는 workorder source_type입니다: {source_type}") from exc

@@ -20,6 +20,9 @@ POST /api/v1/data-movement/<table_name>/load/
 | `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list/incoming/*CT_*_WORKORDER_*.csv.deflate` |
 | `ct_process_comment` | `/data/data_movement/ct_process_comment/incoming/*_CT_PROCESS_COMMENT_*.csv.deflate` |
 
+`ctttm_workorder_list`는 파일명 안의 `CT_MST_WORKORDER` 또는 `CT_MNU_WORKORDER`로 원천 DDL 컬럼 순서를 구분합니다.
+두 파일 모두 백틱(`) 구분자를 사용합니다.
+
 요청 바디는 선택입니다.
 
 ```json

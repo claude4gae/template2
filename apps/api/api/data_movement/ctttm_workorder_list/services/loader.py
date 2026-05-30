@@ -203,7 +203,7 @@ def _replace_source_rows(*, selected_csv_path: Path, source_type: str) -> None:
             )
 
 
-def _write_selected_csv(*, source_path: Path, output_dir: Path) -> tuple[Path, int]:
+def _write_selected_csv(*, source_path: Path, output_dir: Path, source_type: str) -> tuple[Path, int]:
     """원본 deflate CSV에서 저장 대상 컬럼만 추출한 임시 CSV를 생성합니다."""
 
     with tempfile.NamedTemporaryFile(
@@ -219,7 +219,7 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path) -> tuple[Path, i
         row_count = write_selected_deflate_csv(
             source_path=source_path,
             output_path=selected_path,
-            file_columns=spec.FILE_COLUMNS,
+            file_columns=spec.get_file_columns(source_type=source_type),
             db_columns=spec.DB_COLUMNS,
             column_sources=spec.COLUMN_SOURCES,
             row_filters=spec.ROW_FILTERS,
@@ -254,6 +254,7 @@ def _load_claimed_file(*, claimed_file: ClaimedDataFile) -> LoadFileOutcome:
         selected_path, row_count = _write_selected_csv(
             source_path=claimed_file.working_path,
             output_dir=claimed_file.working_path.parent,
+            source_type=source_info.source_type,
         )
         if row_count == 0:
             raise ValueError(f"empty dataframe: {claimed_file.original_path}")
@@ -307,6 +308,7 @@ def _dry_run_one_file(*, file_path: Path) -> LoadFileOutcome:
             selected_path, row_count = _write_selected_csv(
                 source_path=file_path,
                 output_dir=Path(temp_dir),
+                source_type=source_info.source_type,
             )
             if row_count == 0:
                 raise ValueError(f"empty dataframe: {file_path}")
