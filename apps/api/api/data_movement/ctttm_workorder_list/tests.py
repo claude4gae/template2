@@ -13,9 +13,12 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase
 
-from api.data_movement.common.services.streaming_csv import write_selected_deflate_csv
 from api.data_movement.ctttm_workorder_list.management.commands.load_ctttm_workorder_list import services
 from api.data_movement.ctttm_workorder_list.models import CtttmWorkorderList, CtttmWorkorderListLoadJob
+from api.data_movement.ctttm_workorder_list.services.fast_csv import (
+    build_fast_csv_plan,
+    write_fast_selected_deflate_csv,
+)
 from api.data_movement.ctttm_workorder_list.services import loader as loader_module
 from api.data_movement.ctttm_workorder_list.services import spec
 from api.data_movement.ctttm_workorder_list.services.loader import LoadFileOutcome, LoadRunSummary
@@ -26,6 +29,26 @@ def _write_deflate_csv(path: Path, rows: list[list[str]]) -> None:
 
     payload = "\n".join(spec.FILE_SEPARATOR.join(row) for row in rows).encode("utf-8")
     path.write_bytes(zlib.compress(payload))
+
+
+def _write_fast_selected_csv(*, source: Path, selected: Path, source_type: str) -> int:
+    """테스트용 source_type 기준 fast selected CSV를 생성합니다."""
+
+    plan = build_fast_csv_plan(
+        file_columns=spec.get_file_columns(source_type=source_type),
+        db_columns=spec.DB_COLUMNS,
+        column_sources=spec.COLUMN_SOURCES,
+        row_filters=spec.ROW_FILTERS,
+        min_datetime_filters={
+            spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
+        },
+    )
+    return write_fast_selected_deflate_csv(
+        source_path=source,
+        output_path=selected,
+        plan=plan,
+        separator=spec.FILE_SEPARATOR,
+    )
 
 
 def _build_mst_workorder_row(
@@ -107,8 +130,32 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
 
         self.assertEqual(len(spec.MST_FILE_COLUMNS), 55)
         self.assertEqual(len(spec.MNU_FILE_COLUMNS), 49)
+        self.assertEqual(
+            build_fast_csv_plan(
+                file_columns=spec.get_file_columns(source_type="MST"),
+                db_columns=spec.DB_COLUMNS,
+                column_sources=spec.COLUMN_SOURCES,
+                row_filters=spec.ROW_FILTERS,
+                min_datetime_filters={
+                    spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
+                },
+            ).max_required_index,
+            31,
+        )
+        self.assertEqual(
+            build_fast_csv_plan(
+                file_columns=spec.get_file_columns(source_type="MNU"),
+                db_columns=spec.DB_COLUMNS,
+                column_sources=spec.COLUMN_SOURCES,
+                row_filters=spec.ROW_FILTERS,
+                min_datetime_filters={
+                    spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
+                },
+            ).max_required_index,
+            27,
+        )
 
-    def test_write_selected_deflate_csv_maps_mst_asset_to_eqp_id(self) -> None:
+    def test_write_fast_selected_deflate_csv_maps_mst_asset_to_eqp_id(self) -> None:
         """MST 파일에서 ETCH와 CREATE_DATE 기준을 통과한 행만 추출합니다."""
 
         with TemporaryDirectory() as temp_dir:
@@ -132,18 +179,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 ],
             )
 
-            row_count = write_selected_deflate_csv(
-                source_path=source,
-                output_path=selected,
-                file_columns=spec.get_file_columns(source_type="MST"),
-                db_columns=spec.DB_COLUMNS,
-                column_sources=spec.COLUMN_SOURCES,
-                row_filters=spec.ROW_FILTERS,
-                min_datetime_filters={
-                    spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
-                },
-                separator=spec.FILE_SEPARATOR,
-            )
+            row_count = _write_fast_selected_csv(source=source, selected=selected, source_type="MST")
 
             self.assertEqual(row_count, 1)
             self.assertEqual(
@@ -151,7 +187,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 "WO1,L1,EQP1,PM,desc,2026-05-29 14:00:00,2026-05-29 15:00:00",
             )
 
-    def test_write_selected_deflate_csv_maps_mnu_asset_to_eqp_id(self) -> None:
+    def test_write_fast_selected_deflate_csv_maps_mnu_asset_to_eqp_id(self) -> None:
         """MNU 파일에서 source별 다른 컬럼 순서를 사용해 행을 추출합니다."""
 
         with TemporaryDirectory() as temp_dir:
@@ -172,18 +208,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 ],
             )
 
-            row_count = write_selected_deflate_csv(
-                source_path=source,
-                output_path=selected,
-                file_columns=spec.get_file_columns(source_type="MNU"),
-                db_columns=spec.DB_COLUMNS,
-                column_sources=spec.COLUMN_SOURCES,
-                row_filters=spec.ROW_FILTERS,
-                min_datetime_filters={
-                    spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
-                },
-                separator=spec.FILE_SEPARATOR,
-            )
+            row_count = _write_fast_selected_csv(source=source, selected=selected, source_type="MNU")
 
             self.assertEqual(row_count, 1)
             self.assertEqual(
@@ -191,7 +216,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 "MNU1,L2,EQP2,PM,desc,2026-05-29 14:00:00,2026-05-29 15:00:00",
             )
 
-    def test_write_selected_deflate_csv_accepts_timezone_aware_create_date(self) -> None:
+    def test_write_fast_selected_deflate_csv_accepts_timezone_aware_create_date(self) -> None:
         """timezone 포함 CREATE_DATE도 cutoff와 비교할 수 있는지 확인합니다."""
 
         with TemporaryDirectory() as temp_dir:
@@ -208,18 +233,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 ],
             )
 
-            row_count = write_selected_deflate_csv(
-                source_path=source,
-                output_path=selected,
-                file_columns=spec.get_file_columns(source_type="MNU"),
-                db_columns=spec.DB_COLUMNS,
-                column_sources=spec.COLUMN_SOURCES,
-                row_filters=spec.ROW_FILTERS,
-                min_datetime_filters={
-                    spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
-                },
-                separator=spec.FILE_SEPARATOR,
-            )
+            row_count = _write_fast_selected_csv(source=source, selected=selected, source_type="MNU")
 
             self.assertEqual(row_count, 1)
 

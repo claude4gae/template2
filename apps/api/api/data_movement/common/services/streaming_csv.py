@@ -141,7 +141,7 @@ def _build_min_datetime_filter_indexes(
     return filter_indexes
 
 
-def _parse_datetime(value: str) -> datetime | None:
+def parse_csv_datetime(value: str) -> datetime | None:
     """원천 CSV datetime 문자열을 비교 가능한 datetime으로 변환합니다."""
 
     normalized = value.strip()
@@ -183,7 +183,7 @@ def _matches_min_datetime_filters(
     for index, min_value in filter_indexes.items():
         if index >= len(row):
             return False
-        parsed_value = _parse_datetime(row[index])
+        parsed_value = parse_csv_datetime(row[index])
         if parsed_value is None or parsed_value < min_value:
             return False
     return True

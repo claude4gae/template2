@@ -17,8 +17,11 @@ from api.data_movement.common.services.file_loader import (
     delete_claimed_file,
     list_incoming_files,
 )
-from api.data_movement.common.services.streaming_csv import write_selected_deflate_csv
 from api.data_movement.ctttm_workorder_list.models import CtttmWorkorderListLoadJob
+from api.data_movement.ctttm_workorder_list.services.fast_csv import (
+    build_fast_csv_plan,
+    write_fast_selected_deflate_csv,
+)
 from api.data_movement.ctttm_workorder_list.services import spec
 
 
@@ -216,9 +219,7 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, source_type: str
         selected_path = Path(handle.name)
 
     try:
-        row_count = write_selected_deflate_csv(
-            source_path=source_path,
-            output_path=selected_path,
+        plan = build_fast_csv_plan(
             file_columns=spec.get_file_columns(source_type=source_type),
             db_columns=spec.DB_COLUMNS,
             column_sources=spec.COLUMN_SOURCES,
@@ -226,6 +227,11 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, source_type: str
             min_datetime_filters={
                 spec.CREATE_DATE_FILTER_COLUMN: _create_date_cutoff(),
             },
+        )
+        row_count = write_fast_selected_deflate_csv(
+            source_path=source_path,
+            output_path=selected_path,
+            plan=plan,
             separator=spec.FILE_SEPARATOR,
         )
     except Exception:
