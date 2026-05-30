@@ -7,7 +7,7 @@ services:
     env_file:
       - ./env/api.common.env
       - ./env/api.oidc.dev.env
-      - ./minio.env
+      - ./env/minio.env
     environment:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_BUCKET: emails
@@ -71,7 +71,7 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     env_file:
-      - ./minio.env
+      - ./env/minio.env
     volumes:
       - minio_data:/data
     ports:
@@ -87,7 +87,7 @@ services:
     depends_on:
       - minio
     env_file:
-      - ./minio.env
+      - ./env/minio.env
     entrypoint:
       - /bin/sh
       - -c

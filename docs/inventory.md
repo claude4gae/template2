@@ -80,6 +80,6 @@
 | `env/web.dev.env` | 로컬 web 개발 설정 |
 | `env/web.oidc.dev.env` | 실제 OIDC 개발 연결용 web 설정 |
 | `env/web.prod.env` | 운영 web 설정 템플릿 |
-| `minio.env` | 로컬 MinIO 계정과 endpoint |
+| `env/minio.env` | 로컬 MinIO 계정과 endpoint |
 
 주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `TIMELINE_DB_*`, `L3_SPIDER_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.

@@ -130,5 +130,5 @@ Authorization: Bearer <AIRFLOW_TRIGGER_TOKEN>
 | LLM request/response 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_llm.py`, `docs/modules/assistant.md` |
 | Mail API 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_mail.py`, `docs/modules/emails.md`, `docs/modules/line-dashboard.md` |
 | Jira 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_jira.py`, `docs/modules/line-dashboard.md` |
-| MinIO 변경 | `minio.env`, `docs/data-model.md`, `docs/modules/emails.md` |
+| MinIO 변경 | `env/minio.env`, `docs/data-model.md`, `docs/modules/emails.md` |
 | Airflow token/trigger 변경 | `env/api*.env`, 관련 `docs/api/*.md`, `docs/operations.md` |

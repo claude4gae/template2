@@ -1,6 +1,6 @@
 # 환경 설정
 
-환경 변수는 `env/`와 `minio.env`에 나뉘어 있습니다. 외부 시스템 URL, token, credential은 코드에 하드코딩하지 않고 env로 주입합니다.
+환경 변수는 `env/` 아래에 모여 있습니다. 외부 시스템 URL, token, credential은 코드에 하드코딩하지 않고 env로 주입합니다.
 
 ## 파일별 역할
 
@@ -13,7 +13,7 @@
 | `env/web.dev.env` | 로컬 Web | local browser/backend URL |
 | `env/web.oidc.dev.env` | OIDC 개발 Web | nginx 경유 OIDC 개발 URL |
 | `env/web.prod.env` | 운영 Web | 운영 site/backend URL |
-| `minio.env` | MinIO | local MinIO 계정과 endpoint |
+| `env/minio.env` | MinIO | local MinIO 계정과 endpoint |
 
 ## 주요 설정 그룹
 
