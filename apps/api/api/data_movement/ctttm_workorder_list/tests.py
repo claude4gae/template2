@@ -68,6 +68,16 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
         self.assertEqual(info.source_type, "MNU")
         self.assertEqual(info.file_timestamp, "20260529_1400")
 
+    def test_parse_source_file_name_accepts_numeric_prefix(self) -> None:
+        """숫자 prefix가 붙은 파일명에서도 source_type과 timestamp를 추출합니다."""
+
+        info = loader_module.parse_source_file_name(
+            file_name="69623_CT_MNU_WORKORDER_20260530_1600.csv.deflate",
+        )
+
+        self.assertEqual(info.source_type, "MNU")
+        self.assertEqual(info.file_timestamp, "20260530_1600")
+
     def test_write_selected_deflate_csv_maps_asset_to_eqp_id(self) -> None:
         """ETCH이고 CREATE_DATE 기준 기간 안인 행만 추출하고 ASSET을 eqp_id로 매핑합니다."""
 
@@ -159,7 +169,7 @@ class CtttmWorkorderListLifecycleTests(TestCase):
             root = Path(temp_dir)
             incoming = root / "incoming"
             incoming.mkdir()
-            source = incoming / "CT_MST_WORKORDER_20260529_1400.csv.deflate"
+            source = incoming / "69623_CT_MST_WORKORDER_20260529_1400.csv.deflate"
             _write_deflate_csv(source, [_build_workorder_row(workorder_id="NEW", line_id="L2", asset="EQP2")])
 
             summary = loader_module.load_ctttm_workorder_list_files(data_dir=root)

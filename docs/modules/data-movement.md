@@ -10,7 +10,7 @@ Compose 기본 host path는 `./data/data_movement`이고, API 컨테이너에서
 | 테이블 | 기본 root | 파일 패턴 |
 | --- | --- | --- |
 | `m_tkin_prevent` | `/data/data_movement/m_tkin_prevent` | `*.csv.deflate` |
-| `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list` | `CT_*_WORKORDER_*.csv.deflate` |
+| `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list` | `*CT_*_WORKORDER_*.csv.deflate` |
 | `ct_process_comment` | `/data/data_movement/ct_process_comment` | `*_CT_PROCESS_COMMENT_*.csv.deflate` |
 
 ## 실행 방식

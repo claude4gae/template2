@@ -85,7 +85,6 @@ def run_drone_sop_inform_create(**_context):
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 0,
 }
 
 with DAG(

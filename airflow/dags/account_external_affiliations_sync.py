@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
 from typing import Any
 
 import requests
@@ -77,8 +76,6 @@ def run_account_external_affiliations_sync(**_context):
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 0,
-    "retry_delay": timedelta(minutes=5),
 }
 
 with DAG(

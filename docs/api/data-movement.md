@@ -17,7 +17,7 @@ POST /api/v1/data-movement/<table_name>/load/
 | table_name | 처리 대상 |
 | --- | --- |
 | `m_tkin_prevent` | `/data/data_movement/m_tkin_prevent/incoming/*.csv.deflate` |
-| `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list/incoming/CT_*_WORKORDER_*.csv.deflate` |
+| `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list/incoming/*CT_*_WORKORDER_*.csv.deflate` |
 | `ct_process_comment` | `/data/data_movement/ct_process_comment/incoming/*_CT_PROCESS_COMMENT_*.csv.deflate` |
 
 요청 바디는 선택입니다.
@@ -39,7 +39,7 @@ POST /api/v1/data-movement/<table_name>/load/
   "failure_count": 0,
   "outcomes": [
     {
-      "file_name": "CT_MST_WORKORDER_20260529_1400.csv.deflate",
+      "file_name": "69623_CT_MST_WORKORDER_20260529_1400.csv.deflate",
       "status": "success",
       "row_count": 120,
       "source_type": "MST"
