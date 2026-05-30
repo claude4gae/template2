@@ -50,6 +50,7 @@ const SENSOR_NAMES = [
 
 const TOOL_GROUPS = ["EQC-01", "EQC-02", "EQC-03", "EQC-04"]
 const TREND_TYPES = ["upper-shift", "variance", "cluster", "drift"]
+export const SENSOR_GRADES = Object.freeze(["A/B", "D", "N", "M"])
 const LINE_FACTORS = Object.freeze({
   H1: 0,
   "15L": 1,
@@ -104,6 +105,7 @@ function buildSensorRecord({ stepId, equipmentId, stepIndex, equipmentIndex, sen
   return {
     id: `${stepId}-${equipmentId}-sensor-${sensorIndex}`,
     sensorName: SENSOR_NAMES[(stepIndex + equipmentIndex + sensorIndex + seed) % SENSOR_NAMES.length],
+    grade: SENSOR_GRADES[(sensorSeed + stepIndex + equipmentIndex) % SENSOR_GRADES.length],
     trendType: TREND_TYPES[(sensorSeed + stepIndex) % TREND_TYPES.length],
     severity,
     abnormalCount,
