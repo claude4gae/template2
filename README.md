@@ -21,6 +21,15 @@
 docker compose -f docker-compose.dev.yml up -d
 ```
 
+Airflow/DB/FTP 등 인프라는 켜둔 채 백엔드만 재시작하며 개발하려면 split compose를 사용할 수 있습니다.
+
+```bash
+docker network create shared-net 2>/dev/null || true
+docker compose -f docker-compose.dev.infra.yml up -d
+docker compose -f docker-compose.dev.backend.yml up -d
+docker compose -f docker-compose.dev.backend.yml restart api
+```
+
 실행 후 주로 보는 주소는 다음과 같습니다.
 
 - Web: `http://localhost:3000`

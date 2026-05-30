@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,7 +17,33 @@ from api.data_movement.common.services.postgres_copy import CopyReplaceResult
 from api.data_movement.m_tkin_prevent.management.commands.load_m_tkin_prevent import services
 from api.data_movement.m_tkin_prevent.models import MTkinPrevent, MTkinPreventLoadJob
 from api.data_movement.m_tkin_prevent.services import loader as loader_module
+from api.data_movement.m_tkin_prevent.services import spec
 from api.data_movement.m_tkin_prevent.services.loader import LoadFileOutcome, LoadRunSummary
+
+
+def _write_deflate_tkin_csv(path: Path, rows: list[list[str]]) -> None:
+    """테스트용 m_tkin_prevent deflate CSV 파일을 생성합니다."""
+
+    payload = "\n".join("\x03".join(row) for row in rows).encode("utf-8")
+    path.write_bytes(zlib.compress(payload))
+
+
+def _build_tkin_row(*, line_id: str = "L1", operator_name: str = "operator") -> list[str]:
+    """spec 컬럼 순서에 맞춘 테스트용 m_tkin_prevent row를 생성합니다."""
+
+    row = [""] * len(spec.COLUMNS)
+    row[0] = operator_name
+    row[6] = line_id
+    row[8] = "0"
+    row[10] = "process"
+    row[25] = "0"
+    row[26] = "0"
+    row[29] = "0"
+    row[30] = "0"
+    row[32] = "0"
+    row[40] = "0"
+    row[43] = "0"
+    return row
 
 
 class MTkinPreventStructureTests(SimpleTestCase):
@@ -74,6 +101,31 @@ class MTkinPreventStructureTests(SimpleTestCase):
 
 class MTkinPreventLifecycleTests(TestCase):
     """FTP 수신 파일과 loader 처리 파일의 lifecycle을 검증합니다."""
+
+    def test_loader_replaces_line_rows_in_database(self) -> None:
+        """실제 COPY 경로로 line_id 단위 기존 row를 교체합니다."""
+
+        MTkinPrevent.objects.create(line_id="L1", operator_name="old")
+        MTkinPrevent.objects.create(line_id="L2", operator_name="keep")
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            incoming = root / "incoming"
+            incoming.mkdir()
+            source = incoming / "a.csv.deflate"
+            _write_deflate_tkin_csv(
+                source,
+                [_build_tkin_row(line_id="L1", operator_name="new")],
+            )
+
+            summary = loader_module.load_m_tkin_prevent_files(data_dir=root)
+
+        self.assertEqual(summary.success_count, 1)
+        self.assertFalse(MTkinPrevent.objects.filter(line_id="L1", operator_name="old").exists())
+        self.assertTrue(MTkinPrevent.objects.filter(line_id="L2", operator_name="keep").exists())
+        loaded_row = MTkinPrevent.objects.get(line_id="L1")
+        self.assertEqual(loaded_row.operator_name, "new")
+        self.assertIsNotNone(loaded_row.id)
 
     @patch.object(loader_module, "copy_replace_rows")
     @patch.object(loader_module, "extract_replace_values")

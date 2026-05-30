@@ -1,0 +1,90 @@
+include:
+  - docker-compose.airflow.yml
+
+services:
+  adfs:
+    build:
+      context: ./apps/adfs_dummy
+    environment:
+      DUMMY_ADFS_EMAIL: dummy.user@example.com
+      DUMMY_ADFS_NAME: Dummy User
+      DUMMY_ADFS_CLIENT_ID: dummy-client
+      DUMMY_ADFS_PRIVATE_KEY_PATH: /app/dummy_adfs_private.key
+      # 개발 환경에서는 더미 ADFS 서버가 HTTP로 구동되므로 발급자도 동일하게 맞춘다
+      DUMMY_ADFS_ISSUER: http://localhost:9102/adfs
+      DUMMY_LLM_REPLY_TEMPLATE: '개발용 더미 응답입니다. 질문 "{question}" 에 대한 테스트 답변입니다.'
+      DUMMY_LLM_DELAY_MS: "1200"
+      DUMMY_RAG_INDEX_NAME: emails
+      DUMMY_ASSISTANT_RAG_INDEX: emails
+      DUMMY_MAIL_RAG_INDEX: emails
+      DUMMY_RAG_PERMISSION_GROUPS: '["rag-public"]'
+    ports:
+      - "9102:9000"
+    networks:
+      shared-net:
+        aliases:
+          - adfs
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    env_file:
+      - ./env/minio.env
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      shared-net:
+        aliases:
+          - minio
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    env_file:
+      - ./env/minio.env
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+          set -e
+          until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+            sleep 1
+          done
+          mc mb -p local/emails || true
+          mc mb -p local/profile || true
+    networks:
+      shared-net:
+        aliases:
+          - minio-init
+
+  ftp:
+    image: fauria/vsftpd
+    container_name: datalake-ftp
+    environment:
+      FTP_USER: ${FTP_USER:-ftpuser}
+      FTP_PASS: ${FTP_PASS:-ftp1234}
+      PASV_ADDRESS: ${FTP_PASV_ADDRESS:-127.0.0.1}
+      PASV_MIN_PORT: ${FTP_PASV_MIN_PORT:-8076}
+      PASV_MAX_PORT: ${FTP_PASV_MAX_PORT:-8079}
+    ports:
+      - "${FTP_PORT:-6380}:21"
+      - "${FTP_PASV_MIN_PORT:-8076}-${FTP_PASV_MAX_PORT:-8079}:${FTP_PASV_MIN_PORT:-8076}-${FTP_PASV_MAX_PORT:-8079}"
+    volumes:
+      - ${DATA_MOVEMENT_HOST_PATH:-./data/data_movement}:/home/vsftpd/${FTP_USER:-ftpuser}/data_movement
+    restart: unless-stopped
+    networks:
+      shared-net:
+        aliases:
+          - ftp
+
+volumes:
+  minio_data:
+
+networks:
+  shared-net:
+    external: true
+    name: shared-net

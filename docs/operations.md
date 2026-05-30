@@ -8,6 +8,28 @@
 docker compose -f docker-compose.dev.yml up -d
 ```
 
+Airflow, DB, FTP, MinIO, dummy ADFS는 유지하고 백엔드만 자주 재시작하려면 split compose를 사용합니다.
+
+```bash
+docker network create shared-net 2>/dev/null || true
+docker compose -f docker-compose.dev.infra.yml up -d
+docker compose -f docker-compose.dev.backend.yml up -d
+docker compose -f docker-compose.dev.backend.yml restart api
+```
+
+백엔드만 끄고 다시 켤 때는 API compose만 조작합니다.
+
+```bash
+docker compose -f docker-compose.dev.backend.yml stop api
+docker compose -f docker-compose.dev.backend.yml up -d api
+```
+
+백엔드 이미지 재빌드가 필요할 때는 API compose만 다시 올립니다.
+
+```bash
+docker compose -f docker-compose.dev.backend.yml up -d --build api
+```
+
 주요 주소:
 
 | 서비스 | 주소 |

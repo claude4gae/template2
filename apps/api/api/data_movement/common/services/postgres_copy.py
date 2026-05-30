@@ -85,8 +85,11 @@ def copy_replace_rows(
         cursor.execute(
             f"""
             CREATE TEMP TABLE {quoted_temp_table}
-            (LIKE {quoted_table} INCLUDING DEFAULTS)
             ON COMMIT DROP
+            AS
+            SELECT {quoted_columns}
+            FROM {quoted_table}
+            WITH NO DATA
             """
         )
 
