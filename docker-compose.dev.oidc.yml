@@ -1,4 +1,5 @@
-version: "3.9"
+include:
+  - docker-compose.airflow.yml
 
 services:
   api:
@@ -13,7 +14,10 @@ services:
       MINIO_BUCKET: emails
       MINIO_REGION: us-east-1
     depends_on:
-      - minio
+      airflow-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     volumes:
       - ./apps/api:/app
       - api_data:/data
@@ -55,8 +59,12 @@ services:
   nginx:
     image: nginx:1.27-alpine
     depends_on:
-      - web
-      - api
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+      airflow-webserver:
+        condition: service_started
     ports:
       - "80:80"
       - "443:443"

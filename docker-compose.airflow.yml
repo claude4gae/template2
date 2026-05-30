@@ -1,9 +1,4 @@
 services:
-  api:
-    depends_on:
-      airflow-postgres:
-        condition: service_healthy
-
   airflow-postgres:
     image: postgres:16
     environment:
@@ -205,12 +200,6 @@ services:
         condition: service_started
     networks:
       - shared-net
-
-  nginx:
-    depends_on:
-      - web
-      - api
-      - airflow-webserver
 
 volumes:
   airflow_user_site:

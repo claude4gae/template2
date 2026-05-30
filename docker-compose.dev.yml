@@ -1,3 +1,6 @@
+include:
+  - docker-compose.airflow.yml
+
 services:
   api:
     build:
@@ -7,8 +10,12 @@ services:
       - ./env/api.dev.env
       - ./env/minio.env
     depends_on:
-      - adfs
-      - minio
+      adfs:
+        condition: service_started
+      airflow-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     environment:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_BUCKET: emails
@@ -114,8 +121,12 @@ services:
   nginx:
     image: nginx:1.27-alpine
     depends_on:
-      - web
-      - api
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+      airflow-webserver:
+        condition: service_started
     ports:
       - "80:80"
     volumes:
