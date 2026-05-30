@@ -15,6 +15,7 @@ services:
       - minio
     volumes:
       - api_data:/data
+      - ${DATA_MOVEMENT_HOST_PATH:-/data/data_movement}:/data/data_movement
       - api_static:/app/staticfiles
       - ${L3_SPIDER_DATA_HOST_PATH:-./data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
     expose:

@@ -2,7 +2,7 @@
 // 컬럼별로 서로 다른 UI 표현을 담당하는 렌더러 모음입니다.
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { ExternalLink, ImageIcon } from "lucide-react"
+import { ExternalLink, ImageIcon, Settings } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -347,7 +347,7 @@ function CtttmUrlMenu({ links }) {
           aria-label="Open CTTTM URL list"
           title="CTTTM URL"
         >
-          <ExternalLink className="h-4 w-4" />
+          <Settings className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" className="z-[70] min-w-40">
@@ -385,7 +385,7 @@ function CtttmUrlCell({ value }) {
         aria-label={`Open CTTTM URL ${link.label} in a new tab`}
         title={link.href}
       >
-        <ExternalLink className="h-4 w-4" />
+        <Settings className="h-4 w-4" />
       </a>
     )
   }

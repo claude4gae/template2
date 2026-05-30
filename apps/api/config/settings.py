@@ -110,6 +110,9 @@ INSTALLED_APPS = [
     "api.assistant",
     "api.auth.apps.AuthConfig",
     "api.common",
+    "api.data_movement.ct_process_comment",
+    "api.data_movement.ctttm_workorder_list",
+    "api.data_movement.m_tkin_prevent",
     "api.drone",
     "api.emails",
     "api.health",
@@ -205,6 +208,20 @@ TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 60) or 60
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.
 L3_SPIDER_DATA_ROOT = env("L3_SPIDER_DATA_ROOT", "/data/l3_spider/daily_anomaly")
 L3_SPIDER_MAX_CHART_POINTS_PER_PANEL = env_int("L3_SPIDER_MAX_CHART_POINTS_PER_PANEL", 2000) or 2000
+
+# Data movement 테이블 root 경로. loader는 하위 incoming/processing을 사용합니다.
+DATA_MOVEMENT_M_TKIN_PREVENT_DIR = env(
+    "DATA_MOVEMENT_M_TKIN_PREVENT_DIR",
+    "/data/data_movement/m_tkin_prevent",
+)
+DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR = env(
+    "DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR",
+    "/data/data_movement/ctttm_workorder_list",
+)
+DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR = env(
+    "DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR",
+    "/data/data_movement/ct_process_comment",
+)
 
 
 # ===========================

@@ -5,6 +5,11 @@ These rules apply to `apps/api/**`.
 
 ## Domain App Boundary
 - Domain app path: `apps/api/api/<feature>` (`api.<feature>`)
+- Data movement table apps are the only nested domain app exception:
+  - Namespace path: `apps/api/api/data_movement/<table_name>` (`api.data_movement.<table_name>`)
+  - `<table_name>` must match the physical target table name.
+  - Each table app owns only its table models, migrations, loader services, tests, and management commands.
+  - Shared ingestion helpers for these apps live under `apps/api/api/data_movement/common`.
 - Allowed files/folders only:
   - `apps.py`, `models.py`, `urls.py`, `callback_urls.py` (auth only)
   - `views.py`, `serializers.py`, `selectors.py`, `permissions.py`, `admin.py`, `tests.py`
@@ -13,6 +18,7 @@ These rules apply to `apps/api/**`.
 - Max depth 2, except `services/`, `migrations/`, `management/commands/`.
 - Shared/infrastructure packages only:
   - `apps/api/api/common`
+  - `apps/api/api/data_movement/common`
   - `apps/api/api/auth`
   - `apps/api/api/rag`
   - `apps/api/api/management`
@@ -38,6 +44,8 @@ These rules apply to `apps/api/**`.
 - Fields: snake_case.
 - Models: singular PascalCase.
 - Every model sets `db_table = "<feature>_<entity>"`.
+- Data movement table apps set the primary imported table model `db_table` exactly to `<table_name>`.
+  Supporting tables may append a clear suffix, for example `<table_name>_load_job`.
 - Primary key: `id` (BigAutoField), UUID only when externally required.
 - Timestamps timezone-aware UTC (`created_at` required; `updated_at`, `deleted_at` optional).
 - Index/constraint naming:

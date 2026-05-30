@@ -20,3 +20,10 @@
 - 주제별 상세 문서는 `docs/backend.md`, `docs/frontend.md`, `docs/data-model.md`, `docs/configuration.md`로 분리해 문서가 길어져도 읽기 흐름을 유지한다.
 - 모듈 문서는 업무 흐름과 운영 포인트를 담당하고, API 문서는 endpoint 계약을 담당한다.
 - 문서 drift를 줄이기 위해 `scripts/agent/check_docs_inventory.sh`로 backend endpoint, frontend route, model, command, env group의 문서 반영 여부를 검증한다.
+
+## 2026-05-29: data_movement 테이블별 중첩 앱 구조
+
+- 파일 기반 DB 적재 기능은 `apps/api/api/data_movement/<table_name>` 아래에 테이블별 Django app으로 둔다.
+- `<table_name>` 폴더명은 실제 target table 이름과 일치시킨다.
+- 테이블별 app은 자기 model, migration, loader service, tests, management command만 소유한다.
+- 공통 파일 탐색, deflate CSV 파싱, PostgreSQL COPY 유틸은 `apps/api/api/data_movement/common`에 둔다.
