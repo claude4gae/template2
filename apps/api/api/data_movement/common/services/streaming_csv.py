@@ -165,9 +165,12 @@ def _parse_datetime(value: str) -> datetime | None:
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(normalized)
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+        return parsed.replace(tzinfo=None)
+    return parsed
 
 
 def _matches_min_datetime_filters(

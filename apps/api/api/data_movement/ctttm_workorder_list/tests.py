@@ -191,6 +191,38 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
                 "MNU1,L2,EQP2,PM,desc,2026-05-29 14:00:00,2026-05-29 15:00:00",
             )
 
+    def test_write_selected_deflate_csv_accepts_timezone_aware_create_date(self) -> None:
+        """timezone 포함 CREATE_DATE도 cutoff와 비교할 수 있는지 확인합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source.csv.deflate"
+            selected = root / "selected.csv"
+            _write_deflate_csv(
+                source,
+                [
+                    _build_mnu_workorder_row(
+                        workorder_id="MNU_TZ",
+                        create_date="2999-01-01T00:00:00.000Z",
+                    ),
+                ],
+            )
+
+            row_count = write_selected_deflate_csv(
+                source_path=source,
+                output_path=selected,
+                file_columns=spec.get_file_columns(source_type="MNU"),
+                db_columns=spec.DB_COLUMNS,
+                column_sources=spec.COLUMN_SOURCES,
+                row_filters=spec.ROW_FILTERS,
+                min_datetime_filters={
+                    spec.CREATE_DATE_FILTER_COLUMN: datetime(2025, 11, 29, 0, 0, 0),
+                },
+                separator=spec.FILE_SEPARATOR,
+            )
+
+            self.assertEqual(row_count, 1)
+
     @patch.object(services, "load_ctttm_workorder_list_files")
     def test_command_reports_no_files(self, load_files) -> None:
         """처리 파일이 없으면 성공 메시지만 출력하는지 확인합니다."""
