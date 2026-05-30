@@ -11,7 +11,7 @@
 | Auth callback 예외 | `/auth/google/callback/` |
 | 기본 DB | `DJANGO_DB_*` PostgreSQL |
 | Timeline DB | `TIMELINE_DB_*` PostgreSQL |
-| 로컬 실행 | `docker compose -f docker-compose.dev.yml up -d api` |
+| 로컬 실행 | `make dev-app-up` |
 
 ## App 구조
 

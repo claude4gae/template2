@@ -13,7 +13,7 @@
 - 수정할 영역:
   - `docker-compose.yml`
   - `docker-compose.dev.yml`
-  - `docker-compose.dev.oidc.yml`
+  - `docker-compose.oidc.yml`
   - `.gitignore`
   - 관련 docs
 - 수정하지 않을 영역:
@@ -37,7 +37,7 @@
 ## 검증
 - `docker compose -f docker-compose.yml config --services`
 - `docker compose -f docker-compose.dev.yml config --services`
-- `docker compose -f docker-compose.dev.oidc.yml config --services`
+- `docker compose -f docker-compose.oidc.yml config --services`
 - `scripts/agent/check_docs_inventory.sh`
 
 ## 위험과 대응

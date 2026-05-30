@@ -5,29 +5,34 @@
 ## 로컬 실행
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+make dev
 ```
 
-Airflow, DB, FTP, MinIO, dummy ADFS는 유지하고 백엔드만 자주 재시작하려면 split compose를 사용합니다.
+root compose 파일은 실행 진입점이고, `compose/` 아래 파일은 내부 조립용입니다.
+일반 작업에서는 아래 `make` target을 사용합니다.
+
+Airflow, DB, FTP, MinIO, dummy ADFS는 유지하고 백엔드만 자주 실행하거나 재시작하려면 아래 명령을 사용합니다.
 
 ```bash
-docker network create shared-net 2>/dev/null || true
-docker compose -f docker-compose.dev.infra.yml up -d
-docker compose -f docker-compose.dev.backend.yml up -d
-docker compose -f docker-compose.dev.backend.yml restart api
+make dev-infra-up
+make dev-app-up
+make dev-app-down
 ```
 
-백엔드만 끄고 다시 켤 때는 API compose만 조작합니다.
+app 이미지 재빌드가 필요할 때는 app만 다시 빌드합니다.
 
 ```bash
-docker compose -f docker-compose.dev.backend.yml stop api
-docker compose -f docker-compose.dev.backend.yml up -d api
+make dev-app-build
+make oidc-app-build
+make prod-app-build
 ```
 
-백엔드 이미지 재빌드가 필요할 때는 API compose만 다시 올립니다.
+infra는 Airflow, FTP, DB만 포함합니다. 필요한 경우 infra만 별도로 올리거나 내릴 수 있습니다.
 
 ```bash
-docker compose -f docker-compose.dev.backend.yml up -d --build api
+make dev-infra-up
+make dev-infra-build
+make dev-infra-down
 ```
 
 주요 주소:
@@ -57,9 +62,9 @@ npm run agent:audit:ui
 백엔드는 Docker Compose `api` 컨테이너 기준입니다.
 
 ```bash
-docker compose -f docker-compose.dev.yml exec -T api python manage.py check
-docker compose -f docker-compose.dev.yml exec -T api python manage.py test
-docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrations --check --dry-run
+make check-api
+make test-api
+make makemigrations-check
 ```
 
 ## Management command
@@ -116,7 +121,7 @@ Compose의 `ftp` service는 API와 같은 host path를 공유합니다.
 기본 host path는 `./data/data_movement`이며 API 컨테이너에서는 `/data/data_movement`로 보입니다.
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d ftp
+make dev-infra-up
 ```
 
 FTP 접속 기본값:

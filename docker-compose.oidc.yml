@@ -1,0 +1,3 @@
+include:
+  - compose/oidc.infra.yml
+  - compose/oidc.app.yml

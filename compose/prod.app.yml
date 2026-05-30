@@ -1,0 +1,109 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    env_file:
+      - ../env/minio.env
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      shared-net:
+        aliases:
+          - minio
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    env_file:
+      - ../env/minio.env
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+          set -e
+          until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+            sleep 1
+          done
+          mc mb -p local/emails || true
+          mc mb -p local/profile || true
+    networks:
+      shared-net:
+        aliases:
+          - minio-init
+
+  api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    env_file:
+      - ../env/api.common.env
+      - ../env/api.prod.env
+      - ../env/minio.env
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_BUCKET: emails
+      MINIO_REGION: us-east-1
+    depends_on:
+      minio:
+        condition: service_started
+    volumes:
+      - api_data:/data
+      - ${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/data/data_movement
+      - api_static:/app/staticfiles
+      - ${L3_SPIDER_DATA_HOST_PATH:-../data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
+    expose:
+      - "8000"
+    networks:
+      shared-net:
+        aliases:
+          - api
+
+  web:
+    build:
+      context: ../apps/web
+      args:
+        VITE_BACKEND_URL: /
+        VITE_AIRFLOW_BASE_URL: /airflow
+        VITE_AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-airflow}
+        VITE_AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-airflow}
+    env_file:
+      - ../env/web.prod.env
+    depends_on:
+      - api
+    expose:
+      - "3000"
+    networks:
+      shared-net:
+        aliases:
+          - web
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../deploy/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - api_static:/var/www/static:ro
+      - ../deploy/nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - shared-net
+
+volumes:
+  api_data:
+  api_static:
+  minio_data:
+
+networks:
+  shared-net:
+    external: true
+    name: shared-net

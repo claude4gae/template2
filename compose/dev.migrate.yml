@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   api:
-    # 원래 docker-compose.yml의 api 서비스를 재정의(overwrite)하는 부분
+    # 개발 DB schema 확인용으로 api entrypoint만 덮어쓴다.
     entrypoint: >
       /bin/sh -c "
         echo '>>> Running makemigrations & migrate...';
@@ -11,4 +9,3 @@ services:
         echo '>>> Migration completed successfully.';
         tail -f /dev/null
       "
-#docker compose -f docker-compose.dev.yml -f docker-compose.dev.migrate.yml up api

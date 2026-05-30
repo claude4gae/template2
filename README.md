@@ -18,16 +18,28 @@
 개발 환경은 Docker Compose 기준입니다.
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+make dev
 ```
 
-Airflow/DB/FTP 등 인프라는 켜둔 채 백엔드만 재시작하며 개발하려면 split compose를 사용할 수 있습니다.
+실행 진입점은 root의 `docker-compose.dev.yml`, `docker-compose.oidc.yml`, `docker-compose.yml`입니다.
+내부 조각 파일은 `compose/` 아래에 두며, 일반 작업에서는 `make` 명령만 사용합니다.
+
+Airflow/DB/FTP 등 인프라는 켜둔 채 백엔드만 자주 재시작하거나 재빌드하려면 아래 명령을 사용합니다.
 
 ```bash
-docker network create shared-net 2>/dev/null || true
-docker compose -f docker-compose.dev.infra.yml up -d
-docker compose -f docker-compose.dev.backend.yml up -d
-docker compose -f docker-compose.dev.backend.yml restart api
+make dev-infra-up
+make dev-app-up
+make dev-app-build
+make dev-app-down
+```
+
+실 OIDC 개발과 운영 조립도 같은 방식입니다.
+
+```bash
+make oidc
+make oidc-app-build
+make prod
+make prod-app-build
 ```
 
 실행 후 주로 보는 주소는 다음과 같습니다.
@@ -44,9 +56,9 @@ docker compose -f docker-compose.dev.backend.yml restart api
 npm run web:dev
 npm run web:build
 npm run web:lint
-docker compose -f docker-compose.dev.yml exec -T api python manage.py check
-docker compose -f docker-compose.dev.yml exec -T api python manage.py test
-docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrations --check --dry-run
+make check-api
+make test-api
+make makemigrations-check
 ```
 
 ## 주요 API 영역

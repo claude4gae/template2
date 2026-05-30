@@ -38,7 +38,7 @@
 
 ## 로컬 개발 기본 흐름
 
-1. `docker-compose.dev.yml`이 API, Web, dummy 외부계, MinIO, Nginx를 함께 띄웁니다.
+1. `make dev`가 API, Web, dummy 외부계, MinIO, Nginx를 함께 띄웁니다.
 2. API는 `env/api.common.env`와 `env/api.dev.env`를 사용합니다.
 3. Web은 `env/web.dev.env`를 사용합니다.
 4. ADFS/RAG/LLM/Mail/Jira 호출은 `apps/adfs_dummy`의 `http://adfs:9000` 또는 host 기준 `http://localhost:9102`로 연결됩니다.
@@ -57,4 +57,4 @@
 - Mail/Email 계약 변경: `env/api*.env`, `apps/adfs_dummy`, `docs/modules/emails.md`, `docs/api/emails.md`
 - Drone/Jira/Messenger 계약 변경: `env/api*.env`, `apps/adfs_dummy`, `docs/modules/line-dashboard.md`, `docs/api/line-dashboard.md`
 - Timeline DB 계약 변경: `env/api*.env`, `docs/modules/timeline.md`, `docs/api/timeline.md`, `docs/data-model.md`
-- L3 Spider 데이터 경로 변경: `env/api*.env`, `docker-compose*.yml`, `docs/api/l3-spider.md`, `docs/inventory.md`
+- L3 Spider 데이터 경로 변경: `env/api*.env`, `docker-compose*.yml`, `compose/*.yml`, `docs/api/l3-spider.md`, `docs/inventory.md`
