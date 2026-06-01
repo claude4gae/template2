@@ -1,5 +1,6 @@
 // 파일 경로: src/lib/config/navigationConfig.js
 import {
+  Activity,
   BarChart3,
   Mail,
   Send,
@@ -81,6 +82,22 @@ const EMAILS_GROUP_BASE = Object.freeze({
   items: EMAIL_NAV_ITEMS,
 })
 
+const FDC_TREND_GROUP = Object.freeze({
+  key: "fdc-trend",
+  title: "L0 Spider",
+  url: "/fdc_trend",
+  icon: Activity,
+  isActive: true,
+  scope: "global",
+  items: [
+    {
+      title: "이상 FDC Trend",
+      url: "/fdc_trend",
+      scope: "global",
+    },
+  ],
+})
+
 const SETTINGS_NAV_ITEMS = Object.freeze([
   {
     title: "Account",
@@ -126,7 +143,7 @@ export const NAVIGATION_CONFIG = Object.freeze({
     email: "m@example.com",
     avatar: "/avatars/shadcn.jpg",
   },
-  navMain: [LINE_DASHBOARD_GROUP, EMAILS_GROUP_BASE, SETTINGS_GROUP],
+  navMain: [LINE_DASHBOARD_GROUP, FDC_TREND_GROUP, EMAILS_GROUP_BASE, SETTINGS_GROUP],
   projects: [
     // 예시: 프로젝트 그룹
     // {
