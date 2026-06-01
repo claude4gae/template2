@@ -20,8 +20,6 @@ import { useLineOptionsQuery } from "../hooks/useLineOptionsQuery"
 export function LineDashboardShell({
   contentMaxWidthClass = "max-w-10xl",
   scrollAreaClassName = "overflow-y-auto",
-  paddingClassName,
-  innerClassName,
 }) {
   return (
     <RequireAuth>
@@ -29,8 +27,6 @@ export function LineDashboardShell({
         <LineDashboardShellContent
           contentMaxWidthClass={contentMaxWidthClass}
           scrollAreaClassName={scrollAreaClassName}
-          paddingClassName={paddingClassName}
-          innerClassName={innerClassName}
         />
         <ChatWidget />
       </>
@@ -38,12 +34,7 @@ export function LineDashboardShell({
   )
 }
 
-function LineDashboardShellContent({
-  contentMaxWidthClass,
-  scrollAreaClassName,
-  paddingClassName,
-  innerClassName,
-}) {
+function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }) {
   const { user } = useAuth()
   const {
     data: lineOptions = [],
@@ -70,22 +61,13 @@ function LineDashboardShellContent({
           lineOptions={lineOptions}
           contentMaxWidthClass={contentMaxWidthClass}
           scrollAreaClassName={scrollAreaClassName}
-          paddingClassName={paddingClassName}
-          innerClassName={innerClassName}
         />
       </ActiveLineProvider>
     </DepartmentProvider>
   )
 }
 
-function LineDashboardShellLayout({
-  navigation,
-  lineOptions,
-  contentMaxWidthClass,
-  scrollAreaClassName,
-  paddingClassName,
-  innerClassName,
-}) {
+function LineDashboardShellLayout({ navigation, lineOptions, contentMaxWidthClass, scrollAreaClassName }) {
   const { activeLineId, onSelect } = useLineSwitcher()
   const lineSwitcherOptions = buildLineSwitcherOptions(lineOptions)
 
@@ -102,8 +84,6 @@ function LineDashboardShellLayout({
       sidebarSecondary={<NavProjects projects={navigation.projects} />}
       contentMaxWidthClass={contentMaxWidthClass}
       scrollAreaClassName={scrollAreaClassName}
-      paddingClassName={paddingClassName}
-      innerClassName={innerClassName}
     >
       <Outlet />
     </AppShellLayout>
