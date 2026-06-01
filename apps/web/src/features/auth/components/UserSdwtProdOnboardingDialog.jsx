@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -40,18 +40,41 @@ async function fetchAffiliationOverview() {
   throw new Error(message)
 }
 
+async function updateAffiliation(payload) {
+  const endpoint = buildBackendUrl("/api/v1/account/affiliation")
+  const result = await fetchJson(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+  if (result.ok) return result.data
+  const message =
+    (result.data && typeof result.data === "object" && result.data.error) ||
+    "소속 설정에 실패했습니다."
+  throw new Error(message)
+}
+
 export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
   const hasPendingAffiliation = Boolean(
     user && (user.has_pending_affiliation ?? !isBlank(user.pending_user_sdwt_prod)),
   )
   const needsOnboarding = Boolean(user && isBlank(user.user_sdwt_prod) && !hasPendingAffiliation)
+  const queryClient = useQueryClient()
   const [selectedKey, setSelectedKey] = useState("")
-  const [dismissed, setDismissed] = useState(false)
+  const [submitError, setSubmitError] = useState("")
 
   const affiliationQuery = useQuery({
     queryKey: AFFILIATION_QUERY_KEY,
     queryFn: fetchAffiliationOverview,
     enabled: needsOnboarding,
+  })
+
+  const mutation = useMutation({
+    mutationFn: updateAffiliation,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: AFFILIATION_QUERY_KEY })
+      await onCompleted?.()
+    },
   })
 
   const allOptions = affiliationQuery.data?.affiliationOptions || []
@@ -81,11 +104,7 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
     ? options.find((opt) => sameText(opt.department, snapshotDepartment))
     : null
   const snapshotOption = snapshotExactOption || snapshotFallbackOption || snapshotDepartmentOption
-  useEffect(() => {
-    if (!needsOnboarding) {
-      setDismissed(false)
-    }
-  }, [needsOnboarding])
+  const selected = options.find((opt) => optionKey(opt) === selectedKey)
 
   useEffect(() => {
     if (selectedKey || !options.length) return
@@ -114,17 +133,27 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-    setDismissed(true)
-    await onCompleted?.()
+    if (!selected) return
+
+    setSubmitError("")
+    try {
+      await mutation.mutateAsync({
+        userSdwtProd: selected.user_sdwt_prod,
+        department: selected.department,
+        line: selected.line,
+      })
+    } catch (error) {
+      setSubmitError(error?.message || "소속 설정에 실패했습니다.")
+    }
   }
 
   return (
-    <Dialog open={needsOnboarding && !dismissed} onOpenChange={() => { }}>
+    <Dialog open={needsOnboarding} onOpenChange={() => { }}>
       <DialogContent showCloseButton={false} className="w-[calc(100vw-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>소속 설정</DialogTitle>
           <DialogDescription>
-            현재는 소속 입력 없이 저장만 눌러 계속 진행할 수 있습니다.
+            처음 로그인을 완료하려면 <span className="font-medium text-foreground">user_sdwt_prod</span> 소속을 선택해 주세요.
           </DialogDescription>
         </DialogHeader>
 
@@ -165,7 +194,8 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
                   className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 w-full min-w-0 rounded-md border px-3 text-sm outline-none"
                   value={selectedKey}
                   onChange={(e) => setSelectedKey(e.target.value)}
-                  disabled={!options.length}
+                  required
+                  disabled={!options.length || mutation.isPending}
                 >
                   <option value="" disabled>
                     소속을 선택하세요
@@ -181,9 +211,11 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
                 ) : null}
               </div>
 
+              {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
+
               <DialogFooter className="gap-2">
-                <Button type="submit">
-                  저장
+                <Button type="submit" disabled={!selectedKey || !options.length || mutation.isPending}>
+                  {mutation.isPending ? "저장 중..." : "저장"}
                 </Button>
               </DialogFooter>
             </form>
