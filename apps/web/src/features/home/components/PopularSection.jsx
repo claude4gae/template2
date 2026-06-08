@@ -1,7 +1,8 @@
 import { LayoutDashboard, SquareChartGantt, LayoutGrid, SquarePen } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
+
+import { HomeNavLink } from './HomeNavLink'
 
 const popularServices = [
   {
@@ -34,7 +35,8 @@ const popularServices = [
     subtitle: 'PM 자동화 Item 통합 현황 제공',
     category: 'Fast Sample',
     popular: false,
-    href: 'https://testbdq--react-main-prod.cdep1.samsungds.net'
+    href: 'https://testbdq--react-main-prod.cdep1.samsungds.net',
+    external: true
   }
 ]
 
@@ -74,8 +76,10 @@ export function PopularServicesSection() {
       >
         <div className='grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4'>
           {popularServices.map((service, index) => (
-            <Link
-              to={service.href}
+            <HomeNavLink
+              href={service.href}
+              target={service.external ? '_blank' : undefined}
+              rel={service.external ? 'noopener noreferrer' : undefined}
               key={service.title}
               className='group relative block h-full'
             >
@@ -115,7 +119,7 @@ export function PopularServicesSection() {
                   </div>
                 </UnifiedCard>
               </motion.div>
-            </Link>
+            </HomeNavLink>
           ))}
         </div>
       </motion.div>

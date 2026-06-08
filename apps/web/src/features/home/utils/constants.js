@@ -14,7 +14,7 @@ export const navigationItems = [
       { title: 'L3 Spider', href: '/l3_spider' },
       { title: 'Timeline', href: '/timeline' },
       { title: '메일함', href: '/emails/inbox' },
-      { title: 'PMx', href: '/pmx' },
+      { title: 'PMx', href: 'https://testbdq--react-main-prod.cdep1.samsungds.net', external: true },
     ]
   },
   {
