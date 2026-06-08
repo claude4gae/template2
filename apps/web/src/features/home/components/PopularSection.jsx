@@ -30,11 +30,11 @@ const popularServices = [
   },
   {
     icon: SquarePen,
-    title: 'VoE',
-    subtitle: '자동화 업무문의 & 지원',
-    category: 'VoC',
+    title: 'Full Auto율',
+    subtitle: 'PM 자동화 Item 통합 현황 제공',
+    category: 'Fast Sample',
     popular: false,
-    href: '/voc'
+    href: 'https://testbdq--react-main-prod.cdep1.samsungds.net'
   }
 ]
 
