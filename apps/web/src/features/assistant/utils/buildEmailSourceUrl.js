@@ -26,6 +26,7 @@ export function buildEmailSourceUrl(emailId, userSdwtProd, options = {}) {
   const availableMailboxes = options?.availableMailboxes
   const mailbox = normalizeValue(userSdwtProd)
   const canUseMailbox = mailbox && isMailboxAccessible(mailbox, availableMailboxes)
+  const isExplicitSentMailbox = mailbox === SENT_MAILBOX_ID
   const params = new URLSearchParams()
 
   if (canUseMailbox) {
@@ -33,7 +34,7 @@ export function buildEmailSourceUrl(emailId, userSdwtProd, options = {}) {
   }
 
   params.set("emailId", normalizedEmailId)
-  if (canUseMailbox) {
+  if (canUseMailbox || !isExplicitSentMailbox) {
     return `/emails/inbox?${params.toString()}`
   }
   return `/emails/sent?${params.toString()}`

@@ -32,6 +32,20 @@ const GRID_GAP_PX = 16
 const EMPTY_EMAILS = []
 const EMPTY_MAILBOXES = []
 
+function parseRoutedEmailId(value) {
+  const normalized = typeof value === "string" ? value.trim() : ""
+  if (!normalized) return null
+
+  const numericValue = /^\d+$/.test(normalized) ? Number(normalized) : null
+  if (Number.isSafeInteger(numericValue) && numericValue > 0) return numericValue
+
+  const ragMatch = normalized.match(/^email-(\d+)$/i)
+  if (!ragMatch) return null
+
+  const ragEmailId = Number(ragMatch[1])
+  return Number.isSafeInteger(ragEmailId) && ragEmailId > 0 ? ragEmailId : null
+}
+
 function clampListWidth(nextWidth, container) {
   if (!container) return nextWidth
   const { width } = container.getBoundingClientRect()
@@ -98,6 +112,8 @@ function useEmailListController({ scope, mailboxParam, searchParams, setSearchPa
   const { data: mailboxData } = useEmailMailboxes()
   const mailboxes = Array.isArray(mailboxData?.results) ? mailboxData.results : EMPTY_MAILBOXES
   const moveTargets = buildMoveTargets(mailboxes, normalizedMailbox)
+  const emailIdParam = (searchParams.get("emailId") || "").trim()
+  const routedEmailId = parseRoutedEmailId(emailIdParam)
 
   useEffect(() => {
     if (isListError && listError) {
@@ -126,6 +142,11 @@ function useEmailListController({ scope, mailboxParam, searchParams, setSearchPa
       setSearchParams(nextParams, { replace: true })
     }
   }, [normalizedMailbox, scope, searchParams, setSearchParams])
+
+  useEffect(() => {
+    if (!routedEmailId) return
+    setActiveEmailId((current) => (current === routedEmailId ? current : routedEmailId))
+  }, [routedEmailId])
 
   const handleToggleSelectAll = () => {
     if (emails.length === 0) return
@@ -222,13 +243,13 @@ function useEmailListController({ scope, mailboxParam, searchParams, setSearchPa
   }
 
   useEffect(() => {
+    if (emailIdParam) return
     if (!isListLoading && emails.length > 0 && activeEmailId === null) {
       setActiveEmailId(emails[0].id)
     }
-  }, [isListLoading, emails, activeEmailId])
+  }, [emailIdParam, isListLoading, emails, activeEmailId])
 
   useEffect(() => {
-    const emailIdParam = (searchParams.get("emailId") || "").trim()
     if (!emailIdParam || emails.length === 0) return
 
     const targetEmail = emails.find(
@@ -239,7 +260,7 @@ function useEmailListController({ scope, mailboxParam, searchParams, setSearchPa
     if (targetEmail) {
       setActiveEmailId(targetEmail.id)
     }
-  }, [searchParams, emails])
+  }, [emailIdParam, emails])
 
   const pageSize = listData?.pageSize ?? filters.pageSize
   const totalCount = listData?.total ?? 0
