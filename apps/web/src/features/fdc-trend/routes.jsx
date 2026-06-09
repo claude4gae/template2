@@ -2,7 +2,7 @@
 import { FdcTrendShell } from "./components/FdcTrendShell"
 import { FdcTrendPage } from "./pages/FdcTrendPage"
 import { L0SpiderHomePage } from "./pages/L0SpiderHomePage"
-import { SpiderComingSoonPage } from "./pages/SpiderComingSoonPage"
+import { SpiderFeaturePage } from "./pages/SpiderFeaturePage"
 
 export const fdcTrendRoutes = [
   {
@@ -19,31 +19,43 @@ export const fdcTrendRoutes = [
       },
       {
         path: "matching-anomaly",
-        element: <SpiderComingSoonPage title="동일성 이상감지" category="Matching" />,
+        element: <SpiderFeaturePage type="matching" />,
       },
       {
         path: "common-anomaly",
-        element: <SpiderComingSoonPage title="공통부 이상감지" category="Common" />,
+        element: <SpiderFeaturePage type="common" />,
+      },
+      {
+        path: "history",
+        element: <SpiderFeaturePage type="history" />,
+      },
+      {
+        path: "manual",
+        element: <SpiderFeaturePage type="manual" />,
       },
       {
         path: "fdc-hard-limit",
-        element: <SpiderComingSoonPage title="FDC Hard Limit추천" category="Limit" />,
+        element: <SpiderFeaturePage type="hardSpec" />,
       },
       {
         path: "yield-hard-limit",
-        element: <SpiderComingSoonPage title="수율기반 Hard Limit추천" category="Yield" />,
+        element: <SpiderFeaturePage type="yieldSpec" />,
+      },
+      {
+        path: "recipients",
+        element: <SpiderFeaturePage type="recipients" />,
       },
       {
         path: "defect-spider",
-        element: <SpiderComingSoonPage title="Defect SPIDER" category="Defect" />,
+        element: <SpiderFeaturePage type="defect" />,
       },
       {
         path: "l1-spider",
-        element: <SpiderComingSoonPage title="L1 SPIDER" category="Level 1" />,
+        element: <SpiderFeaturePage type="l1" />,
       },
       {
         path: "l3-spider",
-        element: <SpiderComingSoonPage title="L3 SPIDER" category="Level 3" />,
+        element: <SpiderFeaturePage type="l3" />,
       },
     ],
   },

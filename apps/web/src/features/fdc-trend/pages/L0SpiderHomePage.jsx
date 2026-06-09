@@ -1,4 +1,4 @@
-import { Activity, ChartNoAxesCombined, Gauge, Network, Radar, ScanSearch, TrendingUp } from "lucide-react"
+import { Activity, BookOpen, ChartNoAxesCombined, Gauge, History, Mail, Network, Radar, ScanSearch, TrendingUp } from "lucide-react"
 import { Link } from "react-router-dom"
 import {
   CartesianGrid,
@@ -67,6 +67,30 @@ const spiderApps = [
     subtitle: "수율 영향도를 반영한 Hard Limit 후보를 추천합니다.",
     category: "Yield",
     href: "/fdc_trend/yield-hard-limit",
+    active: true,
+  },
+  {
+    icon: History,
+    title: "과거 이상감지 이력",
+    subtitle: "이력저장된 이상감지 chart를 라인과 분임조 기준으로 조회합니다.",
+    category: "History",
+    href: "/fdc_trend/history",
+    active: true,
+  },
+  {
+    icon: BookOpen,
+    title: "사용자 메뉴얼",
+    subtitle: "SPIDER 사용자 메뉴얼 이미지와 원본 파일 경로를 확인합니다.",
+    category: "Manual",
+    href: "/fdc_trend/manual",
+    active: true,
+  },
+  {
+    icon: Mail,
+    title: "이상감지 수신인 정비",
+    subtitle: "이상감지 메일 수신 대상과 priority 조건을 관리합니다.",
+    category: "Recipients",
+    href: "/fdc_trend/recipients",
     active: true,
   },
 ]
