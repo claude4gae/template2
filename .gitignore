@@ -26,6 +26,9 @@
 /dist
 /apps/web/dist
 
+# vendor
+vendor/
+
 # misc
 .DS_Store
 *.pem

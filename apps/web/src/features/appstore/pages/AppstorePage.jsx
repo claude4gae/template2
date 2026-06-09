@@ -79,6 +79,10 @@ export function AppstorePage() {
   }, [apps, category, query])
 
   const detailApp = appDetailQuery.data?.app ?? null
+  const isDetailLoading =
+    Boolean(selectedAppId) &&
+    !detailApp &&
+    !appDetailQuery.isError
 
   const handleSelect = (appId) => {
     setSelectedAppId(appId)
@@ -172,7 +176,8 @@ export function AppstorePage() {
               <div className="px-4">
                 <AppDetail
                   app={detailApp}
-                  isLoading={appDetailQuery.isFetching && !detailApp}
+                  isLoading={isDetailLoading}
+                  error={appDetailQuery.isError ? appDetailQuery.error : null}
                   onOpenLink={handleOpenLink}
                   onOpenManual={handleOpenManual}
                   onToggleLike={handleToggleLike}

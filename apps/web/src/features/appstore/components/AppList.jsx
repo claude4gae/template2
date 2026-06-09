@@ -70,6 +70,72 @@ function AppTitle({ name }) {
   )
 }
 
+function buildRetryImageSrc(src, retryCount) {
+  if (!src || !retryCount || src.startsWith("data:")) {
+    return src
+  }
+
+  try {
+    const base = globalThis.location?.href || "http://localhost/"
+    const url = new URL(src, base)
+    const isAppstoreCover =
+      url.pathname.includes("/api/v1/appstore/apps/") &&
+      url.pathname.endsWith("/cover")
+    if (!isAppstoreCover) {
+      return src
+    }
+    url.searchParams.set("_retry", String(retryCount))
+    return url.toString()
+  } catch {
+    return src
+  }
+}
+
+function AppCardScreenshot({ app, coverSrc }) {
+  const [imageSrc, setImageSrc] = useState(coverSrc)
+  const [retryCount, setRetryCount] = useState(0)
+  const [hasFailed, setHasFailed] = useState(false)
+
+  useEffect(() => {
+    setImageSrc(coverSrc)
+    setRetryCount(0)
+    setHasFailed(false)
+  }, [coverSrc])
+
+  if (!coverSrc) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+        스크린샷 없음
+      </div>
+    )
+  }
+
+  if (hasFailed) {
+    return (
+      <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs text-muted-foreground">
+        미리보기를 불러오지 못했습니다.
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={imageSrc}
+      alt={`${app.name} 스크린샷`}
+      className="h-full w-full object-contain"
+      onError={() => {
+        if (retryCount >= 2) {
+          setHasFailed(true)
+          return
+        }
+        const nextRetryCount = retryCount + 1
+        setRetryCount(nextRetryCount)
+        setImageSrc(buildRetryImageSrc(coverSrc, nextRetryCount))
+      }}
+    />
+  )
+}
+
 export function AppList({
   apps,
   selectedAppId,
@@ -130,18 +196,7 @@ export function AppList({
             <div className="flex justify-center px-3 py-2">
               {/* 왼쪽: 스크린샷 */}
               <div className="relative h-32 w-60 overflow-hidden rounded-md bg-muted ring-1 ring-border">
-                {coverSrc ? (
-                  <img
-                    src={coverSrc}
-                    alt={`${app.name} 스크린샷`}
-                    className="h-full w-full object-contain"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                    스크린샷 없음
-                  </div>
-                )}
+                <AppCardScreenshot app={app} coverSrc={coverSrc} />
               </div>
 
               {/* 오른쪽: 앱 이름 */}

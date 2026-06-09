@@ -65,6 +65,7 @@ function DetailStat({ icon: Icon, label, value }) {
 export function AppDetail({
   app,
   isLoading,
+  error,
   onOpenLink,
   onOpenManual,
   onToggleLike,
@@ -89,6 +90,19 @@ export function AppDetail({
     return (
       <Card className="border bg-card shadow-sm">
         <div className="px-6 text-sm text-muted-foreground">상세 정보를 불러오는 중...</div>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card className="border bg-card shadow-sm">
+        <div className="grid gap-2 px-6 text-sm">
+          <div className="font-medium text-destructive">상세 정보를 불러오지 못했습니다.</div>
+          <div className="text-muted-foreground">
+            {error?.message || "잠시 후 다시 선택해 주세요."}
+          </div>
+        </div>
       </Card>
     )
   }
