@@ -5,6 +5,8 @@
 # =============================================================================
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlparse
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -248,7 +250,9 @@ class AppstoreScreenshotTests(TestCase):
         cover_path = reverse("appstore-app-cover", kwargs={"app_id": app.pk})
         cover_url = results[0].get("screenshotUrl", "")
         self.assertTrue(isinstance(cover_url, str))
-        self.assertTrue(cover_url.endswith(cover_path))
+        parsed_cover_url = urlparse(cover_url)
+        self.assertEqual(parsed_cover_url.path, cover_path)
+        self.assertTrue(parse_qs(parsed_cover_url.query).get("v"))
         self.assertNotIn("data:image", cover_url)
 
     def test_cover_endpoint_returns_decoded_image(self) -> None:
@@ -284,7 +288,19 @@ class AppstoreScreenshotTests(TestCase):
         # -----------------------------------------------------------------------------
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "image/png")
+        self.assertIn("max-age", response["Cache-Control"])
+        self.assertTrue(response["ETag"])
         self.assertEqual(response.content, b"ABC")
+
+        # -----------------------------------------------------------------------------
+        # 4) 캐시 검증 요청
+        # -----------------------------------------------------------------------------
+        cached_response = self.client.get(
+            reverse("appstore-app-cover", kwargs={"app_id": app.pk}),
+            HTTP_IF_NONE_MATCH=response["ETag"],
+        )
+        self.assertEqual(cached_response.status_code, 304)
+        self.assertEqual(cached_response["ETag"], response["ETag"])
 
 
 class AppstoreContactDefaultTests(TestCase):
