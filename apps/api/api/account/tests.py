@@ -211,6 +211,49 @@ class AccountEndpointTests(TestCase):
         change = UserSdwtProdChange.objects.get(user=onboarding_user)
         self.assertEqual(change.status, UserSdwtProdChange.Status.APPROVED)
 
+    def test_affiliation_overview_returns_fallback_option_when_master_empty(self) -> None:
+        """소속 master가 비어 있어도 신규 사용자가 onboarding을 완료할 수 있는 옵션을 제공합니다."""
+
+        User = get_user_model()
+        onboarding_user = User.objects.create_user(
+            sabun="S50010",
+            password="test-password",
+            knox_id="knox-50010",
+        )
+        onboarding_user.department = "Development"
+        onboarding_user.save(update_fields=["department"])
+        Affiliation.objects.all().delete()
+
+        self.client.force_login(onboarding_user)
+        response = self.client.get(reverse("account-affiliation"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["affiliationOptions"],
+            [{"department": "Development", "line": "LOCAL", "user_sdwt_prod": "DUMMY"}],
+        )
+
+    def test_affiliation_post_creates_fallback_option_when_master_empty(self) -> None:
+        """fallback 옵션 선택값은 POST 시 소속 옵션을 생성하고 기존 변경 흐름으로 처리합니다."""
+
+        User = get_user_model()
+        onboarding_user = User.objects.create_user(
+            sabun="S50011",
+            password="test-password",
+            knox_id="knox-50011",
+        )
+        Affiliation.objects.all().delete()
+
+        self.client.force_login(onboarding_user)
+        response = self.client.post(
+            reverse("account-affiliation"),
+            data='{"department":"Development","line":"LOCAL","userSdwtProd":"DUMMY"}',
+            content_type="application/json",
+        )
+
+        self.assertIn(response.status_code, {200, 202})
+        self.assertTrue(Affiliation.objects.filter(user_sdwt_prod__iexact="DUMMY").exists())
+
     def test_account_user_pool_requires_authentication(self) -> None:
         """사용자 pool 조회는 인증된 사용자에게만 허용되어야 합니다."""
 

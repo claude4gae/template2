@@ -1,10 +1,9 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ArrowLeft, Download, FileImage, LineChart, MailPlus, Save, Search, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import {
   CartesianGrid,
-  Line,
-  LineChart as RechartsLineChart,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -40,7 +39,6 @@ import { cn } from "@/lib/utils"
 import {
   FDC_LINES,
   SPIDER_FILE_PATHS,
-  getHardSpecRows,
   getRecipientRows,
   getSpiderAnomalyRows,
   getSpiderCommonalityRows,
@@ -49,6 +47,7 @@ import {
   getTeamsByLine,
   getYieldSpecRows,
 } from "../utils/fdcTrendMockData"
+import { fetchHardSpecMeta, fetchHardSpecRecommendations } from "../api/fdcTrendApi"
 
 const PAGE_META = {
   matching: {
@@ -107,6 +106,8 @@ const STEP_SEQ_OPTIONS = ["CR380250", "CR580250", "CR590180", "CR610200", "CU380
 const DEFAULT_LINE = FDC_LINES[0]
 const SDWT_OPTIONS = FDC_LINES.flatMap((lineId) => getTeamsByLine(lineId))
 const PRIORITY_OPTIONS = ["A", "B", "D", "M", "N"]
+const HARD_SPEC_COLUMNS = ["priority", "sensor_name", "ch_step", "추천Spec(Lower)", "추천Spec(Upper)", "기존Spec(Lower)", "기존Spec(Upper)", "Spec격차"]
+const HARD_SPEC_DEFAULT_LINE = "PFBP"
 
 function getSdwtOptionsByLine(line) {
   return getTeamsByLine(line)
@@ -444,21 +445,57 @@ function ManualPage() {
 }
 
 function HardSpecPage() {
-  const rows = getHardSpecRows()
-  const [line, setLine] = useState(DEFAULT_LINE)
-  const sdwtOptions = getSdwtOptionsByLine(line)
-  const [sdwt, setSdwt] = useState(sdwtOptions[1] ?? sdwtOptions[0] ?? "")
-  const [selectedRows, setSelectedRows] = useState(() => new Set(rows.slice(0, 2).map((row) => row.id)))
-  const chartRows = rows.filter((row) => selectedRows.has(row.id)).slice(0, 5)
+  const [line, setLine] = useState(HARD_SPEC_DEFAULT_LINE)
+  const [stepSeq, setStepSeq] = useState("")
+  const [recipeId, setRecipeId] = useState("")
+  const [fdcModel, setFdcModel] = useState("")
+  const [rows, setRows] = useState([])
+  const [selectedRows, setSelectedRows] = useState(() => new Set())
+  const metaQuery = useQuery({
+    queryKey: ["fdc-hard-spec-meta", line, stepSeq, recipeId],
+    queryFn: () => fetchHardSpecMeta({ lineId: line, stepSeq, recipeId }),
+  })
+  const recommendationQuery = useQuery({
+    queryKey: ["fdc-hard-spec-recommendations", line, stepSeq, recipeId, fdcModel],
+    queryFn: () => fetchHardSpecRecommendations({ lineId: line, stepSeq, recipeId, fdcModel }),
+    enabled: false,
+  })
+  const meta = metaQuery.data
+  const metaStepSeqs = meta?.stepSeqs
+  const metaRecipeIds = meta?.recipeIds
+  const metaFdcModels = meta?.fdcModels
+  const stepOptions = useMemo(() => metaStepSeqs ?? [], [metaStepSeqs])
+  const recipeOptions = useMemo(() => metaRecipeIds ?? [], [metaRecipeIds])
+  const fdcModelOptions = useMemo(() => metaFdcModels ?? [], [metaFdcModels])
+  const warningMessages = [
+    ...(metaQuery.error ? [metaQuery.error.message] : []),
+    ...(recommendationQuery.error ? [recommendationQuery.error.message] : []),
+    ...(meta?.warnings ?? []),
+    ...(recommendationQuery.data?.warnings ?? []),
+  ].filter(Boolean)
+  const chartRows = rows.filter((row) => selectedRows.has(row.id)).slice(0, 15)
+  const guideRow = chartRows[0]
+  const hardSpecSourcePaths = [
+    meta?.sourcePaths?.hardSpecRoot ?? SPIDER_FILE_PATHS.hardSpecRoot,
+    meta?.sourcePaths?.priority ?? SPIDER_FILE_PATHS.priority,
+    meta?.sourcePaths?.unitModel ?? SPIDER_FILE_PATHS.unitModel,
+    meta?.sourcePaths?.hardLimit ?? SPIDER_FILE_PATHS.hardLimit,
+    ...(recommendationQuery.data?.sourcePaths ?? []).slice(0, 8),
+  ]
 
-  const chartData = useMemo(
-    () =>
-      Array.from({ length: 18 }, (_, index) => ({
-        index: index + 1,
-        ...Object.fromEntries(chartRows.map((row, rowIndex) => [row.sensor_name, row["추천Spec(Lower)"] + Math.sin((index + rowIndex) / 2) * 3 + rowIndex * 2])),
-      })),
-    [chartRows],
-  )
+  useEffect(() => {
+    if (!meta) return
+    if (meta.stepSeq && !stepSeq) setStepSeq(meta.stepSeq)
+    if (meta.recipeId && !recipeId) setRecipeId(meta.recipeId)
+    if (!fdcModel && fdcModelOptions.length) setFdcModel(fdcModelOptions[0])
+  }, [fdcModel, fdcModelOptions, meta, recipeId, stepSeq])
+
+  useEffect(() => {
+    if (!recommendationQuery.data) return
+    const nextRows = recommendationQuery.data.rows ?? []
+    setRows(nextRows)
+    setSelectedRows(new Set(nextRows.slice(0, 2).map((row) => row.id)))
+  }, [recommendationQuery.data])
 
   const toggleRow = (row) => {
     setSelectedRows((current) => {
@@ -469,9 +506,42 @@ function HardSpecPage() {
     })
   }
   const handleLineChange = (nextLine) => {
-    const nextSdwtOptions = getSdwtOptionsByLine(nextLine)
     setLine(nextLine)
-    setSdwt(nextSdwtOptions[1] ?? nextSdwtOptions[0] ?? "")
+    setStepSeq("")
+    setRecipeId("")
+    setFdcModel("")
+    setRows([])
+    setSelectedRows(new Set())
+  }
+  const handleStepChange = (nextStepSeq) => {
+    setStepSeq(nextStepSeq)
+    setRecipeId("")
+    setFdcModel("")
+    setRows([])
+    setSelectedRows(new Set())
+  }
+  const handleRecipeChange = (nextRecipeId) => {
+    setRecipeId(nextRecipeId)
+    setFdcModel("")
+    setRows([])
+    setSelectedRows(new Set())
+  }
+  const searchRows = () => {
+    if (!line || !stepSeq || !recipeId || !fdcModel) return
+    recommendationQuery.refetch()
+  }
+  const downloadRows = () => {
+    const csvRows = [
+      HARD_SPEC_COLUMNS.join(","),
+      ...rows.map((row) => HARD_SPEC_COLUMNS.map((column) => `"${String(row[column] ?? "").replaceAll('"', '""')}"`).join(",")),
+    ]
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "hard-spec-recommendation.csv"
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -481,32 +551,37 @@ function HardSpecPage() {
           <Select value={line} onValueChange={handleLineChange}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="라인ID 선택해주세요" /></SelectTrigger>
             <SelectContent>
-              {FDC_LINES.map((lineId) => (
+              {(meta?.lineIds ?? [HARD_SPEC_DEFAULT_LINE]).map((lineId) => (
                 <SelectItem key={lineId} value={lineId}>{lineId}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select defaultValue="CR380250">
+          <Select value={stepSeq} onValueChange={handleStepChange}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="step_seq 선택해주세요" /></SelectTrigger>
-            <SelectContent>{STEP_SEQ_OPTIONS.slice(0, 4).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+            <SelectContent>{stepOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
           </Select>
-          <Select defaultValue="RCP-4100">
+          <Select value={recipeId} onValueChange={handleRecipeChange}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="RecipeID 선택해주세요" /></SelectTrigger>
-            <SelectContent><SelectItem value="RCP-4100">RCP-4100</SelectItem></SelectContent>
+            <SelectContent>{recipeOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
           </Select>
-          <Select value={sdwt} onValueChange={setSdwt}>
+          <Select value={fdcModel} onValueChange={setFdcModel}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="FDC Model 선택해주세요" /></SelectTrigger>
-            <SelectContent>{sdwtOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+            <SelectContent>{fdcModelOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
           </Select>
-          <Button type="button">
+          <Button type="button" onClick={searchRows} disabled={!line || !stepSeq || !recipeId || !fdcModel || recommendationQuery.isFetching}>
             <Search className="size-4" aria-hidden="true" />
             추천SPEC 조회
           </Button>
-          <Button type="button" variant="outline">
+          <Button type="button" variant="outline" onClick={downloadRows} disabled={!rows.length}>
             <Download className="size-4" aria-hidden="true" />
             엑셀 다운로드
           </Button>
         </div>
+        {warningMessages.length ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            {warningMessages[0]}
+          </div>
+        ) : null}
       </section>
 
       <SimpleTable
@@ -535,19 +610,23 @@ function HardSpecPage() {
         </div>
         <div className="h-[340px]">
           <ResponsiveContainer width="100%" height="100%">
-            <RechartsLineChart data={chartData} margin={{ top: 12, right: 18, bottom: 12, left: 4 }}>
+            <ScatterChart margin={{ top: 12, right: 18, bottom: 12, left: 4 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
               <XAxis dataKey="index" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-              <YAxis width={48} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+              <YAxis dataKey="value" width={48} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
               <ChartTooltip />
+              {guideRow ? <ReferenceLine y={guideRow["추천Spec(Lower)"]} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
+              {guideRow ? <ReferenceLine y={guideRow["추천Spec(Upper)"]} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
+              {guideRow ? <ReferenceLine y={guideRow["기존Spec(Lower)"]} stroke="var(--chart-2)" strokeDasharray="4 4" /> : null}
+              {guideRow ? <ReferenceLine y={guideRow["기존Spec(Upper)"]} stroke="var(--chart-2)" strokeDasharray="4 4" /> : null}
               {chartRows.map((row, index) => (
-                <Line key={row.id} dataKey={row.sensor_name} stroke={`var(--chart-${(index % 5) + 1})`} strokeWidth={2} dot={false} />
+                <Scatter key={row.id} name={row.sensor_name} data={(row.points ?? []).map((point, pointIndex) => ({ index: pointIndex + 1, value: point.param_value }))} dataKey="value" fill={`var(--chart-${(index % 5) + 1})`} />
               ))}
-            </RechartsLineChart>
+            </ScatterChart>
           </ResponsiveContainer>
         </div>
       </section>
-      <SourcePathBar paths={[SPIDER_FILE_PATHS.hardSpecRoot, SPIDER_FILE_PATHS.priority, SPIDER_FILE_PATHS.unitModel, SPIDER_FILE_PATHS.hardLimit, SPIDER_FILE_PATHS.hardSpecChartRoot, SPIDER_FILE_PATHS.hardSpecServerChartRoot, SPIDER_FILE_PATHS.mErdRoot]} />
+      <SourcePathBar paths={hardSpecSourcePaths} />
     </>
   )
 }

@@ -24,6 +24,65 @@ from .affiliation_requests import request_affiliation_change
 from .utils import _normalize_user_sdwt_prod, _same_user_sdwt_prod
 
 
+def _dedupe_affiliation_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
+    """user_sdwt_prod 기준으로 소속 옵션 중복을 제거합니다."""
+
+    seen: set[str] = set()
+    deduped: list[dict[str, str]] = []
+    for option in options:
+        user_sdwt_prod = (option.get("user_sdwt_prod") or "").strip()
+        if not user_sdwt_prod:
+            continue
+        key = user_sdwt_prod.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            {
+                "department": (option.get("department") or "").strip(),
+                "line": (option.get("line") or "").strip(),
+                "user_sdwt_prod": user_sdwt_prod,
+            }
+        )
+    return deduped
+
+
+def _build_fallback_affiliation_options(
+    *,
+    user: Any,
+    current_department: str | None,
+    current_line: str | None,
+    current_user_sdwt_prod: str | None,
+    snapshot_department: str | None,
+    snapshot_user_sdwt_prod: str | None,
+) -> list[dict[str, str]]:
+    """소속 master가 비어 있는 로컬/오프사이트 환경용 fallback 옵션을 생성합니다."""
+
+    department = (
+        (snapshot_department or "").strip()
+        or (current_department or "").strip()
+        or (getattr(user, "department", "") or "").strip()
+        or "Development"
+    )
+    line = (current_line or "").strip() or "LOCAL"
+    candidates = [
+        (snapshot_user_sdwt_prod or "").strip(),
+        (current_user_sdwt_prod or "").strip(),
+        (getattr(user, "user_sdwt_prod", "") or "").strip(),
+        "DUMMY",
+    ]
+    return _dedupe_affiliation_options(
+        [
+            {
+                "department": department,
+                "line": line,
+                "user_sdwt_prod": user_sdwt_prod,
+            }
+            for user_sdwt_prod in candidates
+        ]
+    )
+
+
 def _update_affiliation_option_values(
     *,
     option: Affiliation,
@@ -70,6 +129,8 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
     options = selectors.list_affiliation_options()
     current_values = selectors.get_current_affiliation_values(user=user)
     current_department = current_values.get("department") or getattr(user, "department", None)
+    current_line = current_values.get("line")
+    current_user_sdwt_prod = current_values.get("user_sdwt_prod")
 
     knox_id = (getattr(user, "knox_id", None) or "").strip()
     snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(knox_id=knox_id) if knox_id else None
@@ -78,10 +139,20 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
     if not snapshot_department:
         snapshot_department = (getattr(user, "department", None) or "").strip() or None
 
+    if not options:
+        options = _build_fallback_affiliation_options(
+            user=user,
+            current_department=current_department,
+            current_line=current_line,
+            current_user_sdwt_prod=current_user_sdwt_prod,
+            snapshot_department=snapshot_department,
+            snapshot_user_sdwt_prod=snapshot_user_sdwt_prod,
+        )
+
     return {
-        "currentUserSdwtProd": current_values.get("user_sdwt_prod"),
+        "currentUserSdwtProd": current_user_sdwt_prod,
         "currentDepartment": current_department,
-        "currentLine": current_values.get("line"),
+        "currentLine": current_line,
         "timezone": timezone_name,
         "accessibleUserSdwtProds": access_list,
         "manageableUserSdwtProds": manageable,

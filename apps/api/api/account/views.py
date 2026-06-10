@@ -156,7 +156,18 @@ class AccountAffiliationView(APIView):
         # -----------------------------------------------------------------------------
         option = selectors.get_affiliation_option_by_user_sdwt_prod(user_sdwt_prod=new_value)
         if option is None:
-            return JsonResponse({"error": "Invalid user_sdwt_prod"}, status=400)
+            if selectors.list_affiliation_options():
+                return JsonResponse({"error": "Invalid user_sdwt_prod"}, status=400)
+            department = normalize_text(payload.get("department")) or normalize_text(getattr(user, "department", None)) or "Development"
+            line = normalize_text(payload.get("line")) or "LOCAL"
+            try:
+                option = services.ensure_affiliation_option(
+                    department=department,
+                    line=line,
+                    user_sdwt_prod=new_value,
+                )
+            except ValueError:
+                return JsonResponse({"error": "Invalid user_sdwt_prod"}, status=400)
 
         # -----------------------------------------------------------------------------
         # 5) 서비스 호출 및 응답 반환
