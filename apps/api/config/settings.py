@@ -116,6 +116,7 @@ INSTALLED_APPS = [
     "api.data_movement.m_tkin_prevent",
     "api.drone",
     "api.emails",
+    "api.fdc_trend",
     "api.health",
     "api.l3_spider",
     "api.management",
@@ -209,6 +210,13 @@ TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 60) or 60
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.
 L3_SPIDER_DATA_ROOT = env("L3_SPIDER_DATA_ROOT", "/data/l3_spider/daily_anomaly")
 L3_SPIDER_MAX_CHART_POINTS_PER_PANEL = env_int("L3_SPIDER_MAX_CHART_POINTS_PER_PANEL", 2000) or 2000
+
+# FDC Hard Limit 추천 데이터 경로.
+# hardspec.py 원본 경로를 기본값으로 사용하고, 오프사이트 환경에서는 mount 경로를 env로 교체합니다.
+FDC_HARD_SPEC_DATA_ROOT = env("FDC_HARD_SPEC_DATA_ROOT", "/appdata/erd_stats_commonality")
+FDC_HARD_SPEC_PRIORITY_PATH = env("FDC_HARD_SPEC_PRIORITY_PATH", "/appdata/abnormal_trend/pic/priority/priority.parquet")
+FDC_HARD_SPEC_UNIT_MODEL_PATH = env("FDC_HARD_SPEC_UNIT_MODEL_PATH", "/appdata/abnormal_trend/pic/unit_model.parquet")
+FDC_HARD_SPEC_HARD_LIMIT_PATH = env("FDC_HARD_SPEC_HARD_LIMIT_PATH", "/appdata/abnormal_trend/pic/HARD_LIMIT.parquet")
 
 # Data movement 테이블 root 경로. loader는 하위 incoming/processing을 사용합니다.
 DATA_MOVEMENT_M_TKIN_PREVENT_DIR = env(
