@@ -15,6 +15,37 @@ from typing import Any, Optional, Sequence
 
 from .config import DroneSopPop3Config
 
+_POP3_MAX_LINE_LENGTH = 10 * 1024 * 1024
+
+
+class _LongLinePop3Mixin:
+    """긴 HTML 라인을 포함한 POP3 응답을 읽기 위한 client mixin입니다."""
+
+    def _getline(self) -> tuple[bytes, int]:
+        line = self.file.readline(_POP3_MAX_LINE_LENGTH + 1)
+        if len(line) > _POP3_MAX_LINE_LENGTH:
+            raise poplib.error_proto("line too long")
+
+        if self._debugging > 1:
+            print("*get*", repr(line))
+        if not line:
+            raise poplib.error_proto("-ERR EOF")
+
+        octets = len(line)
+        if line[-2:] == poplib.CRLF:
+            return line[:-2], octets
+        if line[:1] == poplib.CR:
+            return line[1:-1], octets
+        return line[:-1], octets
+
+
+class _LongLinePOP3(_LongLinePop3Mixin, poplib.POP3):
+    """POP3 line 제한을 Drone SOP 수집 용도에 맞게 확장한 client입니다."""
+
+
+class _LongLinePOP3SSL(_LongLinePop3Mixin, poplib.POP3_SSL):
+    """SSL POP3 line 제한을 Drone SOP 수집 용도에 맞게 확장한 client입니다."""
+
 
 def extract_html_from_email(msg: Any) -> Optional[str]:
     """이메일 메시지에서 HTML 본문을 추출합니다.
@@ -107,7 +138,7 @@ def create_pop3_client(*, config: DroneSopPop3Config) -> Any:
     if not config.host or not config.username or not config.password:
         raise ValueError("POP3 connection info is incomplete (host/username/password required)")
 
-    client_cls = poplib.POP3_SSL if config.use_ssl else poplib.POP3
+    client_cls = _LongLinePOP3SSL if config.use_ssl else _LongLinePOP3
     return client_cls(config.host, config.port, timeout=config.timeout)
 
 

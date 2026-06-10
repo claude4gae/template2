@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone as dt_timezone
-from io import StringIO
+from io import BytesIO, StringIO
 from tempfile import NamedTemporaryFile
 from types import SimpleNamespace
 from typing import Any
@@ -40,6 +40,7 @@ from api.drone.models import (
 from api.drone.services.channels import recipients as recipient_services
 from api.drone.services.channels import user_sdwt_channel as channel_services
 from api.drone.services.jira.sop_jira import update_drone_sop_jira_status
+from api.drone.services.pop3 import mailbox as pop3_mailbox
 from api.drone.services.shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
     filter_delivery_ids_for_config_failure,
@@ -6695,6 +6696,38 @@ class DroneSopPop3DummyModeDeleteTests(TestCase):
 
         called_mail_ids = mock_delete.call_args.kwargs.get("mail_ids")
         self.assertEqual(called_mail_ids, [1, 3])
+
+
+class DroneSopPop3MailboxTransportTests(SimpleTestCase):
+    """POP3 mailbox transport 동작을 검증합니다."""
+
+    def test_retrieve_pop3_message_allows_long_html_lines(self) -> None:
+        """기본 poplib 제한보다 긴 HTML 라인도 메시지로 파싱하는지 확인합니다."""
+
+        long_html = b"<html><body>" + (b"A" * 3000) + b"</body></html>"
+        raw_response = (
+            b"+OK message follows\r\n"
+            b"Subject: [drone_sop] long-line\r\n"
+            b"Content-Type: text/html; charset=utf-8\r\n"
+            b"\r\n"
+            + long_html
+            + b"\r\n.\r\n"
+        )
+
+        class FakePop3(pop3_mailbox._LongLinePOP3):
+            """네트워크 없이 long response를 재현하는 테스트 client입니다."""
+
+            def __init__(self) -> None:
+                self.file = BytesIO(raw_response)
+                self._debugging = 0
+
+            def _putcmd(self, line: str) -> None:
+                self.sent_command = line
+
+        msg = pop3_mailbox.retrieve_pop3_message(client=FakePop3(), msg_num=1)
+
+        self.assertEqual(msg.get("Subject"), "[drone_sop] long-line")
+        self.assertIn("A" * 3000, msg.get_content())
 
 
 class DroneSopPop3SubjectFilterTests(TestCase):
