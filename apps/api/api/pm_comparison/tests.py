@@ -230,3 +230,31 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(raw_root.name, "data")
         self.assertEqual(score_root.name, "result")
         self.assertEqual(meta["lineIds"], ["L1"])
+
+    def test_compare_pm_window_returns_empty_response_without_score_rows(self) -> None:
+        """result 파일이 없을 때도 pm_date KeyError 없이 빈 응답을 반환합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / selectors.RAW_DIR_NAME).mkdir()
+            (root / selectors.SCORE_DIR_NAME).mkdir()
+            selection = {
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "fdcBin": "BIN1",
+                "type": "ag",
+                "ppid": "PPID1",
+                "recipeId": "RCP1",
+                "pmTimestamp": "2026-06-01",
+                "traceParamNames": ["PRESSURE"],
+                "dtValues": ["2026-06-01"],
+                "traceDataSource": "trace",
+                "oesDataSource": "oes",
+            }
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                result = services.compare_pm_window(selection)
+
+        self.assertEqual(result["trace"]["summaryRows"], [])
+        self.assertEqual(result["oes"]["summaryRows"], [])
+        self.assertEqual(result["window"]["pmDate"], "2026-06-01")

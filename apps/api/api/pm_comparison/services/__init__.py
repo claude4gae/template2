@@ -73,6 +73,7 @@ SCORE_COLUMNS = [
     "direction",
     "flagged_wl",
 ]
+SCORE_FRAME_COLUMNS = [*SCORE_COLUMNS, "pm_date"]
 
 
 class PmComparisonServiceError(Exception):
@@ -166,7 +167,7 @@ def _normalize_score_frame(frame: pd.DataFrame, selection: dict[str, object], da
     """result frame을 표준 컬럼과 요청 조건으로 정리합니다."""
 
     if frame.empty:
-        return frame
+        return pd.DataFrame(columns=SCORE_FRAME_COLUMNS)
     for column in SCORE_COLUMNS:
         if column not in frame.columns:
             frame[column] = None
@@ -199,7 +200,7 @@ def _read_score(selection: dict[str, object], data_type: str, warnings: list[str
     files = selectors.iter_score_files(selection, data_type=data_type)
     frames, file_count = _read_frames(files, columns=SCORE_COLUMNS, warnings=warnings)
     if not frames:
-        return pd.DataFrame(columns=SCORE_COLUMNS), file_count
+        return pd.DataFrame(columns=SCORE_FRAME_COLUMNS), file_count
     frame = _normalize_score_frame(pd.concat(frames, ignore_index=True), selection, data_type)
     return frame, file_count
 
