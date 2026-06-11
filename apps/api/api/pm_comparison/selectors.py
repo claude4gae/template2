@@ -21,7 +21,7 @@ RAW_PARTITION_KEYS = [
     "eqp_id",
     "fdc_bin",
     "dt",
-    "pattern",
+    "type",
     "ppid",
     "recipe_id",
     "data_source",
@@ -32,7 +32,7 @@ SCORE_PARTITION_KEYS = [
     "line_id",
     "eqp_id",
     "chamber_id",
-    "pattern",
+    "type",
     "data_type",
 ]
 
@@ -42,7 +42,7 @@ REQUEST_TO_RAW_PARTITION = {
     "lineId": "line_id",
     "eqpId": "eqp_id",
     "fdcBin": "fdc_bin",
-    "pattern": "pattern",
+    "type": "type",
     "ppid": "ppid",
     "recipeId": "recipe_id",
 }
@@ -51,7 +51,7 @@ REQUEST_TO_SCORE_PARTITION = {
     "lineId": "line_id",
     "eqpId": "eqp_id",
     "chamberId": "chamber_id",
-    "pattern": "pattern",
+    "type": "type",
 }
 
 

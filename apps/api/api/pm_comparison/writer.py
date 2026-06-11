@@ -5,9 +5,9 @@
 #
 # 경로 규칙 (selectors.py 와 동일한 파티션 계약)
 #   score_data/
-#     line_id=<>/eqp_id=<>/pattern=<NPW|PW>/data_type=<trace|oes>/
+#     line_id=<>/eqp_id=<>/chamber_id=<>/type=<ag|process>/data_type=<trace|oes>/
 #   raw_data/
-#     line_id=<>/eqp_id=<>/fdc_bin=<>/dt=<YYYY-MM-DD>/pattern=<>/
+#     line_id=<>/eqp_id=<>/fdc_bin=<>/dt=<YYYY-MM-DD>/type=<ag|process>/
 #     ppid=<>/recipe_id=<>/data_source=<trace|oes>/trace_param_name=<>/
 # =============================================================================
 from __future__ import annotations
@@ -36,7 +36,7 @@ _OES_REQUIRED = {"날짜", "rcp_step", "wavelength", "value"}
 _OES_ID_NAMES = {
     "line_id", "device_id", "ppid", "recipe_id", "step_seq", "eqp_id",
     "bin_id", "lot_id", "slot_id", "날짜", "wafer_end_time", "rcp_step",
-    "name", "time", "wavelength", "value", "fdc_bin", "pattern",
+    "name", "time", "wavelength", "value", "fdc_bin", "type",
 }
 
 # OES wide 스키마에서 유효한 wavelength 범위 (nm)
@@ -105,7 +105,7 @@ def save_score(
     line_id: str,
     eqp_id: str,
     chamber_id: str,
-    pattern: str,
+    type: str,
     data_type: str,
     filename: str = "scores.parquet",
     data_root: str | Path | None = None,
@@ -120,8 +120,8 @@ def save_score(
         ``flag``, ``alarm_pct``.
         OES 추가 컬럼: ``step``, ``wavelength``, ``delta_spectrum``, ``direction``,
         ``flagged_wl``.
-    line_id, eqp_id, chamber_id, pattern, data_type:
-        파티션 키 값. pattern 은 ``NPW`` 또는 ``PW``,
+    line_id, eqp_id, chamber_id, type, data_type:
+        파티션 키 값. type 은 ``ag`` 또는 ``process``,
         data_type 은 ``trace`` 또는 ``oes``.
     filename:
         파티션 디렉터리 안에 저장될 파일명.
@@ -138,15 +138,15 @@ def save_score(
     >>> save_score(
     ...     score_df,
     ...     line_id="L1", eqp_id="EQP01", chamber_id="CH1",
-    ...     pattern="NPW", data_type="trace",
+    ...     type="ag", data_type="trace",
     ... )
-    PosixPath('.../score_data/line_id=L1/eqp_id=EQP01/chamber_id=CH1/pattern=NPW/data_type=trace/scores.parquet')
+    PosixPath('.../score_data/line_id=L1/eqp_id=EQP01/chamber_id=CH1/type=ag/data_type=trace/scores.parquet')
     """
     _check_required(df, _SCORE_REQUIRED, "score_data")
     line_id = _validate_segment(line_id, "line_id")
     eqp_id = _validate_segment(eqp_id, "eqp_id")
     chamber_id = _validate_segment(chamber_id, "chamber_id")
-    pattern = _validate_segment(pattern, "pattern")
+    type = _validate_segment(type, "type")
     data_type = _validate_segment(data_type, "data_type")
 
     root = Path(data_root).expanduser().resolve() if data_root else selectors.get_data_root()
@@ -155,7 +155,7 @@ def save_score(
         / f"line_id={line_id}"
         / f"eqp_id={eqp_id}"
         / f"chamber_id={chamber_id}"
-        / f"pattern={pattern}"
+        / f"type={type}"
         / f"data_type={data_type}"
     )
     _make_dir(dest_dir)
@@ -167,7 +167,7 @@ def load_score(
     line_id: str,
     eqp_id: str,
     chamber_id: str,
-    pattern: str,
+    type: str,
     data_type: str,
     data_root: str | Path | None = None,
 ) -> pd.DataFrame:
@@ -179,7 +179,7 @@ def load_score(
         "lineId": line_id,
         "eqpId": eqp_id,
         "chamberId": chamber_id,
-        "pattern": pattern,
+        "type": type,
     }
     if data_root:
         root = Path(data_root).expanduser().resolve()
@@ -188,7 +188,7 @@ def load_score(
             / f"line_id={line_id}"
             / f"eqp_id={eqp_id}"
             / f"chamber_id={chamber_id}"
-            / f"pattern={pattern}"
+            / f"type={type}"
             / f"data_type={data_type}"
         )
         frames = [
@@ -216,7 +216,7 @@ def save_raw_trace(
     eqp_id: str,
     fdc_bin: str,
     dt: str,
-    pattern: str,
+    type: str,
     ppid: str,
     recipe_id: str,
     trace_param_name: str,
@@ -244,7 +244,7 @@ def save_raw_trace(
     eqp_id = _validate_segment(eqp_id, "eqp_id")
     fdc_bin = _validate_segment(fdc_bin, "fdc_bin")
     dt = _validate_segment(dt, "dt")
-    pattern = _validate_segment(pattern, "pattern")
+    type = _validate_segment(type, "type")
     ppid = _validate_segment(ppid, "ppid")
     recipe_id = _validate_segment(recipe_id, "recipe_id")
     trace_param_name = _validate_segment(trace_param_name, "trace_param_name")
@@ -256,7 +256,7 @@ def save_raw_trace(
         / f"eqp_id={eqp_id}"
         / f"fdc_bin={fdc_bin}"
         / f"dt={dt}"
-        / f"pattern={pattern}"
+        / f"type={type}"
         / f"ppid={ppid}"
         / f"recipe_id={recipe_id}"
         / "data_source=trace"
@@ -270,7 +270,7 @@ def load_raw_trace(
     *,
     line_id: str,
     eqp_id: str,
-    pattern: str,
+    type: str,
     fdc_bin: str | None = None,
     dt_values: Sequence[str] | None = None,
     ppid: str | None = None,
@@ -285,7 +285,7 @@ def load_raw_trace(
     selection: dict[str, object] = {
         "lineId": line_id,
         "eqpId": eqp_id,
-        "pattern": pattern,
+        "type": type,
         "fdcBin": fdc_bin or "",
         "ppid": ppid or "",
         "recipeId": recipe_id or "",
@@ -325,7 +325,7 @@ def save_raw_oes(
     eqp_id: str,
     fdc_bin: str,
     dt: str,
-    pattern: str,
+    type: str,
     ppid: str,
     recipe_id: str,
     oes_group: str = "all",
@@ -359,7 +359,7 @@ def save_raw_oes(
     eqp_id = _validate_segment(eqp_id, "eqp_id")
     fdc_bin = _validate_segment(fdc_bin, "fdc_bin")
     dt = _validate_segment(dt, "dt")
-    pattern = _validate_segment(pattern, "pattern")
+    type = _validate_segment(type, "type")
     ppid = _validate_segment(ppid, "ppid")
     recipe_id = _validate_segment(recipe_id, "recipe_id")
     oes_group = _validate_segment(oes_group, "oes_group")
@@ -371,7 +371,7 @@ def save_raw_oes(
         / f"eqp_id={eqp_id}"
         / f"fdc_bin={fdc_bin}"
         / f"dt={dt}"
-        / f"pattern={pattern}"
+        / f"type={type}"
         / f"ppid={ppid}"
         / f"recipe_id={recipe_id}"
         / "data_source=oes"
@@ -385,7 +385,7 @@ def load_raw_oes(
     *,
     line_id: str,
     eqp_id: str,
-    pattern: str,
+    type: str,
     fdc_bin: str | None = None,
     dt_values: Sequence[str] | None = None,
     ppid: str | None = None,
@@ -396,7 +396,7 @@ def load_raw_oes(
     selection: dict[str, object] = {
         "lineId": line_id,
         "eqpId": eqp_id,
-        "pattern": pattern,
+        "type": type,
         "fdcBin": fdc_bin or "",
         "ppid": ppid or "",
         "recipeId": recipe_id or "",
@@ -455,7 +455,7 @@ def verify_score(
     line_id: str,
     eqp_id: str,
     chamber_id: str,
-    pattern: str,
+    type: str,
     data_type: str,
     data_root: str | Path | None = None,
 ) -> dict[str, object]:
@@ -468,12 +468,12 @@ def verify_score(
     path = save_score(
         df,
         line_id=line_id, eqp_id=eqp_id, chamber_id=chamber_id,
-        pattern=pattern, data_type=data_type,
+        type=type, data_type=data_type,
         data_root=data_root,
     )
     loaded = load_score(
         line_id=line_id, eqp_id=eqp_id, chamber_id=chamber_id,
-        pattern=pattern, data_type=data_type,
+        type=type, data_type=data_type,
         data_root=data_root,
     )
     return {

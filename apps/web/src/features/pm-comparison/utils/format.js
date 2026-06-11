@@ -5,7 +5,7 @@ export const DEFAULT_PM_FORM = {
   lineId: "LINE_DEMO",
   eqpId: "EQP_DEMO_01",
   fdcBin: "BIN_DEMO",
-  pattern: "",
+  type: "",
   ppid: "PPID_DEMO",
   recipeId: "RCP_DEMO",
   pmTimestamp: "2026-06-02",
@@ -20,40 +20,40 @@ export const DEFAULT_PM_FORM = {
 
 export const PM_SPIDER_CATEGORIES = [
   {
-    id: "npw-trace",
-    label: "NPW TRACE",
-    pattern: "NPW",
-    patternLabel: "NPW",
+    id: "ag-trace",
+    label: "AG TRACE",
+    type: "ag",
+    typeLabel: "AG",
     kind: "trace",
     sourceLabel: "Trace",
-    description: "non pattern wafer(dummy wafer)",
+    description: "ag wafer",
   },
   {
-    id: "npw-oes",
-    label: "NPW OES",
-    pattern: "NPW",
-    patternLabel: "NPW",
+    id: "ag-oes",
+    label: "AG OES",
+    type: "ag",
+    typeLabel: "AG",
     kind: "oes",
     sourceLabel: "OES",
-    description: "non pattern wafer(dummy wafer)",
+    description: "ag wafer",
   },
   {
-    id: "pw-trace",
-    label: "PW TRACE",
-    pattern: "PW",
-    patternLabel: "PW",
+    id: "process-trace",
+    label: "PROCESS TRACE",
+    type: "process",
+    typeLabel: "PROCESS",
     kind: "trace",
     sourceLabel: "Trace",
-    description: "Pattern WAFER",
+    description: "process wafer",
   },
   {
-    id: "pw-oes",
-    label: "PW OES",
-    pattern: "PW",
-    patternLabel: "PW",
+    id: "process-oes",
+    label: "PROCESS OES",
+    type: "process",
+    typeLabel: "PROCESS",
     kind: "oes",
     sourceLabel: "OES",
-    description: "Pattern WAFER",
+    description: "process wafer",
   },
 ]
 
@@ -74,7 +74,7 @@ export function buildPmComparisonPayload(form) {
     lineId: form.lineId.trim(),
     eqpId: form.eqpId.trim(),
     fdcBin: form.fdcBin.trim(),
-    pattern: form.pattern.trim(),
+    type: form.type.trim(),
     ppid: form.ppid.trim(),
     recipeId: form.recipeId.trim(),
     pmTimestamp: form.pmTimestamp,
@@ -88,13 +88,13 @@ export function buildPmComparisonPayload(form) {
   }
 }
 
-export function buildPmSpiderPatternPayloads(payload) {
+export function buildPmSpiderTypePayloads(payload) {
   if (!payload) return []
-  return ["NPW", "PW"].map((pattern) => ({
-    pattern,
+  return ["ag", "process"].map((type) => ({
+    type,
     payload: {
       ...payload,
-      pattern,
+      type,
     },
   }))
 }

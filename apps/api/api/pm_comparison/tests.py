@@ -28,7 +28,7 @@ class PmComparisonServiceTests(SimpleTestCase):
             / "eqp_id=EQP1"
             / "fdc_bin=BIN1"
             / "dt=2026-06-01"
-            / "pattern=NPW"
+            / "type=ag"
             / "ppid=PPID1"
             / "recipe_id=RCP1"
             / f"data_source={data_source}"
@@ -44,7 +44,7 @@ class PmComparisonServiceTests(SimpleTestCase):
             / "score_data"
             / "line_id=L1"
             / "eqp_id=EQP1"
-            / "pattern=NPW"
+            / "type=ag"
             / f"data_type={data_type}"
         )
 
@@ -69,7 +69,7 @@ class PmComparisonServiceTests(SimpleTestCase):
                     "line_id": "L1",
                     "eqp_id": "EQP1",
                     "날짜": "2026-04-01",
-                    "pattern": "NPW",
+                    "type": "ag",
                     "data_type": "trace",
                     "item_name": "PRESSURE",
                     "step": None,
@@ -80,7 +80,7 @@ class PmComparisonServiceTests(SimpleTestCase):
                     "line_id": "L1",
                     "eqp_id": "EQP1",
                     "날짜": "2026-05-01",
-                    "pattern": "NPW",
+                    "type": "ag",
                     "data_type": "trace",
                     "item_name": "PRESSURE",
                     "step": None,
@@ -91,7 +91,7 @@ class PmComparisonServiceTests(SimpleTestCase):
                     "line_id": "L1",
                     "eqp_id": "EQP1",
                     "날짜": "2026-06-01",
-                    "pattern": "NPW",
+                    "type": "ag",
                     "data_type": "trace",
                     "item_name": "PRESSURE",
                     "step": None,
@@ -123,7 +123,7 @@ class PmComparisonServiceTests(SimpleTestCase):
                     "line_id": "L1",
                     "eqp_id": "EQP1",
                     "날짜": "2026-06-01",
-                    "pattern": "NPW",
+                    "type": "ag",
                     "data_type": "oes",
                     "item_name": "STEP_A/200.0",
                     "step": "STEP_A",
@@ -144,7 +144,7 @@ class PmComparisonServiceTests(SimpleTestCase):
                 "lineId": "L1",
                 "eqpId": "EQP1",
                 "fdcBin": "BIN1",
-                "pattern": "NPW",
+                "type": "ag",
                 "ppid": "PPID1",
                 "recipeId": "RCP1",
                 "pmTimestamp": "2026-06-01",

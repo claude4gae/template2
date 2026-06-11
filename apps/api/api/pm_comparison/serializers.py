@@ -29,7 +29,7 @@ class PmComparisonRequestSerializer(serializers.Serializer):
     afterHours = serializers.FloatField(min_value=0.1, max_value=720, default=24)
     chamberId = serializers.CharField(required=False, allow_blank=True, default="")
     fdcBin = serializers.CharField(required=False, allow_blank=True, default="")
-    pattern = serializers.CharField(required=False, allow_blank=True, default="")
+    type = serializers.CharField(required=False, allow_blank=True, default="")
     ppid = serializers.CharField(required=False, allow_blank=True, default="")
     recipeId = serializers.CharField(required=False, allow_blank=True, default="")
     traceParamNames = serializers.ListField(
@@ -62,8 +62,8 @@ class PmComparisonRequestSerializer(serializers.Serializer):
             attrs.get("lineId"),
             attrs.get("eqpId"),
             attrs.get("chamberId"),
+            attrs.get("type"),
             attrs.get("fdcBin"),
-            attrs.get("pattern"),
             attrs.get("ppid"),
             attrs.get("recipeId"),
             attrs.get("traceDataSource"),

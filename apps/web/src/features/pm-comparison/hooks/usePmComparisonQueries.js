@@ -9,7 +9,7 @@ import {
 } from "../api"
 import {
   PM_SPIDER_CATEGORIES,
-  buildPmSpiderPatternPayloads,
+  buildPmSpiderTypePayloads,
 } from "../utils/format"
 
 function buildPayloadKey(payload) {
@@ -44,30 +44,30 @@ export function usePmComparisonResult(payload) {
 }
 
 export function usePmSpiderCategoryResults(payload, refPmDates = null) {
-  const patternPayloads = buildPmSpiderPatternPayloads(withRefPmDates(payload, refPmDates))
+  const typePayloads = buildPmSpiderTypePayloads(withRefPmDates(payload, refPmDates))
   const queries = useQueries({
-    queries: patternPayloads.map(({ pattern, payload: categoryPayload }) => ({
-      queryKey: pmComparisonQueryKeys.category(pattern, buildPayloadKey(categoryPayload)),
+    queries: typePayloads.map(({ type, payload: categoryPayload }) => ({
+      queryKey: pmComparisonQueryKeys.category(type, buildPayloadKey(categoryPayload)),
       queryFn: () => fetchPmComparisonResult(categoryPayload),
       enabled: Boolean(payload),
       retry: false,
     })),
   })
-  const dataByPattern = Object.fromEntries(
-    patternPayloads.map(({ pattern }, index) => [pattern, queries[index]?.data]),
+  const dataByType = Object.fromEntries(
+    typePayloads.map(({ type }, index) => [type, queries[index]?.data]),
   )
-  const queryByPattern = Object.fromEntries(
-    patternPayloads.map(({ pattern }, index) => [pattern, queries[index]]),
+  const queryByType = Object.fromEntries(
+    typePayloads.map(({ type }, index) => [type, queries[index]]),
   )
   const categories = PM_SPIDER_CATEGORIES.map((category) => {
-    const data = dataByPattern[category.pattern]
-    const query = queryByPattern[category.pattern]
+    const data = dataByType[category.type]
+    const query = queryByType[category.type]
     const source = category.kind === "trace" ? data?.trace : data?.oes
     const rows = Array.isArray(source?.summaryRows) ? source.summaryRows : []
     const stepRows = Array.isArray(source?.stepRows) ? source.stepRows : []
     return {
       ...category,
-      payload: patternPayloads.find((item) => item.pattern === category.pattern)?.payload,
+      payload: typePayloads.find((item) => item.type === category.type)?.payload,
       data,
       source,
       rows,

@@ -19,7 +19,7 @@ TRACE_COLUMNS = [
     "line_id",
     "eqp_id",
     "fdc_bin",
-    "pattern",
+    "type",
     "ppid",
     "recipe_id",
     "trace_param_name",
@@ -56,7 +56,7 @@ SCORE_COLUMNS = [
     "eqp_id",
     "chamber_id",
     DATE_COLUMN,
-    "pattern",
+    "type",
     "data_type",
     "item_name",
     "step",
@@ -174,12 +174,12 @@ def _normalize_score_frame(frame: pd.DataFrame, selection: dict[str, object], da
     frame["line_id"] = frame["line_id"].fillna(selection.get("lineId"))
     frame["eqp_id"] = frame["eqp_id"].fillna(selection.get("eqpId"))
     frame["chamber_id"] = frame["chamber_id"].fillna(selection.get("chamberId"))
-    frame["pattern"] = frame["pattern"].fillna(selection.get("pattern"))
+    frame["type"] = frame["type"].fillna(selection.get("type"))
     frame["data_type"] = frame["data_type"].fillna(data_type)
     mask = (
         (frame["line_id"].astype(str) == str(selection.get("lineId")))
         & (frame["eqp_id"].astype(str) == str(selection.get("eqpId")))
-        & (frame["pattern"].astype(str) == str(selection.get("pattern")))
+        & (frame["type"].astype(str) == str(selection.get("type")))
         & (frame["data_type"].astype(str) == data_type)
     )
     chamber_id = str(selection.get("chamberId") or "")
@@ -603,7 +603,7 @@ def _build_filter_response(selection: dict[str, object]) -> dict[str, Any]:
         "eqpId",
         "chamberId",
         "fdcBin",
-        "pattern",
+        "type",
         "ppid",
         "recipeId",
         "traceParamNames",
@@ -652,7 +652,7 @@ def get_meta() -> dict[str, object]:
         "fdcBins": options.get("fdc_bin", []),
         "dtValues": options.get("dt", []),
         "pmDates": _collect_pm_dates(warnings),
-        "patterns": options.get("pattern", []),
+        "types": options.get("type", []),
         "ppids": options.get("ppid", []),
         "recipeIds": options.get("recipe_id", []),
         "dataSources": options.get("data_source", []),
