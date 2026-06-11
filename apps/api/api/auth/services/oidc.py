@@ -21,6 +21,8 @@ import jwt
 from django.conf import settings
 from django.http import HttpRequest
 
+import api.account.selectors as account_selectors
+import api.account.services as account_services
 import api.auth.selectors as auth_selectors
 from .oidc_claims import (
     extract_user_info_from_claims,
@@ -269,11 +271,16 @@ def auth_me(*, user: Any) -> Dict[str, Any]:
     - Dict[str, Any]: 기존 `/api/v1/auth/me` 응답 payload
 
     부작용:
-    - 없음
+    - dev 더미 사용자의 현재 소속이 비어 있으면 임시 소속을 설정합니다.
 
     오류:
     - 없음
     """
+    if (
+        account_services.is_dev_dummy_user(user=user)
+        and not account_selectors.get_current_user_sdwt_prod(user=user)
+    ):
+        account_services.set_dev_dummy_current_affiliation(user=user)
     return auth_selectors.get_current_user_payload(user=user)
 
 

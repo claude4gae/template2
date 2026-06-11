@@ -3092,6 +3092,74 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertTrue(payload["isOperator"])
         self.assertIn("ETCH_A", payload["manageableUserSdwtProds"])
 
+    @override_settings(DEBUG=True)
+    def test_dev_dummy_user_gets_temporary_notification_target_options(self) -> None:
+        """dev 더미 사용자는 빈 DB에서도 임시 알림 target 옵션을 받을 수 있어야 합니다."""
+
+        User = get_user_model()
+        dummy_user = User.objects.create_user(
+            sabun="dummy.user",
+            password="test-password",
+            knox_id="dummy.user",
+            avatarid="dummy.user@example.com",
+            email="dummy.user@example.com",
+        )
+
+        self.client.force_login(dummy_user)
+        response = self.client.get(reverse("line-dashboard-notification-targets"), {"lineId": "DEV_LINE"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["targetUserSdwtProds"], ["DEV_DUMMY_USER_SDWT"])
+        self.assertEqual(payload["mappingOptions"]["userSdwtProds"], ["DEV_DUMMY_USER_SDWT"])
+        self.assertEqual(payload["mappingOptions"]["sdwtProds"], ["DEV_DUMMY_USER_SDWT"])
+        self.assertIn(
+            {"lineId": "DEV_LINE", "userSdwtProds": ["DEV_DUMMY_USER_SDWT"]},
+            payload["mappingOptionLines"],
+        )
+        self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="DEV_DUMMY_USER_SDWT").exists())
+
+    @override_settings(DEBUG=True)
+    def test_dev_dummy_user_can_manage_notification_recipients_temporarily(self) -> None:
+        """dev 더미 사용자는 임시로 수신인 설정 관리 권한을 받아야 합니다."""
+
+        User = get_user_model()
+        dummy_user = User.objects.create_user(
+            sabun="dummy.user",
+            password="test-password",
+            knox_id="dummy.user",
+            email="dummy.user@example.com",
+        )
+
+        self.client.force_login(dummy_user)
+        response = self.client.get(reverse("line-dashboard-notification-recipient-permissions"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["isOperator"])
+        self.assertIn("DEV_DUMMY_USER_SDWT", payload["manageableUserSdwtProds"])
+
+    @override_settings(DEBUG=False)
+    def test_dummy_user_fallback_is_limited_to_debug(self) -> None:
+        """DEBUG가 꺼져 있으면 더미 사용자 임시 우회를 적용하지 않아야 합니다."""
+
+        User = get_user_model()
+        dummy_user = User.objects.create_user(
+            sabun="dummy.user",
+            password="test-password",
+            knox_id="dummy.user",
+            email="dummy.user@example.com",
+        )
+
+        self.client.force_login(dummy_user)
+        response = self.client.get(reverse("line-dashboard-notification-targets"), {"lineId": "DEV_LINE"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["targetUserSdwtProds"], [])
+        self.assertEqual(payload["mappingOptions"]["userSdwtProds"], [])
+        self.assertEqual(payload["mappingOptions"]["sdwtProds"], [])
+
     def test_my_notification_recipient_targets_returns_current_user_targets(self) -> None:
         """일반 사용자도 본인이 수신인으로 등록된 target 목록은 조회할 수 있어야 합니다."""
 

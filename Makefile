@@ -40,6 +40,17 @@ dev:
 # dev app만 올립니다. infra는 자동으로 올리지 않으므로 필요하면 dev-infra-up을 먼저 실행합니다.
 dev-app-up: network
 	$(COMPOSE_DEV) up -d --no-deps $(DEV_APP_SERVICES)
+	@for i in $$(seq 1 60); do \
+		if curl -fsS http://localhost:3000/ >/dev/null 2>&1; then \
+			break; \
+		fi; \
+		if [ "$$i" -eq 60 ]; then \
+			echo "web dev server did not become ready on http://localhost:3000/"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+	$(COMPOSE_DEV) restart nginx
 
 # dev app 이미지/빌드 산출물만 다시 빌드합니다.
 dev-app-build: network

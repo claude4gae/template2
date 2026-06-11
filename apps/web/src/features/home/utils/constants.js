@@ -12,6 +12,7 @@ export const navigationItems = [
       { title: 'Appstore', href: '/appstore' },
       { title: 'ESOP Dashboard', href: '/esop_dashboard' },
       { title: 'L3 Spider', href: '/l3_spider' },
+      { title: 'PM SPIDER', href: '/pm-comparison' },
       { title: 'Timeline', href: '/timeline' },
       { title: '메일함', href: '/emails/inbox' },
     ]

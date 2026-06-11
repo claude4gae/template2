@@ -119,6 +119,7 @@ INSTALLED_APPS = [
     "api.health",
     "api.l3_spider",
     "api.management",
+    "api.pm_comparison",
     "api.rag",
     "api.timeline",
     "api.voc",
@@ -209,6 +210,12 @@ TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 60) or 60
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.
 L3_SPIDER_DATA_ROOT = env("L3_SPIDER_DATA_ROOT", "/data/l3_spider/daily_anomaly")
 L3_SPIDER_MAX_CHART_POINTS_PER_PANEL = env_int("L3_SPIDER_MAX_CHART_POINTS_PER_PANEL", 2000) or 2000
+
+# PM SPIDER Parquet 데이터 경로.
+# 원본 데이터는 Hive-style partition(key=value) 구조로 이 경로 아래에 read-only mount해서 사용합니다.
+PM_COMPARISON_DATA_ROOT = env("PM_COMPARISON_DATA_ROOT", "/data")
+PM_COMPARISON_MAX_FILES = env_int("PM_COMPARISON_MAX_FILES", 400) or 400
+PM_COMPARISON_MAX_META_DIRS = env_int("PM_COMPARISON_MAX_META_DIRS", 5000) or 5000
 
 # Data movement 테이블 root 경로. loader는 하위 incoming/processing을 사용합니다.
 DATA_MOVEMENT_M_TKIN_PREVENT_DIR = env(

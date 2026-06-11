@@ -10,6 +10,7 @@ import { fdcTrendRoutes } from "@/features/fdc-trend"
 import { GlobalNavbarShell, homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
+import { pmComparisonRoutes } from "@/features/pm-comparison"
 import { teamstaffRoutes } from "@/features/teamstaff"
 import { timelineRoutes } from "@/features/timeline"
 import { vocRoutes } from "@/features/voc"
@@ -22,6 +23,7 @@ const protectedFeatureRoutes = [
   ...lineDashboardRoutes,
   ...fdcTrendRoutes,
   ...l3SpiderRoutes,
+  ...pmComparisonRoutes,
   ...appstoreRoutes,
   ...emailsRoutes,
   ...vocRoutes,

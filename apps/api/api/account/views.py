@@ -152,14 +152,27 @@ class AccountAffiliationView(APIView):
             return JsonResponse({"error": "user_sdwt_prod is required"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 4) 소속 옵션 유효성 검증
+        # 4) dev 더미 사용자는 임시 소속을 승인 대기 없이 즉시 적용
+        # -----------------------------------------------------------------------------
+        if services.is_dev_dummy_affiliation_value(user=user, user_sdwt_prod=new_value):
+            services.ensure_dev_dummy_affiliation_option()
+            services.set_dev_dummy_current_affiliation(user=user)
+            return JsonResponse(
+                {
+                    "status": "applied",
+                    "userSdwtProd": new_value,
+                }
+            )
+
+        # -----------------------------------------------------------------------------
+        # 5) 소속 옵션 유효성 검증
         # -----------------------------------------------------------------------------
         option = selectors.get_affiliation_option_by_user_sdwt_prod(user_sdwt_prod=new_value)
         if option is None:
             return JsonResponse({"error": "Invalid user_sdwt_prod"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 5) 서비스 호출 및 응답 반환
+        # 6) 서비스 호출 및 응답 반환
         # -----------------------------------------------------------------------------
         response_payload, status_code = services.request_affiliation_change(
             user=user,
@@ -854,4 +867,5 @@ class LineSdwtOptionsView(APIView):
         # -----------------------------------------------------------------------------
         pairs = selectors.list_line_sdwt_pairs()
         payload = services.get_line_sdwt_options_payload(pairs=pairs)
+        payload = services.append_dev_dummy_line_sdwt_payload(user=user, payload=payload)
         return JsonResponse(payload)
