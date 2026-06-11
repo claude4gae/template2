@@ -775,13 +775,6 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
         targets = selectors.list_drone_sop_notification_targets_for_line(line_id=line_id)
         mapping_options = selectors.list_drone_sop_mapping_option_values_for_line(line_id=line_id)
         mapping_option_lines = selectors.list_drone_sop_mapping_option_lines()
-        targets, mapping_options, mapping_option_lines = selectors.apply_dev_dummy_notification_target_fallback(
-            user=request.user,
-            line_id=line_id,
-            targets=targets,
-            mapping_options=mapping_options,
-            mapping_option_lines=mapping_option_lines,
-        )
         return JsonResponse(
             {
                 "lineId": line_id,

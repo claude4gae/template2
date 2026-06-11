@@ -187,48 +187,6 @@ class AuthMeTests(TestCase):
         self.assertEqual(payload["pending_user_sdwt_prod"], "group-next")
         self.assertTrue(payload["has_pending_affiliation"])
 
-    @override_settings(DEBUG=True)
-    def test_auth_me_applies_dev_dummy_affiliation(self) -> None:
-        """dev 더미 사용자는 auth_me 호출 시 임시 소속이 자동 적용되어야 합니다."""
-
-        User = get_user_model()
-        user = User.objects.create_user(
-            sabun="dummy.user",
-            password="test-password",
-            knox_id="dummy.user",
-            avatarid="dummy.user@example.com",
-            email="dummy.user@example.com",
-        )
-
-        self.client.force_login(user)
-        response = self.client.get(reverse("auth-me"))
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["department"], "Development")
-        self.assertEqual(payload["line"], "DEV")
-        self.assertEqual(payload["user_sdwt_prod"], "DEV_DUMMY_USER_SDWT")
-
-    @override_settings(DEBUG=False)
-    def test_auth_me_does_not_apply_dev_dummy_affiliation_when_debug_is_false(self) -> None:
-        """DEBUG가 꺼져 있으면 더미 사용자 임시 소속을 자동 적용하지 않아야 합니다."""
-
-        User = get_user_model()
-        user = User.objects.create_user(
-            sabun="dummy.user",
-            password="test-password",
-            knox_id="dummy.user",
-            email="dummy.user@example.com",
-        )
-
-        self.client.force_login(user)
-        response = self.client.get(reverse("auth-me"))
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertIsNone(payload["line"])
-        self.assertIsNone(payload["user_sdwt_prod"])
-
 
 class AuthEndpointTests(TestCase):
     """인증 엔드포인트의 기본 동작을 검증합니다."""

@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
-from django.conf import settings
 from django.db import connection
 from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.db.models.functions import Lower
@@ -94,131 +93,6 @@ _DIMENSION_CANDIDATES = [
     "sample_type",
     "line_id",
 ]
-
-_DEV_DUMMY_USER_IDENTIFIERS = frozenset({"dummy.user", "dummy.user@example.com"})
-_DEV_DUMMY_TARGET_USER_SDWT_PROD = "DEV_DUMMY_USER_SDWT"
-
-
-def is_dev_dummy_user(*, user: Any) -> bool:
-    """로컬 dev 더미 ADFS 사용자 여부를 확인합니다."""
-
-    if not getattr(settings, "DEBUG", False):
-        return False
-    if not user or not getattr(user, "is_authenticated", False):
-        return False
-
-    identifiers: set[str] = set()
-    for field_name in ("sabun", "knox_id", "avatarid", "email", "username"):
-        value = getattr(user, field_name, None)
-        if not isinstance(value, str):
-            continue
-        normalized = value.strip().lower()
-        if normalized:
-            identifiers.add(normalized)
-    return bool(identifiers.intersection(_DEV_DUMMY_USER_IDENTIFIERS))
-
-
-def _append_unique_display_value(values: list[str], value: str) -> list[str]:
-    """표시값 목록에 대소문자 비구분 중복 없이 값을 추가합니다."""
-
-    return collapse_display_values([*values, value])
-
-
-def _append_dev_dummy_line_option(
-    *,
-    option_lines: list[dict[str, object]],
-    line_id: str,
-) -> list[dict[str, object]]:
-    """line별 옵션 목록에 dev 더미 소속을 추가합니다."""
-
-    normalized_line_id = normalize_text(line_id)
-    if not normalized_line_id:
-        return option_lines
-
-    copied_lines: list[dict[str, object]] = []
-    matched = False
-    for option_line in option_lines:
-        copied_line = dict(option_line)
-        option_line_id = normalize_text(copied_line.get("lineId"))
-        values = copied_line.get("userSdwtProds")
-        normalized_values = [
-            normalize_text(value)
-            for value in values
-            if normalize_text(value)
-        ] if isinstance(values, list) else []
-        if option_line_id.casefold() == normalized_line_id.casefold():
-            matched = True
-            copied_line["userSdwtProds"] = _append_unique_display_value(
-                normalized_values,
-                _DEV_DUMMY_TARGET_USER_SDWT_PROD,
-            )
-        copied_lines.append(copied_line)
-
-    if not matched:
-        copied_lines.append(
-            {
-                "lineId": normalized_line_id,
-                "userSdwtProds": [_DEV_DUMMY_TARGET_USER_SDWT_PROD],
-            }
-        )
-    return copied_lines
-
-
-def apply_dev_dummy_notification_target_fallback(
-    *,
-    user: Any,
-    line_id: str,
-    targets: list[dict[str, object]],
-    mapping_options: dict[str, list[str]],
-    mapping_option_lines: list[dict[str, object]],
-) -> tuple[list[dict[str, object]], dict[str, list[str]], list[dict[str, object]]]:
-    """빈 dev DB에서 더미 사용자가 알림 target 매핑 화면을 통과하도록 임시 옵션을 합성합니다."""
-
-    if not is_dev_dummy_user(user=user):
-        return targets, mapping_options, mapping_option_lines
-
-    normalized_line_id = normalize_text(line_id)
-    if not normalized_line_id:
-        return targets, mapping_options, mapping_option_lines
-
-    fallback_target = _DEV_DUMMY_TARGET_USER_SDWT_PROD
-    next_targets = [dict(target) for target in targets]
-    target_exists = any(
-        normalize_text(target.get("targetUserSdwtProd")).casefold() == fallback_target.casefold()
-        for target in next_targets
-    )
-    if not next_targets and not target_exists:
-        next_targets.append(
-            {
-                "lineId": normalized_line_id,
-                "targetUserSdwtProd": fallback_target,
-                "source": DroneSopTarget.Sources.SYSTEM,
-                "isConfigured": False,
-                "jiraKey": None,
-                "jiraEnabled": False,
-                "messengerEnabled": True,
-                "mailEnabled": True,
-                "mappings": [],
-            }
-        )
-
-    user_sdwt_options = list(mapping_options.get("userSdwtProds") or [])
-    sdwt_options = list(mapping_options.get("sdwtProds") or [])
-    needs_mapping_fallback = not user_sdwt_options and not sdwt_options
-    if not needs_mapping_fallback:
-        return next_targets, mapping_options, mapping_option_lines
-
-    next_mapping_options = {
-        **mapping_options,
-        "userSdwtProds": [fallback_target],
-        "sdwtProds": [fallback_target],
-    }
-    next_mapping_option_lines = _append_dev_dummy_line_option(
-        option_lines=mapping_option_lines,
-        line_id=normalized_line_id,
-    )
-    return next_targets, next_mapping_options, next_mapping_option_lines
-
 
 def _drone_sop_eligible_filter() -> Q:
     """Drone SOP 후보 공통 적합 조건 필터를 반환합니다."""
@@ -1218,8 +1092,6 @@ def user_can_manage_drone_sop_recipients(*, user: Any) -> bool:
     # -----------------------------------------------------------------------------
     # 1) 이번 범위에서는 별도 앱 권한 없이 전역 운영자만 허용
     # -----------------------------------------------------------------------------
-    if is_dev_dummy_user(user=user):
-        return True
     return account_selectors.is_operator_user(user=user)
 
 
@@ -1237,15 +1109,11 @@ def get_drone_sop_permission_context(*, user: Any) -> dict[str, object]:
     """
 
     is_operator = user_can_manage_drone_sop_recipients(user=user)
-    manageable_values = list_drone_sop_target_user_sdwt_prod_values() if is_operator else []
-    if is_operator and is_dev_dummy_user(user=user):
-        manageable_values = _append_unique_display_value(
-            manageable_values,
-            _DEV_DUMMY_TARGET_USER_SDWT_PROD,
-        )
     return {
         "isOperator": is_operator,
-        "manageableUserSdwtProds": manageable_values,
+        "manageableUserSdwtProds": (
+            list_drone_sop_target_user_sdwt_prod_values() if is_operator else []
+        ),
     }
 
 

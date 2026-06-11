@@ -26,9 +26,6 @@ services:
     build:
       context: ../airflow
       dockerfile: Dockerfile
-      args:
-        CS_VER: ${CODE_SERVER_VERSION:-4.105.1}
-        CODE_SERVER_TARBALL_URL: ${CODE_SERVER_TARBALL_URL:-https://github.com/coder/code-server/releases/download/v4.105.1/code-server-4.105.1-linux-amd64.tar.gz}
     entrypoint: /bin/bash
     command:
       - -c
@@ -67,9 +64,6 @@ services:
     build:
       context: ../airflow
       dockerfile: Dockerfile
-      args:
-        CS_VER: ${CODE_SERVER_VERSION:-4.105.1}
-        CODE_SERVER_TARBALL_URL: ${CODE_SERVER_TARBALL_URL:-https://github.com/coder/code-server/releases/download/v4.105.1/code-server-4.105.1-linux-amd64.tar.gz}
     command: webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -112,9 +106,6 @@ services:
     build:
       context: ../airflow
       dockerfile: Dockerfile
-      args:
-        CS_VER: ${CODE_SERVER_VERSION:-4.105.1}
-        CODE_SERVER_TARBALL_URL: ${CODE_SERVER_TARBALL_URL:-https://github.com/coder/code-server/releases/download/v4.105.1/code-server-4.105.1-linux-amd64.tar.gz}
     command: scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -155,9 +146,6 @@ services:
     build:
       context: ../airflow
       dockerfile: Dockerfile
-      args:
-        CS_VER: ${CODE_SERVER_VERSION:-4.105.1}
-        CODE_SERVER_TARBALL_URL: ${CODE_SERVER_TARBALL_URL:-https://github.com/coder/code-server/releases/download/v4.105.1/code-server-4.105.1-linux-amd64.tar.gz}
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - >
@@ -166,8 +154,8 @@ services:
         /home/airflow/.local/share/code-server
         /home/airflow/.local/share/code-server/extensions
         /home/airflow/.vscode
-        && (chmod 700 /home/airflow/.config/code-server || true)
-        && (chmod 770 /home/airflow/.local/share/code-server /home/airflow/.local/share/code-server/extensions || true)
+        && chown -R "$${AIRFLOW_UID:-50000}:0" /home/airflow
+        && chmod 700 /home/airflow/.config /home/airflow/.config/code-server
         && exec code-server /opt/airflow
         --bind-addr 0.0.0.0:8081
         --auth password

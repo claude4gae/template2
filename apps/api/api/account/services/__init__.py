@@ -15,17 +15,12 @@ from .access import (
     grant_or_revoke_access,
 )
 from .affiliations import (
-    append_dev_dummy_line_sdwt_payload,
     auto_approve_affiliation_from_snapshot,
     ensure_affiliation_option,
-    ensure_dev_dummy_affiliation_option,
     get_affiliation_overview,
     get_affiliation_reconfirm_status,
     get_line_sdwt_options_payload,
-    is_dev_dummy_affiliation_value,
-    is_dev_dummy_user,
     set_current_affiliation_for_user,
-    set_dev_dummy_current_affiliation,
     submit_affiliation_reconfirm_response,
 )
 from .affiliation_requests import (
@@ -42,11 +37,9 @@ from .users import ensure_user_profile, get_user_by_knox_id, resolve_target_user
 
 __all__ = [
     "approve_affiliation_change",
-    "append_dev_dummy_line_sdwt_payload",
     "auto_approve_affiliation_from_snapshot",
     "ensure_self_access",
     "ensure_affiliation_option",
-    "ensure_dev_dummy_affiliation_option",
     "ensure_user_profile",
     "get_current_user_sdwt_prod_change",
     "get_account_overview",
@@ -58,14 +51,11 @@ __all__ = [
     "get_manageable_groups_with_members",
     "get_pending_user_sdwt_prod_change",
     "get_user_by_knox_id",
-    "is_dev_dummy_affiliation_value",
-    "is_dev_dummy_user",
     "grant_or_revoke_access",
     "reject_affiliation_change",
     "request_affiliation_change",
     "resolve_target_user",
     "set_current_affiliation_for_user",
-    "set_dev_dummy_current_affiliation",
     "submit_affiliation_reconfirm_response",
     "sync_external_affiliations",
 ]
