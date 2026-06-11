@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: PM SPIDER 서비스
 # 주요 함수: get_meta, compare_pm_window
-# 주요 가정: raw_data는 원본, score_data는 PM 주기별 scoring 결과입니다.
+# 주요 가정: data는 원본, result는 PM 주기별 scoring 결과입니다.
 # =============================================================================
 from __future__ import annotations
 
@@ -163,7 +163,7 @@ def _read_frames(
 
 
 def _normalize_score_frame(frame: pd.DataFrame, selection: dict[str, object], data_type: str) -> pd.DataFrame:
-    """score_data frame을 표준 컬럼과 요청 조건으로 정리합니다."""
+    """result frame을 표준 컬럼과 요청 조건으로 정리합니다."""
 
     if frame.empty:
         return frame
@@ -194,7 +194,7 @@ def _normalize_score_frame(frame: pd.DataFrame, selection: dict[str, object], da
 
 
 def _read_score(selection: dict[str, object], data_type: str, warnings: list[str]) -> tuple[pd.DataFrame, int]:
-    """score_data를 읽어 표준 frame으로 반환합니다."""
+    """result를 읽어 표준 frame으로 반환합니다."""
 
     files = selectors.iter_score_files(selection, data_type=data_type)
     frames, file_count = _read_frames(files, columns=SCORE_COLUMNS, warnings=warnings)
@@ -384,7 +384,7 @@ def _raw_cycle_frame(frame: pd.DataFrame, cycle_map: dict[str, int]) -> pd.DataF
 
 
 def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings: list[str]) -> dict[str, Any]:
-    """score_data 기반 trace rank와 raw_data 기반 상세 trend를 준비합니다."""
+    """result 기반 trace rank와 data 기반 상세 trend를 준비합니다."""
 
     score_frame, score_file_count = _read_score(selection, "trace", warnings)
     cycle_map = _cycle_map(score_frame, current_pm_date)
@@ -431,7 +431,7 @@ def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings:
             visible_columns = [column for column in columns if column in frame.columns]
             trend_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
         else:
-            warnings.append("trace raw_data에 날짜/time/value/trace_param_name 컬럼이 없어 상세 plot을 건너뜁니다.")
+            warnings.append("trace data에 날짜/time/value/trace_param_name 컬럼이 없어 상세 plot을 건너뜁니다.")
 
     return {
         "fileCount": raw_file_count,
@@ -472,7 +472,7 @@ def _normalize_oes(frame: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
     else:
         wavelength_columns = _numeric_wavelength_columns(frame.columns)
         if not wavelength_columns:
-            warnings.append("OES raw_data에서 wavelength 컬럼을 찾지 못했습니다.")
+            warnings.append("OES data에서 wavelength 컬럼을 찾지 못했습니다.")
             return frame.iloc[0:0].copy()
         id_columns = [column for column in frame.columns if column not in wavelength_columns]
         long_frame = frame.melt(
@@ -492,7 +492,7 @@ def _normalize_oes(frame: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
 
 
 def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: list[str]) -> dict[str, Any]:
-    """score_data 기반 OES rank와 raw_data 기반 spectrum 상세를 준비합니다."""
+    """result 기반 OES rank와 data 기반 spectrum 상세를 준비합니다."""
 
     score_frame, score_file_count = _read_score(selection, "oes", warnings)
     cycle_map = _cycle_map(score_frame, current_pm_date)
@@ -531,7 +531,7 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
             visible_columns = [column for column in columns if column in frame.columns]
             detail_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
         else:
-            warnings.append("OES raw_data에 날짜/rcp_step/wavelength/value 컬럼이 없어 상세 plot을 건너뜁니다.")
+            warnings.append("OES data에 날짜/rcp_step/wavelength/value 컬럼이 없어 상세 plot을 건너뜁니다.")
 
     step_rows = []
     if rank_rows:
@@ -617,7 +617,7 @@ def _build_filter_response(selection: dict[str, object]) -> dict[str, Any]:
 
 
 def _collect_pm_dates(warnings: list[str]) -> list[str]:
-    """score_data 전체에서 PM 날짜 목록을 수집합니다."""
+    """result 전체에서 PM 날짜 목록을 수집합니다."""
 
     dates: set[str] = set()
     try:

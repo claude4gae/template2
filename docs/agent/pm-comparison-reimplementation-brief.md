@@ -23,17 +23,17 @@
 
 - 설정값: `PM_COMPARISON_DATA_ROOT`
 - 기본 구조:
-  - `${PM_COMPARISON_DATA_ROOT}/raw_data`
-  - `${PM_COMPARISON_DATA_ROOT}/score_data`
+  - `${PM_COMPARISON_DATA_ROOT}/data`
+  - `${PM_COMPARISON_DATA_ROOT}/result`
 
-`raw_data`는 상세 trace/OES plot을 만들기 위한 원본입니다. `score_data`는 PM cycle별 rank와 trend를 만들기 위한 scoring 결과입니다.
+`data`는 상세 trace/OES plot을 만들기 위한 원본입니다. `result`는 PM cycle별 rank와 trend를 만들기 위한 scoring 결과입니다.
 
 ## Partition 계약
 
-`raw_data`는 Hive-style partition을 사용합니다.
+`data`는 Hive-style partition을 사용합니다.
 
 ```text
-raw_data/
+data/
   line_id=<line>/
   eqp_id=<eqp>/
   fdc_bin=<bin>/
@@ -46,10 +46,10 @@ raw_data/
   *.parquet
 ```
 
-`score_data`는 더 작은 partition set을 사용합니다.
+`result`는 더 작은 partition set을 사용합니다.
 
 ```text
-score_data/
+result/
   line_id=<line>/
   eqp_id=<eqp>/
   pattern=<NPW|PW>/
@@ -150,7 +150,7 @@ score_data/
 
 ## Score Data Schema
 
-`score_data`는 최소한 아래 컬럼을 가져야 합니다.
+`result`는 최소한 아래 컬럼을 가져야 합니다.
 
 ```text
 line_id
@@ -384,7 +384,7 @@ apps/api/api/pm_comparison/
 ## 구현 순서
 
 1. `api.pm_comparison` Django app을 추가하고 settings/url에 연결합니다.
-2. `selectors.py`에서 `raw_data`, `score_data` partition scan과 Parquet read를 구현합니다.
+2. `selectors.py`에서 `data`, `result` partition scan과 Parquet read를 구현합니다.
 3. serializer에서 compare 요청을 검증합니다.
 4. service에서 meta, compare response shape를 먼저 고정합니다.
 5. backend test를 추가합니다.
@@ -438,10 +438,10 @@ API:
 - trace/oes에는 summaryRows, scoreTrendRows, refCycles, detail/trend rows가 있다.
 
 데이터:
-- PM_COMPARISON_DATA_ROOT 아래 raw_data와 score_data를 사용한다.
-- score_data schema는 line_id, eqp_id, 날짜, pattern, data_type, item_name, step, wavelength, score다.
+- PM_COMPARISON_DATA_ROOT 아래 data와 result를 사용한다.
+- result schema는 line_id, eqp_id, 날짜, pattern, data_type, item_name, step, wavelength, score다.
 - 날짜 컬럼으로 current cycle 0과 ref cycle -1, -2를 계산한다.
-- raw_data는 Hive-style partition이며 trace는 trace_param_name/value/time/step_time, OES는 long 또는 wide wavelength schema를 처리한다.
+- data는 Hive-style partition이며 trace는 trace_param_name/value/time/step_time, OES는 long 또는 wide wavelength schema를 처리한다.
 
 구현 규칙:
 - frontend는 apps/web/src/features/pm-comparison 내부 feature로 만들고 외부 import는 facade만 사용한다.

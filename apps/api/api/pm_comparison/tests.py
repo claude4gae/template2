@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: PM SPIDER 서비스 테스트
-# 주요 대상: score_data rank와 raw_data 상세 row 계산
+# 주요 대상: result rank와 data 상세 row 계산
 # 주요 가정: 테스트 데이터는 임시 Parquet 파일로 생성합니다.
 # =============================================================================
 from __future__ import annotations
@@ -24,7 +24,7 @@ class PmComparisonServiceTests(SimpleTestCase):
         *,
         data_source: str,
         trace_param_name: str,
-        raw_dir: str = "raw_data",
+        raw_dir: str = selectors.RAW_DIR_NAME,
     ) -> Path:
         """테스트용 raw partition 경로를 반환합니다."""
 
@@ -43,7 +43,7 @@ class PmComparisonServiceTests(SimpleTestCase):
             / "batch=001"
         )
 
-    def _score_base(self, root: Path, *, data_type: str, score_dir: str = "score_data") -> Path:
+    def _score_base(self, root: Path, *, data_type: str, score_dir: str = selectors.SCORE_DIR_NAME) -> Path:
         """테스트용 score partition 경로를 반환합니다."""
 
         return (
@@ -59,8 +59,8 @@ class PmComparisonServiceTests(SimpleTestCase):
         self,
         root: Path,
         *,
-        raw_dir: str = "raw_data",
-        score_dir: str = "score_data",
+        raw_dir: str = selectors.RAW_DIR_NAME,
+        score_dir: str = selectors.SCORE_DIR_NAME,
     ) -> None:
         """테스트용 trace raw와 score 데이터를 생성합니다."""
 
@@ -123,8 +123,8 @@ class PmComparisonServiceTests(SimpleTestCase):
         self,
         root: Path,
         *,
-        raw_dir: str = "raw_data",
-        score_dir: str = "score_data",
+        raw_dir: str = selectors.RAW_DIR_NAME,
+        score_dir: str = selectors.SCORE_DIR_NAME,
     ) -> None:
         """테스트용 OES raw와 score 데이터를 생성합니다."""
 
@@ -215,12 +215,12 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(result["oes"]["worstWavelength"]["score"], 0.08)
         self.assertGreaterEqual(len(result["oes"]["detailRows"]), 2)
 
-    def test_single_mount_supports_legacy_pm_spider_dir_names(self) -> None:
-        """단일 mount 아래 legacy data/pm_spider_result 폴더명을 지원하는지 확인합니다."""
+    def test_single_mount_uses_data_and_result_dir_names(self) -> None:
+        """단일 mount 아래 data/result 폴더명을 사용하는지 확인합니다."""
 
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            self._write_trace_sample(root, raw_dir="data", score_dir="pm_spider_result")
+            self._write_trace_sample(root)
 
             with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
                 raw_root = selectors.ensure_dataset_root(selectors.RAW_DIR_NAME)
@@ -228,5 +228,5 @@ class PmComparisonServiceTests(SimpleTestCase):
                 meta = services.get_meta()
 
         self.assertEqual(raw_root.name, "data")
-        self.assertEqual(score_root.name, "pm_spider_result")
+        self.assertEqual(score_root.name, "result")
         self.assertEqual(meta["lineIds"], ["L1"])

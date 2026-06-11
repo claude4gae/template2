@@ -4,9 +4,9 @@
 #       저장하거나, 저장된 파일을 그대로 다시 불러올 때 사용합니다.
 #
 # 경로 규칙 (selectors.py 와 동일한 파티션 계약)
-#   score_data/
+#   result/
 #     line_id=<>/eqp_id=<>/chamber_id=<>/type=<ag|process>/data_type=<trace|oes>/
-#   raw_data/
+#   data/
 #     line_id=<>/eqp_id=<>/fdc_bin=<>/dt=<YYYY-MM-DD>/type=<ag|process>/
 #     ppid=<>/recipe_id=<>/data_source=<trace|oes>/trace_param_name=<>/
 # =============================================================================
@@ -23,13 +23,13 @@ from . import selectors
 # 파티션 값으로 허용되는 문자 (serializers._is_safe_segment 와 동일)
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
-# score_data 에서 대시보드가 반드시 읽는 컬럼
+# result에서 대시보드가 반드시 읽는 컬럼
 _SCORE_REQUIRED = {"날짜", "item_name", "score"}
 
-# raw_data/trace 에서 대시보드가 반드시 읽는 컬럼
+# data/trace에서 대시보드가 반드시 읽는 컬럼
 _TRACE_REQUIRED = {"날짜", "time", "step_time", "value", "trace_param_name"}
 
-# raw_data/OES (long) 에서 대시보드가 반드시 읽는 컬럼
+# data/OES(long)에서 대시보드가 반드시 읽는 컬럼
 _OES_REQUIRED = {"날짜", "rcp_step", "wavelength", "value"}
 
 # OES wide 스키마에서 ID 컬럼으로 간주하는 이름 집합 (소문자)
@@ -96,7 +96,7 @@ def _write_parquet(df: pd.DataFrame, dest: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# score_data
+# result
 # ---------------------------------------------------------------------------
 
 def save_score(
@@ -140,9 +140,9 @@ def save_score(
     ...     line_id="L1", eqp_id="EQP01", chamber_id="CH1",
     ...     type="ag", data_type="trace",
     ... )
-    PosixPath('.../score_data/line_id=L1/eqp_id=EQP01/chamber_id=CH1/type=ag/data_type=trace/scores.parquet')
+    PosixPath('.../result/line_id=L1/eqp_id=EQP01/chamber_id=CH1/type=ag/data_type=trace/scores.parquet')
     """
-    _check_required(df, _SCORE_REQUIRED, "score_data")
+    _check_required(df, _SCORE_REQUIRED, "result")
     line_id = _validate_segment(line_id, "line_id")
     eqp_id = _validate_segment(eqp_id, "eqp_id")
     chamber_id = _validate_segment(chamber_id, "chamber_id")
@@ -206,7 +206,7 @@ def load_score(
 
 
 # ---------------------------------------------------------------------------
-# raw_data / trace
+# data / trace
 # ---------------------------------------------------------------------------
 
 def save_raw_trace(
@@ -239,7 +239,7 @@ def save_raw_trace(
     -------
     저장된 Parquet 파일의 절대 경로.
     """
-    _check_required(df, _TRACE_REQUIRED, "raw_data/trace")
+    _check_required(df, _TRACE_REQUIRED, "data/trace")
     line_id = _validate_segment(line_id, "line_id")
     eqp_id = _validate_segment(eqp_id, "eqp_id")
     fdc_bin = _validate_segment(fdc_bin, "fdc_bin")
@@ -315,7 +315,7 @@ def load_raw_trace(
 
 
 # ---------------------------------------------------------------------------
-# raw_data / OES
+# data / OES
 # ---------------------------------------------------------------------------
 
 def save_raw_oes(
@@ -353,7 +353,7 @@ def save_raw_oes(
     """
     wide = _is_wide_oes(df)
     if not wide:
-        _check_required(df, _OES_REQUIRED, "raw_data/oes (long)")
+        _check_required(df, _OES_REQUIRED, "data/oes (long)")
 
     line_id = _validate_segment(line_id, "line_id")
     eqp_id = _validate_segment(eqp_id, "eqp_id")
@@ -423,7 +423,7 @@ def load_raw_oes(
 # ---------------------------------------------------------------------------
 
 def list_partitions(
-    dataset: str = "raw_data",
+    dataset: str = selectors.RAW_DIR_NAME,
     data_root: str | Path | None = None,
 ) -> list[dict[str, str]]:
     """저장된 파티션 목록을 반환합니다.
@@ -431,7 +431,7 @@ def list_partitions(
     Parameters
     ----------
     dataset:
-        ``raw_data`` 또는 ``score_data``.
+        ``data`` 또는 ``result``.
 
     Returns
     -------

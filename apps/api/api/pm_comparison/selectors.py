@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: PM SPIDER 파일 셀렉터
 # 주요 함수: iter_raw_files, iter_score_files, collect_partition_options, read_parquet
-# 주요 가정: raw_data/score_data 또는 legacy data/pm_spider_result가 데이터 루트 바로 아래에 위치합니다.
+# 주요 가정: data와 result는 PM_COMPARISON_DATA_ROOT 바로 아래에 위치합니다.
 # =============================================================================
 from __future__ import annotations
 
@@ -13,13 +13,8 @@ from django.conf import settings
 
 import pandas as pd
 
-RAW_DIR_NAME = "raw_data"
-SCORE_DIR_NAME = "score_data"
-
-DATASET_DIR_CANDIDATES = {
-    RAW_DIR_NAME: [RAW_DIR_NAME, "data"],
-    SCORE_DIR_NAME: [SCORE_DIR_NAME, "pm_spider_result"],
-}
+RAW_DIR_NAME = "data"
+SCORE_DIR_NAME = "result"
 
 RAW_PARTITION_KEYS = [
     "line_id",
@@ -78,19 +73,14 @@ def ensure_data_root() -> Path:
 
 
 def ensure_dataset_root(dataset_name: str) -> Path:
-    """raw_data 또는 score_data 데이터셋 루트를 반환합니다."""
+    """data 또는 result 데이터셋 루트를 반환합니다."""
 
-    data_root = ensure_data_root()
-    candidates = DATASET_DIR_CANDIDATES.get(dataset_name, [dataset_name])
-    for dirname in candidates:
-        root = data_root / dirname
-        if root.exists() and not root.is_dir():
-            raise NotADirectoryError(f"PM SPIDER {dataset_name} 경로가 폴더가 아닙니다: {root}")
-        if root.is_dir():
-            return root
-
-    expected = ", ".join(str(data_root / dirname) for dirname in candidates)
-    raise FileNotFoundError(f"PM SPIDER {dataset_name} 경로를 찾을 수 없습니다: {expected}")
+    root = ensure_data_root() / dataset_name
+    if not root.exists():
+        raise FileNotFoundError(f"PM SPIDER {dataset_name} 경로를 찾을 수 없습니다: {root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"PM SPIDER {dataset_name} 경로가 폴더가 아닙니다: {root}")
+    return root
 
 
 def parse_partition_values(path: Path) -> dict[str, str]:
@@ -166,7 +156,7 @@ def iter_raw_files(
     data_source: str,
     trace_param_names: Sequence[str] | None = None,
 ) -> Iterable[Path]:
-    """raw_data 아래에서 요청 조건에 맞는 Parquet 후보 파일을 순회합니다."""
+    """data 아래에서 요청 조건에 맞는 Parquet 후보 파일을 순회합니다."""
 
     root = ensure_dataset_root(RAW_DIR_NAME)
     filters = _partition_filters(selection, REQUEST_TO_RAW_PARTITION)
@@ -193,7 +183,7 @@ def iter_raw_files(
 
 
 def iter_score_files(selection: dict[str, object], *, data_type: str) -> Iterable[Path]:
-    """score_data 아래에서 요청 조건에 맞는 Parquet 후보 파일을 순회합니다."""
+    """result 아래에서 요청 조건에 맞는 Parquet 후보 파일을 순회합니다."""
 
     root = ensure_dataset_root(SCORE_DIR_NAME)
     filters = _partition_filters(selection, REQUEST_TO_SCORE_PARTITION)
@@ -214,7 +204,7 @@ def iter_score_files(selection: dict[str, object], *, data_type: str) -> Iterabl
 
 
 def collect_partition_options() -> dict[str, list[str]]:
-    """raw_data 아래 partition 값을 제한된 범위에서 수집합니다."""
+    """data 아래 partition 값을 제한된 범위에서 수집합니다."""
 
     root = ensure_dataset_root(RAW_DIR_NAME)
     max_dirs = int(getattr(settings, "PM_COMPARISON_MAX_META_DIRS", 5000))
