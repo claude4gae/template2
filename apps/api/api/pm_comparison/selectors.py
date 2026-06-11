@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: PM SPIDER 파일 셀렉터
 # 주요 함수: iter_raw_files, iter_score_files, collect_partition_options, read_parquet
-# 주요 가정: raw_data와 score_data는 PM_COMPARISON_DATA_ROOT 바로 아래에 위치합니다.
+# 주요 가정: raw_data/score_data 또는 legacy data/pm_spider_result가 데이터 루트 바로 아래에 위치합니다.
 # =============================================================================
 from __future__ import annotations
 
@@ -15,6 +15,11 @@ import pandas as pd
 
 RAW_DIR_NAME = "raw_data"
 SCORE_DIR_NAME = "score_data"
+
+DATASET_DIR_CANDIDATES = {
+    RAW_DIR_NAME: [RAW_DIR_NAME, "data"],
+    SCORE_DIR_NAME: [SCORE_DIR_NAME, "pm_spider_result"],
+}
 
 RAW_PARTITION_KEYS = [
     "line_id",
@@ -75,12 +80,17 @@ def ensure_data_root() -> Path:
 def ensure_dataset_root(dataset_name: str) -> Path:
     """raw_data 또는 score_data 데이터셋 루트를 반환합니다."""
 
-    root = ensure_data_root() / dataset_name
-    if not root.exists():
-        raise FileNotFoundError(f"PM SPIDER {dataset_name} 경로를 찾을 수 없습니다: {root}")
-    if not root.is_dir():
-        raise NotADirectoryError(f"PM SPIDER {dataset_name} 경로가 폴더가 아닙니다: {root}")
-    return root
+    data_root = ensure_data_root()
+    candidates = DATASET_DIR_CANDIDATES.get(dataset_name, [dataset_name])
+    for dirname in candidates:
+        root = data_root / dirname
+        if root.exists() and not root.is_dir():
+            raise NotADirectoryError(f"PM SPIDER {dataset_name} 경로가 폴더가 아닙니다: {root}")
+        if root.is_dir():
+            return root
+
+    expected = ", ".join(str(data_root / dirname) for dirname in candidates)
+    raise FileNotFoundError(f"PM SPIDER {dataset_name} 경로를 찾을 수 없습니다: {expected}")
 
 
 def parse_partition_values(path: Path) -> dict[str, str]:

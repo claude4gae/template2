@@ -12,18 +12,25 @@ from django.test import SimpleTestCase, override_settings
 
 import pandas as pd
 
-from . import services
+from . import selectors, services
 
 
 class PmComparisonServiceTests(SimpleTestCase):
     """PM SPIDER 파일 기반 서비스 동작을 검증합니다."""
 
-    def _raw_base(self, root: Path, *, data_source: str, trace_param_name: str) -> Path:
-        """테스트용 raw_data partition 경로를 반환합니다."""
+    def _raw_base(
+        self,
+        root: Path,
+        *,
+        data_source: str,
+        trace_param_name: str,
+        raw_dir: str = "raw_data",
+    ) -> Path:
+        """테스트용 raw partition 경로를 반환합니다."""
 
         return (
             root
-            / "raw_data"
+            / raw_dir
             / "line_id=L1"
             / "eqp_id=EQP1"
             / "fdc_bin=BIN1"
@@ -36,22 +43,33 @@ class PmComparisonServiceTests(SimpleTestCase):
             / "batch=001"
         )
 
-    def _score_base(self, root: Path, *, data_type: str) -> Path:
-        """테스트용 score_data partition 경로를 반환합니다."""
+    def _score_base(self, root: Path, *, data_type: str, score_dir: str = "score_data") -> Path:
+        """테스트용 score partition 경로를 반환합니다."""
 
         return (
             root
-            / "score_data"
+            / score_dir
             / "line_id=L1"
             / "eqp_id=EQP1"
             / "type=ag"
             / f"data_type={data_type}"
         )
 
-    def _write_trace_sample(self, root: Path) -> None:
-        """테스트용 trace raw_data와 score_data를 생성합니다."""
+    def _write_trace_sample(
+        self,
+        root: Path,
+        *,
+        raw_dir: str = "raw_data",
+        score_dir: str = "score_data",
+    ) -> None:
+        """테스트용 trace raw와 score 데이터를 생성합니다."""
 
-        raw_target = self._raw_base(root, data_source="trace", trace_param_name="PRESSURE")
+        raw_target = self._raw_base(
+            root,
+            data_source="trace",
+            trace_param_name="PRESSURE",
+            raw_dir=raw_dir,
+        )
         raw_target.mkdir(parents=True)
         pd.DataFrame(
             [
@@ -61,7 +79,7 @@ class PmComparisonServiceTests(SimpleTestCase):
             ]
         ).to_parquet(raw_target / "part-000.parquet", engine="pyarrow")
 
-        score_target = self._score_base(root, data_type="trace")
+        score_target = self._score_base(root, data_type="trace", score_dir=score_dir)
         score_target.mkdir(parents=True)
         pd.DataFrame(
             [
@@ -101,10 +119,21 @@ class PmComparisonServiceTests(SimpleTestCase):
             ]
         ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
 
-    def _write_oes_sample(self, root: Path) -> None:
-        """테스트용 OES raw_data와 score_data를 생성합니다."""
+    def _write_oes_sample(
+        self,
+        root: Path,
+        *,
+        raw_dir: str = "raw_data",
+        score_dir: str = "score_data",
+    ) -> None:
+        """테스트용 OES raw와 score 데이터를 생성합니다."""
 
-        raw_target = self._raw_base(root, data_source="oes", trace_param_name="spectrum")
+        raw_target = self._raw_base(
+            root,
+            data_source="oes",
+            trace_param_name="spectrum",
+            raw_dir=raw_dir,
+        )
         raw_target.mkdir(parents=True)
         pd.DataFrame(
             [
@@ -115,7 +144,7 @@ class PmComparisonServiceTests(SimpleTestCase):
             ]
         ).to_parquet(raw_target / "part-000.parquet", engine="pyarrow")
 
-        score_target = self._score_base(root, data_type="oes")
+        score_target = self._score_base(root, data_type="oes", score_dir=score_dir)
         score_target.mkdir(parents=True)
         pd.DataFrame(
             [
@@ -185,3 +214,19 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(result["oes"]["worstStep"], "STEP_A")
         self.assertEqual(result["oes"]["worstWavelength"]["score"], 0.08)
         self.assertGreaterEqual(len(result["oes"]["detailRows"]), 2)
+
+    def test_single_mount_supports_legacy_pm_spider_dir_names(self) -> None:
+        """단일 mount 아래 legacy data/pm_spider_result 폴더명을 지원하는지 확인합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_trace_sample(root, raw_dir="data", score_dir="pm_spider_result")
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                raw_root = selectors.ensure_dataset_root(selectors.RAW_DIR_NAME)
+                score_root = selectors.ensure_dataset_root(selectors.SCORE_DIR_NAME)
+                meta = services.get_meta()
+
+        self.assertEqual(raw_root.name, "data")
+        self.assertEqual(score_root.name, "pm_spider_result")
+        self.assertEqual(meta["lineIds"], ["L1"])
