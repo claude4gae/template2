@@ -221,7 +221,7 @@ FDC_HARD_SPEC_HARD_LIMIT_PATH = env("FDC_HARD_SPEC_HARD_LIMIT_PATH", "/appdata/a
 
 # PM SPIDER Parquet 데이터 경로.
 # 원본 데이터는 Hive-style partition(key=value) 구조로 이 경로 아래에 read-only mount해서 사용합니다.
-PM_COMPARISON_DATA_ROOT = env("PM_COMPARISON_DATA_ROOT", "/appdata/PM_SPIDER/result")
+PM_COMPARISON_DATA_ROOT = env("PM_COMPARISON_DATA_ROOT", "/data/pm_spider")
 PM_COMPARISON_MAX_FILES = env_int("PM_COMPARISON_MAX_FILES", 400) or 400
 PM_COMPARISON_MAX_META_DIRS = env_int("PM_COMPARISON_MAX_META_DIRS", 5000) or 5000
 

@@ -25,7 +25,7 @@
 | `TIMELINE_DB_*` / Timeline DB | `TIMELINE_DB_ENGINE`, `TIMELINE_DB_NAME`, `TIMELINE_DB_USER`, `TIMELINE_DB_PASSWORD`, `TIMELINE_DB_HOST`, `TIMELINE_DB_PORT`, `TIMELINE_QUERY_DAYS` | Timeline 전용 PostgreSQL과 기본 조회 기간 |
 | `L3_SPIDER_*` / L3 Spider 파일 데이터 | `L3_SPIDER_DATA_ROOT`, `L3_SPIDER_MAX_CHART_POINTS_PER_PANEL` | read-only mount된 `daily_anomaly` Parquet 데이터 경로와 차트 sampling 제한 |
 | `FDC_HARD_SPEC_*` / FDC Trend 추천 데이터 | `FDC_HARD_SPEC_DATA_ROOT`, `FDC_HARD_SPEC_PRIORITY_PATH`, `FDC_HARD_SPEC_UNIT_MODEL_PATH`, `FDC_HARD_SPEC_HARD_LIMIT_PATH` | FDC Hard Limit 추천 Parquet 데이터 경로 |
-| `PM_COMPARISON_*` / PM SPIDER 파일 데이터 | `PM_COMPARISON_DATA_ROOT`, `PM_COMPARISON_MAX_FILES`, `PM_COMPARISON_MAX_META_DIRS` | PM SPIDER raw/score Parquet 데이터 경로와 scan 제한 |
+| `PM_COMPARISON_*` / PM SPIDER 파일 데이터 | `PM_COMPARISON_DATA_ROOT`, `PM_COMPARISON_DATA_HOST_PATH`, `PM_COMPARISON_MAX_FILES`, `PM_COMPARISON_MAX_META_DIRS` | PM SPIDER raw/score Parquet 데이터의 host mount와 컨테이너 내부 경로, scan 제한 |
 | `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_HOST_PATH`, `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR` | FTP 등으로 수신한 파일의 host mount와 테이블별 root 경로. 하위 `incoming/processing` 사용 |
 | `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
@@ -37,6 +37,21 @@
 | `MAIL_API_*` / Mail API | `MAIL_API_URL`, `MAIL_API_KEY`, `MAIL_API_SYSTEM_ID`, `MAIL_API_KNOX_ID` | 외부 Mail API 전송 |
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
+
+## 파일 데이터 마운트 규칙
+
+API가 직접 읽는 업무 파일 데이터는 신규/변경 시 아래 규칙을 따릅니다.
+
+| 항목 | 규칙 | 예시 |
+| --- | --- | --- |
+| 컨테이너 경로 | `api` 컨테이너 내부에서는 `/data/<domain>`을 사용합니다. `<domain>`은 lowercase snake_case로 작성합니다. | `/data/pm_spider`, `/data/l3_spider/daily_anomaly` |
+| 호스트 경로 env | Compose bind mount의 host 경로는 `${<DOMAIN>_DATA_HOST_PATH:-../data/<domain>}` 형식으로 둡니다. | `${PM_COMPARISON_DATA_HOST_PATH:-../data/pm_spider}` |
+| Django data root | Django 설정은 컨테이너 내부 경로를 `<DOMAIN>_DATA_ROOT`로 노출합니다. | `PM_COMPARISON_DATA_ROOT=/data/pm_spider` |
+| 권한 | 원본/참조 데이터는 `:ro`로 read-only mount합니다. 앱이 생성/업로드/처리하는 큐성 데이터만 read-write를 허용합니다. | `:/data/pm_spider:ro` |
+| 동기화 파일 | API 파일 마운트 변경 시 `compose/dev.app.yml`, `compose/oidc.app.yml`, `compose/prod.app.yml`, `env/api.common.env`, 이 문서를 함께 갱신합니다. | PM SPIDER 마운트 변경 |
+| 예외 | DB data dir, `node_modules`, staticfiles, MinIO bucket 등 서비스 내부 상태는 named volume 또는 서비스 고유 경로를 유지할 수 있습니다. | `api_data:/data`, `web_node_modules:/app/node_modules` |
+
+새 마운트에는 `/appdata` 컨테이너 경로를 추가하지 않습니다. 기존 `/appdata` 기반 경로는 해당 데이터 계약을 수정할 때 `/data/<domain>`으로 이동합니다.
 
 ## 로컬 개발 기본 흐름
 

@@ -80,6 +80,7 @@ services:
       - ${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/data/data_movement
       - api_static:/app/staticfiles
       - ${L3_SPIDER_DATA_HOST_PATH:-../data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
+      - ${PM_COMPARISON_DATA_HOST_PATH:-../data/pm_spider}:/data/pm_spider:ro
     ports:
       - "8000:8000"
     entrypoint:
