@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -22,6 +23,136 @@ from .. import selectors
 from .access import _current_access_list
 from .affiliation_requests import request_affiliation_change
 from .utils import _normalize_user_sdwt_prod, _same_user_sdwt_prod
+
+_DEV_DUMMY_USER_IDENTIFIERS = frozenset({"dummy.user", "dummy.user@example.com"})
+_DEV_DUMMY_DEPARTMENT = "Development"
+_DEV_DUMMY_LINE = "DEV"
+_DEV_DUMMY_USER_SDWT_PROD = "DEV_DUMMY_USER_SDWT"
+
+
+def is_dev_dummy_user(*, user: Any) -> bool:
+    """로컬 dev 더미 ADFS 사용자 여부를 확인합니다."""
+
+    if not getattr(settings, "DEBUG", False):
+        return False
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+
+    identifiers: set[str] = set()
+    for field_name in ("sabun", "knox_id", "avatarid", "email", "username"):
+        value = getattr(user, field_name, None)
+        if not isinstance(value, str):
+            continue
+        normalized = value.strip().lower()
+        if normalized:
+            identifiers.add(normalized)
+    return bool(identifiers.intersection(_DEV_DUMMY_USER_IDENTIFIERS))
+
+
+def is_dev_dummy_affiliation_value(*, user: Any, user_sdwt_prod: str) -> bool:
+    """dev 더미 사용자가 임시 소속 값을 선택했는지 확인합니다."""
+
+    return (
+        is_dev_dummy_user(user=user)
+        and _same_user_sdwt_prod(user_sdwt_prod, _DEV_DUMMY_USER_SDWT_PROD)
+    )
+
+
+def get_dev_dummy_affiliation_option() -> dict[str, str]:
+    """dev 더미 사용자용 임시 소속 옵션을 반환합니다."""
+
+    return {
+        "department": _DEV_DUMMY_DEPARTMENT,
+        "line": _DEV_DUMMY_LINE,
+        "user_sdwt_prod": _DEV_DUMMY_USER_SDWT_PROD,
+    }
+
+
+def _append_dev_dummy_affiliation_option(
+    *,
+    user: Any,
+    options: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """dev 더미 사용자에게 임시 소속 옵션을 추가합니다."""
+
+    if not is_dev_dummy_user(user=user):
+        return options
+    if any(
+        _same_user_sdwt_prod(option.get("user_sdwt_prod"), _DEV_DUMMY_USER_SDWT_PROD)
+        for option in options
+    ):
+        return options
+    return [*options, get_dev_dummy_affiliation_option()]
+
+
+def ensure_dev_dummy_affiliation_option() -> Affiliation:
+    """dev 더미 사용자용 임시 소속 옵션을 DB에 보장합니다."""
+
+    return ensure_affiliation_option(
+        department=_DEV_DUMMY_DEPARTMENT,
+        line=_DEV_DUMMY_LINE,
+        user_sdwt_prod=_DEV_DUMMY_USER_SDWT_PROD,
+    )
+
+
+def set_dev_dummy_current_affiliation(*, user: Any) -> None:
+    """dev 더미 사용자의 현재 소속을 임시 값으로 즉시 설정합니다."""
+
+    set_current_affiliation_for_user(
+        user=user,
+        department=_DEV_DUMMY_DEPARTMENT,
+        line=_DEV_DUMMY_LINE,
+        user_sdwt_prod=_DEV_DUMMY_USER_SDWT_PROD,
+        source=UserCurrentAffiliation.Sources.USER_SELECTED,
+    )
+
+
+def append_dev_dummy_line_sdwt_payload(*, user: Any, payload: dict[str, object]) -> dict[str, object]:
+    """line/user_sdwt_prod 옵션 페이로드에 dev 더미 소속을 추가합니다."""
+
+    if not is_dev_dummy_user(user=user):
+        return payload
+
+    lines = list(payload.get("lines") or []) if isinstance(payload.get("lines"), list) else []
+    user_sdwt_prods = (
+        list(payload.get("userSdwtProds") or [])
+        if isinstance(payload.get("userSdwtProds"), list)
+        else []
+    )
+
+    matched = False
+    next_lines: list[dict[str, object]] = []
+    for line in lines:
+        copied_line = dict(line)
+        line_id = str(copied_line.get("lineId") or "").strip()
+        values = (
+            [str(value).strip() for value in copied_line.get("userSdwtProds") or [] if str(value).strip()]
+            if isinstance(copied_line.get("userSdwtProds"), list)
+            else []
+        )
+        if line_id.casefold() == _DEV_DUMMY_LINE.casefold():
+            matched = True
+            if not any(_same_user_sdwt_prod(value, _DEV_DUMMY_USER_SDWT_PROD) for value in values):
+                values.append(_DEV_DUMMY_USER_SDWT_PROD)
+            copied_line["userSdwtProds"] = sorted(set(values))
+        next_lines.append(copied_line)
+
+    if not matched:
+        next_lines.append(
+            {
+                "lineId": _DEV_DUMMY_LINE,
+                "userSdwtProds": [_DEV_DUMMY_USER_SDWT_PROD],
+            }
+        )
+
+    if not any(_same_user_sdwt_prod(value, _DEV_DUMMY_USER_SDWT_PROD) for value in user_sdwt_prods):
+        user_sdwt_prods.append(_DEV_DUMMY_USER_SDWT_PROD)
+
+    return {
+        **payload,
+        "lines": next_lines,
+        "userSdwtProds": sorted(set(user_sdwt_prods)),
+    }
 
 
 def _update_affiliation_option_values(
@@ -67,7 +198,10 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
 
     access_list = _current_access_list(user)
     manageable = [entry["userSdwtProd"] for entry in access_list if entry["role"] == "manager"]
-    options = selectors.list_affiliation_options()
+    options = _append_dev_dummy_affiliation_option(
+        user=user,
+        options=selectors.list_affiliation_options(),
+    )
     current_values = selectors.get_current_affiliation_values(user=user)
     current_department = current_values.get("department") or getattr(user, "department", None)
 
@@ -77,6 +211,9 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
     snapshot_department = (snapshot.department or "").strip() if snapshot else None
     if not snapshot_department:
         snapshot_department = (getattr(user, "department", None) or "").strip() or None
+    if is_dev_dummy_user(user=user):
+        snapshot_user_sdwt_prod = snapshot_user_sdwt_prod or _DEV_DUMMY_USER_SDWT_PROD
+        snapshot_department = snapshot_department or _DEV_DUMMY_DEPARTMENT
 
     return {
         "currentUserSdwtProd": current_values.get("user_sdwt_prod"),

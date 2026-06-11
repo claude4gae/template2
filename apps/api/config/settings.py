@@ -120,6 +120,7 @@ INSTALLED_APPS = [
     "api.health",
     "api.l3_spider",
     "api.management",
+    "api.pm_comparison",
     "api.rag",
     "api.timeline",
     "api.voc",
@@ -217,6 +218,12 @@ FDC_HARD_SPEC_DATA_ROOT = env("FDC_HARD_SPEC_DATA_ROOT", "/appdata/erd_stats_com
 FDC_HARD_SPEC_PRIORITY_PATH = env("FDC_HARD_SPEC_PRIORITY_PATH", "/appdata/abnormal_trend/pic/priority/priority.parquet")
 FDC_HARD_SPEC_UNIT_MODEL_PATH = env("FDC_HARD_SPEC_UNIT_MODEL_PATH", "/appdata/abnormal_trend/pic/unit_model.parquet")
 FDC_HARD_SPEC_HARD_LIMIT_PATH = env("FDC_HARD_SPEC_HARD_LIMIT_PATH", "/appdata/abnormal_trend/pic/HARD_LIMIT.parquet")
+
+# PM SPIDER Parquet 데이터 경로.
+# 원본 데이터는 Hive-style partition(key=value) 구조로 이 경로 아래에 read-only mount해서 사용합니다.
+PM_COMPARISON_DATA_ROOT = env("PM_COMPARISON_DATA_ROOT", "/appdata/PM_SPIDER/result")
+PM_COMPARISON_MAX_FILES = env_int("PM_COMPARISON_MAX_FILES", 400) or 400
+PM_COMPARISON_MAX_META_DIRS = env_int("PM_COMPARISON_MAX_META_DIRS", 5000) or 5000
 
 # Data movement 테이블 root 경로. loader는 하위 incoming/processing을 사용합니다.
 DATA_MOVEMENT_M_TKIN_PREVENT_DIR = env(
