@@ -35,7 +35,7 @@ function EmptyState() {
 
 export function PmComparisonPage() {
   const [form, setForm] = useState(DEFAULT_PM_FORM)
-  const [payload, setPayload] = useState(() => buildPmComparisonPayload(DEFAULT_PM_FORM))
+  const [payload, setPayload] = useState(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState("npw-trace")
   const [selectedRefPmDates, setSelectedRefPmDates] = useState(null)
   const metaQuery = usePmComparisonMeta()
