@@ -10,7 +10,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { ChatWidget } from "@/features/assistant"
 import { RequireAuth, useAuth } from "@/lib/auth"
 import { DepartmentProvider } from "@/lib/affiliation"
 import { APP_CATEGORIES } from "../utils/constants"
@@ -100,14 +99,11 @@ export function VocShell() {
 
   return (
     <RequireAuth>
-      <>
-        <DepartmentProvider>
-          <AppLayout sidebar={sidebar} scrollAreaClassName="overflow-hidden">
-            <Outlet context={boardState} />
-          </AppLayout>
-        </DepartmentProvider>
-        <ChatWidget />
-      </>
+      <DepartmentProvider>
+        <AppLayout sidebar={sidebar} scrollAreaClassName="overflow-hidden">
+          <Outlet context={boardState} />
+        </AppLayout>
+      </DepartmentProvider>
     </RequireAuth>
   )
 }

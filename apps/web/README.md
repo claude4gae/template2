@@ -44,6 +44,9 @@ npm run preview
 | `BACKEND_API_URL` | 컨테이너 내부 API 주소 |
 | `VITE_ASSISTANT_API_URL` | Assistant 채팅 endpoint |
 | `VITE_AIRFLOW_BASE_URL` | 브라우저용 Airflow 경로 |
+| `VITE_PORTAL_PMX_URL` | Portal PMx 외부 링크. 비어 있으면 숨김 |
+| `VITE_PORTAL_MOSAIC_URL` | Portal MOSAIC 외부 링크. 비어 있으면 숨김 |
+| `VITE_PORTAL_CONFLUENCE_URL` | Portal Confluence 외부 링크. 비어 있으면 숨김 |
 
 ## 코드 구조
 
@@ -71,7 +74,7 @@ npm run preview
 ## 개발 규칙 요약
 
 - feature 외부 공개는 `src/features/<feature>/index.js` named export만 사용합니다.
-- 다른 feature를 import할 때는 `@/features/<feature>` facade만 사용합니다.
+- feature 내부 파일은 다른 feature를 import하지 않습니다.
 - JSX 파일은 `.jsx`, 비 JSX 파일은 `.js`를 사용합니다.
 - Tailwind와 design token을 우선 사용하고, 임의 HEX/inline style은 피합니다.
 

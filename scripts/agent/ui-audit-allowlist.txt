@@ -9,7 +9,7 @@
 ^apps/web/src/features/emails/components/EmailInboxView\.jsx:.*style=
 ^apps/web/src/features/emails/components/EmailMailboxMembersDatatable\.jsx:.*style=.*width
 ^apps/web/src/features/errors/components/ErrorPage04\.jsx:.*h-screen
-^apps/web/src/features/home/components/GlobalNavbarShell\.jsx:.*h-screen
+^apps/web/src/components/layout/PortalGlobalShell\.jsx:.*h-screen
 ^apps/web/src/features/home/components/Team\.jsx:.*style=
 ^apps/web/src/features/line-dashboard/components/DataTable\.jsx:.*style=.*(width|tableLayout)
 ^apps/web/src/features/line-dashboard/components/DataTable\.jsx:.*style=\{toWidthStyle

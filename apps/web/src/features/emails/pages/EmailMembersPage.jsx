@@ -2,7 +2,7 @@ import { useSearchParams } from "react-router-dom"
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { AccessListCard, useAccountOverview } from "@/features/account"
+import { AccessListCard, useAccountOverview } from "@/lib/account"
 
 import { EmailMailboxMembersDatatable } from "../components/EmailMailboxMembersDatatable"
 import { MailboxAccessCard } from "../components/MailboxAccessCard"

@@ -90,6 +90,8 @@
 ## 경계 규칙
 
 - 프론트 feature 외부 공개는 `apps/web/src/features/<feature>/index.js`를 통합니다.
+- 프론트 feature 내부 파일은 다른 feature를 직접 import하지 않습니다.
+- feature 간 조립은 `apps/web/src/routes`, `apps/web/src/components/layout`, `apps/web/src/lib` 같은 non-feature 계층에서만 수행합니다.
 - React Query는 서버 데이터의 기준이고, Zustand는 feature-local UI 상태만 저장합니다.
 - 백엔드 view는 HTTP 처리만 맡고, 비즈니스 로직은 service/selector에 둡니다.
 - selector는 읽기 전용, service는 쓰기/transaction/외부 호출을 담당합니다.

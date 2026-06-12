@@ -4,7 +4,6 @@ import { Outlet } from "react-router-dom"
 
 import { TeamSwitcher } from "@/components/common"
 import { AppShellLayout } from "@/components/layout"
-import { ChatWidget } from "@/features/assistant"
 import { RequireAuth, useAuth } from "@/lib/auth"
 import { buildNavigationConfig } from "@/lib/config/navigationConfig"
 import {
@@ -23,13 +22,10 @@ export function LineDashboardShell({
 }) {
   return (
     <RequireAuth>
-      <>
-        <LineDashboardShellContent
-          contentMaxWidthClass={contentMaxWidthClass}
-          scrollAreaClassName={scrollAreaClassName}
-        />
-        <ChatWidget />
-      </>
+      <LineDashboardShellContent
+        contentMaxWidthClass={contentMaxWidthClass}
+        scrollAreaClassName={scrollAreaClassName}
+      />
     </RequireAuth>
   )
 }

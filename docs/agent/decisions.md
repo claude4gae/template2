@@ -7,6 +7,8 @@
 - `.codex/skills/.system/**`은 로컬 시스템 skill로 보고 추적/공유 대상에서 제외한다.
 - frontend UI 변경 후에는 `npm run agent:audit:ui` 또는 `scripts/agent/check_ui_consistency.sh`를 실행한다.
 - frontend feature import/export/routing 변경 후에는 `npm run agent:audit:web-boundary` 또는 `scripts/agent/check_frontend_boundaries.sh`를 실행한다.
+- PR에서는 `.github/workflows/feature-guardrails.yml`의 feature boundary, lint, build 검사를 통과해야 한다.
+- AI가 feature 작업을 수행할 때는 `docs/agent/ai-feature-workflow.md`의 기본 프롬프트와 검증 절차를 따른다.
 - 큰 작업은 `docs/agent/PLANS.md`의 ExecPlan 기준을 따른다.
 - eval은 `docs/agent/evals/*`의 작업/성공 기준을 기준으로 누적한다.
 

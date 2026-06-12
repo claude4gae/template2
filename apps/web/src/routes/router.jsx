@@ -1,21 +1,22 @@
 // 파일 경로: src/routes/router.jsx
-import { createBrowserRouter } from "react-router-dom"
+import { createBrowserRouter, Outlet } from "react-router-dom"
 
-import { AuthAutoLoginGate } from "@/lib/auth"
+import { PortalGlobalShell } from "@/components/layout"
+import { AuthAutoLoginGate, useAuth } from "@/lib/auth"
 
 import { appstoreRoutes } from "@/features/appstore"
 import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
 import { fdcTrendRoutes } from "@/features/fdc-trend"
-import { GlobalNavbarShell, homeRoutes } from "@/features/home"
+import { homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
 import { pmComparisonRoutes } from "@/features/pm-comparison"
 import { teamstaffRoutes } from "@/features/teamstaff"
 import { timelineRoutes } from "@/features/timeline"
 import { vocRoutes } from "@/features/voc"
-import { assistantRoutes } from "@/features/assistant"
-import { emailsRoutes } from "@/features/emails"
+import { ChatWidget, assistantRoutes } from "@/features/assistant"
+import { emailsRoutes, useEmailMailboxes } from "@/features/emails"
 import { accountRoutes } from "@/features/account"
 
 const protectedFeatureRoutes = [
@@ -30,35 +31,67 @@ const protectedFeatureRoutes = [
   ...accountRoutes,
 ]
 
-const protectedAppRoutes = {
-  element: <AuthAutoLoginGate />,
-  children: protectedFeatureRoutes,
+function AssistantWidgetOutlet() {
+  const { user } = useAuth()
+  const { data: mailboxesData } = useEmailMailboxes({ enabled: Boolean(user) })
+  const availableMailboxes = Array.isArray(mailboxesData?.results)
+    ? mailboxesData.results
+    : []
+
+  return (
+    <>
+      <Outlet context={{ availableMailboxes }} />
+      {user ? <ChatWidget availableMailboxes={availableMailboxes} /> : null}
+    </>
+  )
 }
 
-const timelineProtectedRoutes = {
+function AssistantMailboxOutlet() {
+  const { user } = useAuth()
+  const { data: mailboxesData } = useEmailMailboxes({ enabled: Boolean(user) })
+  const availableMailboxes = Array.isArray(mailboxesData?.results)
+    ? mailboxesData.results
+    : []
+
+  return <Outlet context={{ availableMailboxes }} />
+}
+
+const assistantWidgetRoutes = {
   element: <AuthAutoLoginGate />,
-  children: timelineRoutes,
+  children: [
+    {
+      element: <AssistantWidgetOutlet />,
+      children: [
+        ...homeRoutes,
+        ...protectedFeatureRoutes,
+        ...timelineRoutes,
+      ],
+    },
+  ],
 }
 
 const assistantProtectedRoutes = {
   element: <AuthAutoLoginGate />,
-  children: assistantRoutes,
+  children: [
+    {
+      element: <AssistantMailboxOutlet />,
+      children: assistantRoutes,
+    },
+  ],
 }
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <GlobalNavbarShell />,
+    element: <PortalGlobalShell />,
     errorElement: (
-      <GlobalNavbarShell>
+      <PortalGlobalShell>
         <RouteErrorPage />
-      </GlobalNavbarShell>
+      </PortalGlobalShell>
     ),
     children: [
-      ...homeRoutes,
       ...authRoutes,
-      protectedAppRoutes,
-      timelineProtectedRoutes,
+      assistantWidgetRoutes,
       assistantProtectedRoutes,
       ...errorRoutes,
     ],

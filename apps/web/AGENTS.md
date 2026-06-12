@@ -26,7 +26,9 @@ These rules apply to `apps/web/**`.
 - `apps/web/src/features/<feature>/index.js` is the only public surface.
 - Named exports only.
 - `export *` is forbidden.
-- Cross-feature imports must use `import { something } from "@/features/<otherFeature>"`.
+- Feature-internal files must not import another feature, including another feature's facade.
+- Cross-feature composition is allowed only from non-feature orchestration layers such as `routes/*`, `components/layout/*`, or `lib/*`.
+- When a non-feature orchestration layer imports a feature, it must use `import { something } from "@/features/<otherFeature>"`.
 - Explicit `@/features/<otherFeature>/index.js` import is forbidden.
 - Direct imports to another feature's internals are forbidden (`components/*`, `pages/*`, `api/*`, etc.).
 
@@ -40,7 +42,7 @@ These rules apply to `apps/web/**`.
   - `apps/web/src/components/layout/*`
   - `apps/web/src/components/common/*`
   - `apps/web/src/lib/*`
-  - `apps/web/src/features/<otherFeature>` (facade only)
+  - `apps/web/src/features/<otherFeature>` (facade only from non-feature orchestration layers)
 
 ## UI, Route, and Data Rules
 - Do not manually edit `apps/web/src/components/ui/**` unless explicitly requested via shadcn CLI flow.

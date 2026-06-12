@@ -4,7 +4,6 @@ import { toast } from "sonner"
 
 import { TeamSwitcher } from "@/components/common"
 import { AppShellLayout } from "@/components/layout"
-import { ChatWidget } from "@/features/assistant"
 import { RequireAuth, useAuth } from "@/lib/auth"
 import { buildNavigationConfig } from "@/lib/config/navigationConfig"
 import {
@@ -103,15 +102,12 @@ function buildAffiliationOptions(
 export function EmailsShell({ contentMaxWidthClass, scrollAreaClassName }) {
   return (
     <RequireAuth>
-      <>
-        <EmailsShellContent
-          contentMaxWidthClass={contentMaxWidthClass}
-          scrollAreaClassName={scrollAreaClassName}
-        >
-          <Outlet />
-        </EmailsShellContent>
-        <ChatWidget />
-      </>
+      <EmailsShellContent
+        contentMaxWidthClass={contentMaxWidthClass}
+        scrollAreaClassName={scrollAreaClassName}
+      >
+        <Outlet />
+      </EmailsShellContent>
     </RequireAuth>
   )
 }

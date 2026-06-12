@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useLocation } from "react-router-dom"
+import { useLocation, useOutletContext } from "react-router-dom"
 import { Bot, PanelLeft, Plus, RefreshCw, Settings } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +15,10 @@ import { sortRoomsByRecentQuestion } from "../utils/chatRooms"
 
 export function ChatPage() {
   const location = useLocation()
+  const outletContext = useOutletContext() || {}
+  const availableMailboxes = Array.isArray(outletContext.availableMailboxes)
+    ? outletContext.availableMailboxes
+    : []
   const ragSettings = useAssistantRagIndex()
   const handoffMessages = Array.isArray(location?.state?.initialMessages)
     ? location.state.initialMessages
@@ -267,7 +271,11 @@ export function ChatPage() {
               </div>
             ) : (
               <>
-                <ChatMessages messages={messages} isSending={isSending} />
+                <ChatMessages
+                  messages={messages}
+                  isSending={isSending}
+                  availableMailboxes={availableMailboxes}
+                />
 
                 <ChatErrorBanner message={errorMessage} onDismiss={clearError} />
 

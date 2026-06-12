@@ -1,19 +1,14 @@
-import { AuthAutoLoginGate } from "@/lib/auth"
-import { HomeShell } from "./components/HomeShell"
+import { PortalHomeShell } from "@/components/layout"
+
 import HomePage from "./pages/HomePage"
 
 export const homeRoutes = [
   {
-    element: <AuthAutoLoginGate />,
+    element: <PortalHomeShell />,
     children: [
       {
-        element: <HomeShell />,
-        children: [
-          {
-            index: true,
-            element: <HomePage />,
-          },
-        ],
+        index: true,
+        element: <HomePage />,
       },
     ],
   },

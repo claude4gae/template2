@@ -15,7 +15,7 @@ import {
   clampSize,
 } from "../utils/chatWidgetBounds"
 
-export function ChatWidget() {
+export function ChatWidget({ availableMailboxes = [] }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
@@ -553,6 +553,7 @@ export function ChatWidget() {
       onCreateRoom={createRoom}
       messages={messages}
       isSending={isSending}
+      availableMailboxes={availableMailboxes}
       errorMessage={errorMessage}
       onClearError={clearError}
       inputRef={inputRef}

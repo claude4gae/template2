@@ -30,6 +30,7 @@
 | `docs/modules/*.md` | 모듈별 기능, 권한, 화면, 데이터, 동작 흐름 |
 | `docs/operations.md` | 로컬 실행, 테스트, 관리 명령, 점검 절차 |
 | `docs/integrations.md` | ADFS, RAG, LLM, Mail, Jira, Messenger, MinIO, Airflow 연동 |
+| `docs/agent/ai-feature-workflow.md` | 브랜치에서 AI가 작업할 때 지켜야 할 feature 독립성 지침 |
 
 ## 모듈 목록
 

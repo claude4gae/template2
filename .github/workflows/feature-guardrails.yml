@@ -1,0 +1,51 @@
+name: Feature Guardrails
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  frontend-boundary:
+    name: Frontend boundary, lint, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Check feature boundaries
+        run: npm run agent:audit:web-boundary
+
+      - name: Lint web
+        run: npm run web:lint
+
+      - name: Build web
+        run: npm run web:build
+
+  backend-syntax:
+    name: Backend syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile backend Python
+        run: python -m compileall -q apps/api

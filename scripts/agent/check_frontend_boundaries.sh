@@ -20,6 +20,40 @@ else
 fi
 echo
 
+echo "== Cross-feature facade imports inside features =="
+facade_import_output="$(
+  python3 - "$FEATURES_DIR" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+features_dir = Path(sys.argv[1])
+patterns = [
+    re.compile(r"\b(?:import|export)\b[\s\S]*?\bfrom\s*[\"']@/features/"),
+    re.compile(r"\bimport\s*\(\s*[\"']@/features/"),
+]
+
+for path in sorted(features_dir.rglob("*")):
+    if path.suffix not in {".js", ".jsx"}:
+        continue
+    text = path.read_text(encoding="utf-8")
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            line_no = text.count("\n", 0, match.start()) + 1
+            line = text.splitlines()[line_no - 1].strip()
+            print(f"{path}:{line_no}:{line}")
+PY
+)"
+if [[ -n "$facade_import_output" ]]; then
+  echo "$facade_import_output"
+  status=1
+else
+  echo "OK"
+fi
+echo
+
 echo "== Feature index export-star usage =="
 facade_status=0
 while IFS= read -r facade_file; do

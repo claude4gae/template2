@@ -56,27 +56,18 @@ class AccountConfig(AppConfig):
 
             부작용:
             - 사용자 프로필 생성 가능
-            - 외부 Drone SOP 수신인 row 승격 가능
 
             오류:
             - 없음
             """
             if created:
                 ensure_user_profile(instance)
-            update_fields = kwargs.get("update_fields")
-            if not created and update_fields is not None and "knox_id" not in update_fields:
-                return
-            try:
-                from api.drone import services as drone_services
-
-                drone_services.promote_drone_sop_external_recipients_for_user(user=instance)
-            except (OperationalError, ProgrammingError):
-                return
 
         post_save.connect(
             create_profile,
             sender=get_user_model(),
             dispatch_uid="account_create_profile",
+            weak=False,
         )
 
         # -----------------------------------------------------------------------------
@@ -91,6 +82,7 @@ class AccountConfig(AppConfig):
             ensure_default_superuser,
             sender=self,
             dispatch_uid="account_ensure_default_superuser",
+            weak=False,
         )
 
     def _ensure_default_superuser(self) -> None:

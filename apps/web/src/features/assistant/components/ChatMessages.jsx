@@ -2,17 +2,19 @@ import { useEffect, useRef } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
 import { Badge } from "@/components/ui/badge"
-import { useEmailMailboxes } from "@/features/emails"
 
 import { AssistantStatusIndicator } from "./AssistantStatusIndicator"
 import { formatAssistantMessage } from "../utils/formatAssistantMessage"
 import { buildEmailSourceUrl } from "../utils/buildEmailSourceUrl"
 
-export function ChatMessages({ messages = [], isSending, fillBubbles = false }) {
+export function ChatMessages({
+  messages = [],
+  isSending,
+  fillBubbles = false,
+  availableMailboxes = [],
+}) {
   const messagesEndRef = useRef(null)
   const navigate = useNavigate()
-  const { data: mailboxesData } = useEmailMailboxes()
-  const availableMailboxes = Array.isArray(mailboxesData?.results) ? mailboxesData.results : []
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })

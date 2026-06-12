@@ -27,6 +27,7 @@ export function ChatWidgetPanel({
   onCreateRoom,
   messages,
   isSending,
+  availableMailboxes = [],
   errorMessage,
   onClearError,
   inputRef,
@@ -287,7 +288,12 @@ export function ChatWidgetPanel({
               </div>
             ) : (
               <>
-                <ChatMessages messages={messages} isSending={isSending} fillBubbles />
+                <ChatMessages
+                  messages={messages}
+                  isSending={isSending}
+                  fillBubbles
+                  availableMailboxes={availableMailboxes}
+                />
 
                 <ChatErrorBanner message={errorMessage} onDismiss={onClearError} />
 

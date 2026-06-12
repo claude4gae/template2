@@ -39,7 +39,7 @@
 | `store/` | feature-local UI 상태 |
 | `utils/` | feature 내부 pure helper |
 
-다른 feature에서 import할 때는 `@/features/<feature>` facade만 사용합니다.
+feature 내부 파일은 다른 feature를 import하지 않습니다. 여러 feature를 함께 조립해야 할 때는 `apps/web/src/routes`, `apps/web/src/components/layout`, `apps/web/src/lib` 같은 non-feature 계층에서만 `@/features/<feature>` facade를 사용합니다.
 
 ## Route tree
 
@@ -91,4 +91,5 @@
 - route 추가/변경: `docs/inventory.md`, `docs/frontend.md`, 해당 `docs/modules/*.md`
 - API client 변경: 해당 `docs/api/*.md`, 해당 `docs/modules/*.md`
 - feature facade 변경: `docs/frontend.md`, 필요 시 boundary audit 결과
+- feature 간 import 정책 변경: `apps/web/AGENTS.md`, `docs/architecture.md`, boundary audit script
 - 주요 화면 흐름 변경: 해당 `docs/modules/*.md`

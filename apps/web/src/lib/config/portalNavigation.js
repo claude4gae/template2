@@ -1,0 +1,58 @@
+import {
+  BookOpenIcon,
+  LayoutGridIcon,
+  MessageSquareIcon,
+} from "lucide-react"
+
+function readEnvValue(key) {
+  if (typeof import.meta !== "undefined" && import.meta.env && key in import.meta.env) {
+    const value = import.meta.env[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+  if (typeof process !== "undefined" && process.env && key in process.env) {
+    const value = process.env[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+  return ""
+}
+
+function externalLink(title, envKey) {
+  const href = readEnvValue(envKey)
+  return href ? { title, href, external: true } : null
+}
+
+function compactItems(items) {
+  return items.filter(Boolean)
+}
+
+export const portalNavigationItems = [
+  {
+    title: "Apps",
+    icon: LayoutGridIcon,
+    items: compactItems([
+      { title: "Appstore", href: "/appstore" },
+      { title: "ESOP Dashboard", href: "/esop_dashboard" },
+      { title: "L3 Spider", href: "/l3_spider" },
+      { title: "PM SPIDER", href: "/pm-comparison" },
+      { title: "Timeline", href: "/timeline" },
+      { title: "메일함", href: "/emails/inbox" },
+      externalLink("PMx", "VITE_PORTAL_PMX_URL"),
+    ]),
+  },
+  {
+    title: "About Us",
+    icon: BookOpenIcon,
+    items: compactItems([
+      { title: "Team", href: "/teamstaff" },
+      externalLink("Etch MOSAIC", "VITE_PORTAL_MOSAIC_URL"),
+      externalLink("Etch Confluence", "VITE_PORTAL_CONFLUENCE_URL"),
+    ]),
+  },
+  {
+    title: "Contacts",
+    icon: MessageSquareIcon,
+    items: [
+      { title: "VoE", href: "/voc" },
+    ],
+  },
+]

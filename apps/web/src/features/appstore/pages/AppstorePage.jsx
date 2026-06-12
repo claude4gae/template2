@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
-import { useAuth } from "@/features/auth"
+import { useAuth } from "@/lib/auth"
 import { useAppstorePageActions } from "../hooks/useAppstorePageActions"
 import { useAppstoreMutations } from "../hooks/useAppstoreMutations"
 import { useAppDetailQuery, useAppsQuery } from "../hooks/useAppstoreQueries"

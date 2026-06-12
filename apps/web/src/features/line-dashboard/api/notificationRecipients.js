@@ -4,7 +4,7 @@ import { buildBackendUrl, safeParseJson } from "@/lib/api"
 
 import { buildApiError } from "./apiError"
 
-export { fetchAccountUserPool } from "@/features/account"
+export { fetchAccountUserPool } from "@/lib/account"
 
 const RECIPIENTS_PATH = "/api/v1/line-dashboard/notification-recipients"
 const RECIPIENT_PERMISSIONS_PATH = "/api/v1/line-dashboard/notification-recipient-permissions"
