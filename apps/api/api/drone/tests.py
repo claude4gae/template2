@@ -4152,6 +4152,21 @@ class DroneSopDummySeedCommandTests(TestCase):
             DroneEarlyInform.objects.filter(line_id__startswith="DTEST-").count(),
             2,
         )
+        for target_name in ("DTEST_BETA", "DTEST_DELTA"):
+            target = DroneSopTarget.objects.get(target_user_sdwt_prod=target_name)
+            channel_keys = {
+                config.channel: config.template_key
+                for config in target.channel_configs.filter(
+                    channel__in=(
+                        DroneSopTargetChannelConfig.Channels.JIRA,
+                        DroneSopTargetChannelConfig.Channels.MAIL,
+                        DroneSopTargetChannelConfig.Channels.MESSENGER,
+                    )
+                )
+            }
+            self.assertEqual(channel_keys[DroneSopTargetChannelConfig.Channels.JIRA], "H1")
+            self.assertEqual(channel_keys[DroneSopTargetChannelConfig.Channels.MAIL], "H1")
+            self.assertEqual(channel_keys[DroneSopTargetChannelConfig.Channels.MESSENGER], "H1")
         self.assertTrue(
             DroneSopTargetDispatch.objects.filter(
                 sop__line_id__startswith="DTEST-",
