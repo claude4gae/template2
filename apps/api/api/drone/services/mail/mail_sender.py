@@ -18,8 +18,7 @@ from api.common.services import send_knox_mail_api
 
 from ..shared.inform_context import build_inform_context
 from ..shared.utils import _truncate_text
-from ..jira.templates.jira_template_registry import SUMMARY_BUILDERS
-from .templates.mail_template_registry import MAIL_TEMPLATE_SOURCES
+from .templates.mail_template_registry import MAIL_SUBJECT_BUILDERS, MAIL_TEMPLATE_SOURCES
 
 
 _TEMPLATE_ENGINE = Engine(autoescape=True)
@@ -67,13 +66,13 @@ def _render_mail_body(*, template_key: str, row: dict[str, Any]) -> str:
 def _build_mail_subject(*, template_key: str, row: dict[str, Any]) -> str:
     """메일 제목을 생성합니다."""
 
-    summary_builder = SUMMARY_BUILDERS.get(template_key)
-    if not callable(summary_builder):
-        raise ValueError(f"Unsupported mail summary key: {template_key!r}")
-    summary = summary_builder(row)
-    if not isinstance(summary, str):
-        summary = str(summary)
-    return _truncate_text(summary.strip(), 255)
+    subject_builder = MAIL_SUBJECT_BUILDERS.get(template_key)
+    if not callable(subject_builder):
+        raise ValueError(f"Unsupported mail subject key: {template_key!r}")
+    subject = subject_builder(row)
+    if not isinstance(subject, str):
+        subject = str(subject)
+    return _truncate_text(subject.strip(), 255)
 
 
 def send_drone_sop_mail(

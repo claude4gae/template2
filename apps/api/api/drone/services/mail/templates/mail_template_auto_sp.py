@@ -1,12 +1,16 @@
 # =============================================================================
-# 모듈 설명: Drone SOP 메일 전용 본문 템플릿을 제공합니다.
-# - 주요 대상: BODY_TEMPLATE
-# - 핵심 전제: 메일은 Defect 링크 텍스트 대신 이미지 미리보기를 우선 표시합니다.
+# 모듈 설명: Auto S/P용 메일 본문/제목 템플릿을 제공합니다.
+# - 주요 대상: TEMPLATE_KEY, SUBJECT_TEMPLATE, BODY_TEMPLATE, build_subject
+# - 불변 조건: 제목은 요청된 대괄호 구분 형식을 유지합니다.
 # =============================================================================
 
-"""Drone SOP 메일 공통 본문 템플릿 정의 모음."""
+"""Auto S/P 메일 템플릿 정의 모음."""
 from __future__ import annotations
 
+from typing import Any
+
+TEMPLATE_KEY = "auto_sp"
+SUBJECT_TEMPLATE = "[Auto S/P][{step_seq}][{eqpid}][{lot_id}][{ppid}]"
 BODY_TEMPLATE = """<div>
   <div style="margin:8px 0;">
     <table style="border:1px solid #ccc; border-collapse:collapse; width:auto;">
@@ -76,4 +80,36 @@ BODY_TEMPLATE = """<div>
 """
 
 
-__all__ = ["BODY_TEMPLATE"]
+def _first_row_value(row: dict[str, Any], *keys: str) -> str:
+    """행 데이터에서 첫 번째 유효 문자열 값을 반환합니다."""
+
+    for key in keys:
+        value = str(row.get(key) or "").strip()
+        if value:
+            return value
+    return "-"
+
+
+def build_subject(row: dict[str, Any]) -> str:
+    """Auto S/P 메일 제목 문자열을 생성합니다.
+
+    인자:
+        row: Drone SOP 행 dict(행 데이터).
+
+    반환:
+        메일 제목 문자열.
+
+    부작용:
+        없음. 순수 문자열 구성입니다.
+    """
+
+    context = {
+        "step_seq": _first_row_value(row, "step_seq", "main_step"),
+        "eqpid": _first_row_value(row, "eqpid", "eqp_id"),
+        "lot_id": _first_row_value(row, "lot_id"),
+        "ppid": _first_row_value(row, "ppid"),
+    }
+    return SUBJECT_TEMPLATE.format_map(context)
+
+
+__all__ = ["TEMPLATE_KEY", "SUBJECT_TEMPLATE", "BODY_TEMPLATE", "build_subject"]

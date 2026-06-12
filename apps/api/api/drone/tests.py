@@ -7271,8 +7271,8 @@ class DroneSopJiraSummaryTests(TestCase):
             self.assertEqual(jira_template_h1.find_layer("AB058120"), "AA")
             self.assertEqual(jira_template_h1.find_layer("AB058121"), "[BEOL 인폼 필요]")
 
-    def test_mail_template_h1_reuses_jira_layer_summary(self) -> None:
-        """mail H1 템플릿이 Jira H1의 layer 요약 함수를 재사용하는지 확인합니다."""
+    def test_mail_template_h1_builds_layer_subject(self) -> None:
+        """mail H1 템플릿이 자체 layer 제목을 생성하는지 확인합니다."""
         from api.drone.services.mail.templates import mail_template_h1
 
         row = {
@@ -7282,7 +7282,68 @@ class DroneSopJiraSummaryTests(TestCase):
             "lot_id": "LOT.1",
         }
         self.assertEqual(mail_template_h1.find_layer("AB000320"), "FA")
-        self.assertEqual(mail_template_h1.build_summary(row), "S FA A-000320 LOT.1")
+        self.assertEqual(mail_template_h1.build_subject(row), "S FA A-000320 LOT.1")
+
+    def test_mail_template_common_builds_default_subject(self) -> None:
+        """common 메일 템플릿이 기존 기본 제목 형식을 유지하는지 확인합니다."""
+        from api.drone.services.mail.mail_sender import _build_mail_subject
+        from api.drone.services.mail.templates import mail_template_common
+        from api.drone.services.mail.templates.mail_template_registry import (
+            MAIL_SUBJECT_BUILDERS,
+            MAIL_TEMPLATE_SOURCES,
+        )
+
+        row = {
+            "sdwt_prod": "SDWT",
+            "main_step": "ST003",
+            "eqp_id": "EQP",
+            "chamber_ids": "1",
+            "lot_id": "LOT.1",
+            "ppid": "PPID",
+        }
+
+        self.assertIs(MAIL_TEMPLATE_SOURCES["common"], mail_template_common.BODY_TEMPLATE)
+        self.assertIs(MAIL_SUBJECT_BUILDERS["common"], mail_template_common.build_subject)
+        self.assertEqual(mail_template_common.build_subject(row), "S 003 EQP-1")
+        self.assertEqual(_build_mail_subject(template_key="common", row=row), "S 003 EQP-1")
+
+    def test_mail_template_auto_sp_builds_requested_subject(self) -> None:
+        """Auto S/P 메일 템플릿이 요청된 제목 형식을 생성하는지 확인합니다."""
+        from api.drone.services.mail.templates import mail_template_auto_sp
+
+        row = {
+            "main_step": "ST003",
+            "eqp_id": "EQP",
+            "lot_id": "LOT.1",
+            "ppid": "PPID",
+        }
+        subject = mail_template_auto_sp.build_subject(row)
+
+        self.assertEqual(subject, "[Auto S/P][ST003][EQP][LOT.1][PPID]")
+
+    def test_mail_sender_accepts_auto_sp_template_key(self) -> None:
+        """메일 발송 제목 생성기가 Auto S/P 템플릿 키를 지원하는지 확인합니다."""
+        from api.drone.services.mail.mail_sender import _build_mail_subject
+        from api.drone.services.mail.templates import mail_template_auto_sp
+        from api.drone.services.mail.templates.mail_template_registry import (
+            MAIL_SUBJECT_BUILDERS,
+            MAIL_TEMPLATE_SOURCES,
+        )
+
+        row = {
+            "step_seq": "ST009",
+            "eqpid": "EQP9",
+            "lot_id": "LOT.9",
+            "ppid": "PPID9",
+        }
+
+        self.assertIn("auto_sp", MAIL_TEMPLATE_SOURCES)
+        self.assertIs(MAIL_TEMPLATE_SOURCES["auto_sp"], mail_template_auto_sp.BODY_TEMPLATE)
+        self.assertIs(MAIL_SUBJECT_BUILDERS["auto_sp"], mail_template_auto_sp.build_subject)
+        self.assertEqual(
+            _build_mail_subject(template_key="auto_sp", row=row),
+            "[Auto S/P][ST009][EQP9][LOT.9][PPID9]",
+        )
 
 
 class DroneSopMessengerLineATemplateTests(TestCase):
