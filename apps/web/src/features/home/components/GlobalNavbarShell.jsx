@@ -11,7 +11,7 @@ export function GlobalNavbarShell({ children }) {
           <HomeNavbar navigationItems={navigationItems} />
         </div>
       </header>
-      <main className="flex-1 min-h-0 overflow-hidden pt-2">
+      <main className="flex-1 min-h-0 overflow-y-auto pt-2">
         {children ?? <Outlet />}
       </main>
     </div>

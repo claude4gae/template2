@@ -13,6 +13,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from adfs_settings import (
+    AUTO_SIGN_IN,
     CLIENT_ID,
     DEFAULT_BUSNAME,
     DEFAULT_DEPT,
@@ -130,6 +131,25 @@ def render_login_form(request: Request) -> str:
     """
 
 
+def render_callback_form(*, redirect_uri: str, id_token: str, state: str) -> str:
+    """OIDC form_post callback으로 자동 제출되는 HTML을 생성합니다."""
+
+    return f"""
+    <html>
+      <head>
+        <title>ADFS redirect</title>
+      </head>
+      <body>
+        <form id="callback-form" method="post" action="{html.escape(redirect_uri)}">
+          <input type="hidden" name="id_token" value="{html.escape(id_token)}" />
+          <input type="hidden" name="state" value="{html.escape(state)}" />
+        </form>
+        <script>document.getElementById('callback-form').submit();</script>
+      </body>
+    </html>
+    """
+
+
 def build_id_token(
     *,
     email: str,
@@ -194,6 +214,34 @@ async def authorize_form(request: Request) -> HTMLResponse:
         raise HTTPException(status_code=400, detail="missing redirect_uri")
     if CLIENT_ID and request.query_params.get("client_id") not in {"", CLIENT_ID}:
         raise HTTPException(status_code=400, detail="invalid_client")
+    if AUTO_SIGN_IN:
+        params = request.query_params
+        id_token = build_id_token(
+            email=params.get("email") or DEFAULT_EMAIL,
+            name=params.get("name") or DEFAULT_NAME,
+            sabun=params.get("sabun") or DEFAULT_SABUN,
+            loginid=params.get("loginid") or DEFAULT_LOGINID,
+            deptname=params.get("deptname") or DEFAULT_DEPT,
+            deptid=params.get("deptid") or DEFAULT_DEPTID,
+            username_en=params.get("username_en") or DEFAULT_USERNAME_EN,
+            givenname=params.get("givenname") or DEFAULT_GIVENNAME,
+            surname=params.get("surname") or DEFAULT_SURNAME,
+            grd_name=params.get("grdName") or DEFAULT_GRDNAME,
+            grdname_en=params.get("grdname_en") or DEFAULT_GRDNAME_EN,
+            busname=params.get("busname") or DEFAULT_BUSNAME,
+            intcode=params.get("intcode") or DEFAULT_INTCODE,
+            intname=params.get("intname") or DEFAULT_INTNAME,
+            origincomp=params.get("origincomp") or DEFAULT_ORIGINCOMP,
+            employeetype=params.get("employeetype") or DEFAULT_EMPLOYEETYPE,
+            nonce=params.get("nonce") or secrets.token_urlsafe(16),
+        )
+        return HTMLResponse(
+            render_callback_form(
+                redirect_uri=redirect_uri,
+                id_token=id_token,
+                state=params.get("state") or "",
+            )
+        )
     return HTMLResponse(render_login_form(request))
 
 
@@ -246,20 +294,11 @@ async def authorize(
         nonce=nonce_value,
     )
 
-    html_body = f"""
-    <html>
-      <head>
-        <title>ADFS redirect</title>
-      </head>
-      <body>
-        <form id="callback-form" method="post" action="{html.escape(redirect_uri)}">
-          <input type="hidden" name="id_token" value="{html.escape(id_token)}" />
-          <input type="hidden" name="state" value="{html.escape(state)}" />
-        </form>
-        <script>document.getElementById('callback-form').submit();</script>
-      </body>
-    </html>
-    """
+    html_body = render_callback_form(
+        redirect_uri=redirect_uri,
+        id_token=id_token,
+        state=state,
+    )
     return HTMLResponse(content=html_body)
 
 

@@ -2,20 +2,12 @@
 // PM SPIDER 화면 표시와 요청 payload 변환 유틸입니다.
 
 export const DEFAULT_PM_FORM = {
-  lineId: "LINE_DEMO",
-  eqpId: "EQP_DEMO_01",
-  fdcBin: "BIN_DEMO",
-  type: "",
-  ppid: "PPID_DEMO",
-  recipeId: "RCP_DEMO",
-  pmTimestamp: "2026-06-02",
-  beforeHours: "6",
-  afterHours: "6",
-  traceParamNames: "",
-  dtValues: "2026-06-02",
-  traceDataSource: "trace",
-  oesDataSource: "oes",
-  limit: "500",
+  lineId: "",
+  eqpId: "",
+  fdcBin: "",
+  ppid: "",
+  recipeId: "",
+  pmTimestamp: "",
 }
 
 export const PM_SPIDER_CATEGORIES = [
@@ -70,21 +62,16 @@ export function hasRequiredPmFilters(form) {
 }
 
 export function buildPmComparisonPayload(form) {
+  if (!hasRequiredPmFilters(form)) return null
   return {
-    lineId: form.lineId.trim(),
-    eqpId: form.eqpId.trim(),
-    fdcBin: form.fdcBin.trim(),
-    type: form.type.trim(),
-    ppid: form.ppid.trim(),
-    recipeId: form.recipeId.trim(),
+    lineId: form.lineId,
+    eqpId: form.eqpId,
+    fdcBin: form.fdcBin || "",
+    ppid: form.ppid || "",
+    recipeId: form.recipeId || "",
     pmTimestamp: form.pmTimestamp,
-    beforeHours: Number(form.beforeHours || 24),
-    afterHours: Number(form.afterHours || 24),
-    traceParamNames: splitCsv(form.traceParamNames),
-    dtValues: splitCsv(form.dtValues),
-    traceDataSource: form.traceDataSource.trim() || "trace",
-    oesDataSource: form.oesDataSource.trim() || "oes",
-    limit: Number(form.limit || 1200),
+    traceDataSource: "trace",
+    oesDataSource: "oes",
   }
 }
 

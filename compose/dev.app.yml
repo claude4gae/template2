@@ -7,6 +7,7 @@ services:
       DUMMY_ADFS_NAME: Dummy User
       DUMMY_ADFS_CLIENT_ID: dummy-client
       DUMMY_ADFS_PRIVATE_KEY_PATH: /app/dummy_adfs_private.key
+      DUMMY_ADFS_AUTO_SIGN_IN: "1"
       # 개발 환경에서는 더미 ADFS 서버가 HTTP로 구동되므로 발급자도 동일하게 맞춘다
       DUMMY_ADFS_ISSUER: http://localhost:9102/adfs
       DUMMY_LLM_REPLY_TEMPLATE: '개발용 더미 응답입니다. 질문 "{question}" 에 대한 테스트 답변입니다.'
@@ -80,6 +81,7 @@ services:
       - ${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/data/data_movement
       - api_static:/app/staticfiles
       - ${L3_SPIDER_DATA_HOST_PATH:-../data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
+      - ${PM_SPIDER_DATA_HOST_PATH:-../data/pm_spider}:/appdata/apps/esop/data/pm_spider
     ports:
       - "8000:8000"
     entrypoint:
@@ -88,6 +90,7 @@ services:
       - |
           set -e
           python manage.py migrate --noinput
+          python manage.py seed_dummy_account || true
           python manage.py seed_dummy_emails || true
           python manage.py runserver 0.0.0.0:8000
     networks:
@@ -115,6 +118,7 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
+    restart: on-failure
     depends_on:
       web:
         condition: service_started

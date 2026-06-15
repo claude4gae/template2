@@ -13,8 +13,10 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from io import StringIO
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.urls import reverse
@@ -109,6 +111,69 @@ def _grant_access(
         role=role,
         granted_by=granted_by,
     )
+
+
+class SeedDummyAccountCommandTests(TestCase):
+    """더미 계정 seed command가 로컬 로그인 전제 데이터를 준비하는지 검증합니다."""
+
+    def test_seed_dummy_account_creates_user_and_current_affiliation(self) -> None:
+        """더미 사용자와 현재 소속, 외부 스냅샷이 함께 생성되어야 합니다."""
+
+        out = StringIO()
+
+        call_command(
+            "seed_dummy_account",
+            sabun="S-DUMMY",
+            knox_id="dummy.knox",
+            email="dummy.knox@example.com",
+            name="Dummy Knox",
+            department="Development",
+            dept_id="D-DEV",
+            line="DEV",
+            user_sdwt_prod="DEV_DUMMY",
+            stdout=out,
+        )
+
+        User = get_user_model()
+        user = User.objects.get(sabun="S-DUMMY")
+        self.assertEqual(user.knox_id, "dummy.knox")
+        self.assertEqual(user.email, "dummy.knox@example.com")
+        self.assertEqual(user.department, "Development")
+        self.assertTrue(UserProfile.objects.filter(user=user).exists())
+
+        current = UserCurrentAffiliation.objects.select_related("affiliation").get(user=user)
+        self.assertEqual(current.affiliation.department, "Development")
+        self.assertEqual(current.affiliation.line, "DEV")
+        self.assertEqual(current.affiliation.user_sdwt_prod, "DEV_DUMMY")
+        self.assertFalse(current.requires_reconfirm)
+
+        snapshot = ExternalAffiliationSnapshot.objects.get(knox_id="dummy.knox")
+        self.assertEqual(snapshot.department, "Development")
+        self.assertEqual(snapshot.predicted_user_sdwt_prod, "DEV_DUMMY")
+        self.assertIn("Dummy account created", out.getvalue())
+
+    def test_seed_dummy_account_is_idempotent(self) -> None:
+        """같은 입력으로 반복 실행해도 중복 소속이나 사용자를 만들지 않아야 합니다."""
+
+        options = {
+            "sabun": "S-DUMMY2",
+            "knox_id": "dummy.knox2",
+            "email": "dummy.knox2@example.com",
+            "name": "Dummy Knox2",
+            "department": "Development",
+            "dept_id": "D-DEV",
+            "line": "DEV",
+            "user_sdwt_prod": "DEV_DUMMY2",
+        }
+
+        call_command("seed_dummy_account", stdout=StringIO(), **options)
+        call_command("seed_dummy_account", stdout=StringIO(), **options)
+
+        User = get_user_model()
+        self.assertEqual(User.objects.filter(sabun="S-DUMMY2").count(), 1)
+        self.assertEqual(Affiliation.objects.filter(user_sdwt_prod="DEV_DUMMY2").count(), 1)
+        user = User.objects.get(sabun="S-DUMMY2")
+        self.assertEqual(UserCurrentAffiliation.objects.filter(user=user).count(), 1)
 
 
 class AccountEndpointTests(TestCase):

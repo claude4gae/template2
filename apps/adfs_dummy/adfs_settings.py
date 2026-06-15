@@ -41,6 +41,13 @@ def parse_env_int(name: str, fallback: int) -> int:
         return fallback
 
 
+def parse_env_bool(name: str, fallback: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return fallback
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 APP_TITLE = "Dummy ADFS"
 APP_VERSION = "2.1.0"
 
@@ -64,6 +71,7 @@ DEFAULT_INTNAME = os.getenv("DUMMY_ADFS_INTNAME", "Internal")
 DEFAULT_ORIGINCOMP = os.getenv("DUMMY_ADFS_ORIGINCOMP", "LOCAL")
 DEFAULT_EMPLOYEETYPE = os.getenv("DUMMY_ADFS_EMPLOYEETYPE", "employee")
 DEFAULT_CLIENT_IP = os.getenv("DUMMY_ADFS_CLIENT_IP", "127.0.0.1")
+AUTO_SIGN_IN = parse_env_bool("DUMMY_ADFS_AUTO_SIGN_IN", False)
 
 ISSUER = os.getenv("DUMMY_ADFS_ISSUER", "http://localhost:9000/adfs")
 PRIVATE_KEY_PATH = Path(os.getenv("DUMMY_ADFS_PRIVATE_KEY_PATH", "dummy_adfs_private.key")).resolve()

@@ -36,27 +36,25 @@ function EmptyState() {
 export function PmComparisonPage() {
   const [form, setForm] = useState(DEFAULT_PM_FORM)
   const [payload, setPayload] = useState(() => buildPmComparisonPayload(DEFAULT_PM_FORM))
-  const [selectedCategoryId, setSelectedCategoryId] = useState("npw-trace")
-  const [selectedRefPmDates, setSelectedRefPmDates] = useState(null)
+  const [selectedCategoryId, setSelectedCategoryId] = useState("ag")
   const metaQuery = usePmComparisonMeta()
-  const categoryResults = usePmSpiderCategoryResults(payload, selectedRefPmDates)
+  const categoryResults = usePmSpiderCategoryResults(payload, null)
 
   const submit = () => {
     setPayload(buildPmComparisonPayload(form))
-    setSelectedRefPmDates(null)
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-muted/30">
+    <div className="flex min-h-full flex-col bg-muted/30">
       <header className="shrink-0 border-b bg-card px-4 py-3 md:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold tracking-tight">PM SPIDER</h1>
-              <Badge variant="outline">NPW / SP category</Badge>
+              <Badge variant="outline">NPW / PW · P2 / P3</Badge>
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              LINE_ID와 설비 기준으로 NPW TRACE, NPW OES, SP TRACE, SP OES 문제 후보를 랭킹합니다.
+              NPW(ag)/PW(process) × Trace/OES 기준 P2(per-wafer) / P3(집단비교) 이상 파라미터 랭킹.
             </p>
           </div>
           <Button
@@ -83,12 +81,11 @@ export function PmComparisonPage() {
         isResultFetching={categoryResults.isFetching}
         onFormChange={setForm}
         onSubmit={submit}
-        onRefreshMeta={() => metaQuery.refetch()}
       />
 
       <ErrorBanner error={metaQuery.error || categoryResults.error} />
 
-      <main className="flex-1 min-h-0 overflow-y-auto px-4 py-4 md:px-6">
+      <main className="flex-1 px-4 py-4 md:px-6">
         {!payload ? (
           <EmptyState />
         ) : categoryResults.isLoading ? (
@@ -100,8 +97,6 @@ export function PmComparisonPage() {
             categories={categoryResults.categories}
             selectedCategoryId={selectedCategoryId}
             onSelectedCategoryChange={setSelectedCategoryId}
-            selectedRefPmDates={selectedRefPmDates}
-            onSelectedRefPmDatesChange={setSelectedRefPmDates}
             isFetching={categoryResults.isFetching}
           />
         )}
