@@ -5,7 +5,7 @@ services:
     env_file:
       - ../env/minio.env
     volumes:
-      - minio_data:/data
+      - "minio_data:/data"
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -51,11 +51,11 @@ services:
       minio:
         condition: service_started
     volumes:
-      - api_data:/data
-      - ${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/data/data_movement
-      - api_static:/app/staticfiles
-      - ${L3_SPIDER_DATA_HOST_PATH:-../data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
-      - ${PM_COMPARISON_DATA_HOST_PATH:-../data/pm_spider}:/data/pm_spider:ro
+      - "api_data:/data"
+      - "${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/data/data_movement"
+      - "api_static:/app/staticfiles"
+      - "${L3_SPIDER_DATA_HOST_PATH:-../data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro"
+      - "${PM_COMPARISON_DATA_HOST_PATH:-../data/pm_spider}:/data/pm_spider:ro"
     expose:
       - "8000"
     networks:
@@ -96,9 +96,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ../deploy/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - api_static:/var/www/static:ro
-      - ../deploy/nginx/certs:/etc/nginx/certs:ro
+      - "../deploy/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro"
+      - "api_static:/var/www/static:ro"
+      - "../deploy/nginx/certs:/etc/nginx/certs:ro"
     networks:
       - shared-net
 

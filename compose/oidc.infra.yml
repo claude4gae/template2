@@ -15,7 +15,7 @@ services:
       - "${FTP_PORT:-6380}:21"
       - "${FTP_PASV_MIN_PORT:-8076}-${FTP_PASV_MAX_PORT:-8079}:${FTP_PASV_MIN_PORT:-8076}-${FTP_PASV_MAX_PORT:-8079}"
     volumes:
-      - ${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/home/vsftpd/${FTP_USER:-ftpuser}/data_movement
+      - "${DATA_MOVEMENT_HOST_PATH:-../data/data_movement}:/home/vsftpd/${FTP_USER:-ftpuser}/data_movement"
     restart: unless-stopped
     networks:
       shared-net:
