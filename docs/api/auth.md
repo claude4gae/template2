@@ -55,6 +55,7 @@ GET /api/v1/auth/me
 ```
 
 응답에는 사용자 기본 정보와 소속 상태가 포함됩니다.
+로컬 dev에서 `DEV_AUTO_AFFILIATION_ALLOWED=1`이면 소속 없는 로그인 사용자에게 기본 개발 소속이 먼저 보장된 뒤 응답됩니다.
 
 ```json
 {

@@ -32,14 +32,13 @@ PROD_APP_BUILD_SERVICES=api web
 network:
 	docker network create shared-net 2>/dev/null || true
 
-# dev 전체 실행: infra를 먼저 올린 뒤 app을 올립니다.
+# dev 기본 실행: API 의존 DB는 compose가 함께 올리고, Airflow/FTP는 제외합니다.
 dev:
-	$(MAKE) dev-infra-up
 	$(MAKE) dev-app-up
 
-# dev app만 올립니다. infra는 자동으로 올리지 않으므로 필요하면 dev-infra-up을 먼저 실행합니다.
+# dev app을 올립니다. api 의존성은 compose가 확인하므로 DB 준비 이후 API가 시작됩니다.
 dev-app-up: network
-	$(COMPOSE_DEV) up -d --no-deps $(DEV_APP_SERVICES)
+	$(COMPOSE_DEV) up $(DEV_APP_SERVICES)
 
 # dev app 이미지/빌드 산출물만 다시 빌드합니다.
 dev-app-build: network

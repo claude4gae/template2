@@ -24,7 +24,10 @@ make dev
 실행 진입점은 root의 `docker-compose.dev.yml`, `docker-compose.oidc.yml`, `docker-compose.yml`입니다.
 내부 조각 파일은 `compose/` 아래에 두며, 일반 작업에서는 `make` 명령만 사용합니다.
 
-Airflow/DB/FTP 등 인프라는 켜둔 채 백엔드만 자주 재시작하거나 재빌드하려면 아래 명령을 사용합니다.
+`make dev`는 일반 개발에 필요한 Web, API, Nginx, MinIO, dummy 외부계를 실행합니다.
+API가 사용하는 DB는 compose 의존성으로 함께 올라가며, Airflow/FTP는 기본 실행에서 제외합니다.
+
+Airflow/FTP 기반 데이터 적재 작업이 필요할 때만 infra를 별도로 실행합니다.
 
 ```bash
 make dev-infra-up

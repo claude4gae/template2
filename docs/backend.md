@@ -74,12 +74,11 @@
 
 | Command | App | 실행 예 |
 | --- | --- | --- |
-| `seed_dummy_emails` | `api.emails` | `python manage.py seed_dummy_emails` |
+| `ensure_dev_database` | `api.management` | `python manage.py ensure_dev_database` |
 | `process_email_outbox` | `api.emails` | `python manage.py process_email_outbox` |
 | `load_m_tkin_prevent` | `api.data_movement.m_tkin_prevent` | `python manage.py load_m_tkin_prevent` |
 | `load_ctttm_workorder_list` | `api.data_movement.ctttm_workorder_list` | `python manage.py load_ctttm_workorder_list` |
 | `load_ct_process_comment` | `api.data_movement.ct_process_comment` | `python manage.py load_ct_process_comment` |
-| `seed_drone_dummy_data` | `api.drone` | `python manage.py seed_drone_dummy_data` |
 | `seed_drone_targets_from_file` | `api.drone` | `python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run` |
 | `prune_drone_sop` | `api.drone` | `python manage.py prune_drone_sop` |
 | `purge_drone_sop` | `api.drone` | `python manage.py purge_drone_sop --dry-run` |

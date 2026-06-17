@@ -33,6 +33,7 @@ from .affiliation_requests import (
 )
 from .external_sync import sync_external_affiliations
 from .overview import get_account_overview
+from .dev_affiliation import ensure_dev_user_affiliation
 from .users import ensure_user_profile, get_user_by_knox_id, resolve_target_user
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "auto_approve_affiliation_from_snapshot",
     "ensure_self_access",
     "ensure_affiliation_option",
+    "ensure_dev_user_affiliation",
     "ensure_user_profile",
     "get_current_user_sdwt_prod_change",
     "get_account_overview",

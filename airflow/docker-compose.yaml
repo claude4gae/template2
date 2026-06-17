@@ -1,6 +1,7 @@
 # 공통 설정(이미지, 환경변수, 볼륨 등)
 x-airflow-common: &airflow-common
   image: airflow-with-codeserver:2.11.0
+  pull_policy: missing
   build:
     context: .
     dockerfile: Dockerfile

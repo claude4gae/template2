@@ -21,6 +21,7 @@ import jwt
 from django.conf import settings
 from django.http import HttpRequest
 
+import api.account.services as account_services
 import api.auth.selectors as auth_selectors
 from .oidc_claims import (
     extract_user_info_from_claims,
@@ -269,11 +270,12 @@ def auth_me(*, user: Any) -> Dict[str, Any]:
     - Dict[str, Any]: 기존 `/api/v1/auth/me` 응답 payload
 
     부작용:
-    - 없음
+    - 외부망 dev 자동 소속 플래그가 켜져 있으면 기본 개발 소속을 보장함
 
     오류:
     - 없음
     """
+    account_services.ensure_dev_user_affiliation(user=user)
     return auth_selectors.get_current_user_payload(user=user)
 
 

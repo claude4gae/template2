@@ -15,7 +15,7 @@ services:
           - minio
 
   minio-init:
-    image: minio/mc:RELEASE.2024-01-11T07-46-16Z
+    image: minio/mc:latest
     depends_on:
       - minio
     env_file:

@@ -5,6 +5,9 @@ services:
     environment:
       DUMMY_ADFS_EMAIL: dummy.user@example.com
       DUMMY_ADFS_NAME: Dummy User
+      DUMMY_ADFS_SABUN: S000001
+      DUMMY_ADFS_LOGINID: dummy.user
+      DUMMY_ADFS_DEPT: Development
       DUMMY_ADFS_CLIENT_ID: dummy-client
       DUMMY_ADFS_PRIVATE_KEY_PATH: /app/dummy_adfs_private.key
       # 개발 환경에서는 더미 ADFS 서버가 HTTP로 구동되므로 발급자도 동일하게 맞춘다
@@ -70,6 +73,8 @@ services:
       MINIO_BUCKET: emails
       MINIO_REGION: us-east-1
     depends_on:
+      airflow-postgres:
+        condition: service_healthy
       adfs:
         condition: service_started
       minio:
@@ -88,8 +93,8 @@ services:
       - -c
       - |
           set -e
+          python manage.py ensure_dev_database
           python manage.py migrate --noinput
-          python manage.py seed_dummy_emails || true
           python manage.py runserver 0.0.0.0:8000
     networks:
       shared-net:

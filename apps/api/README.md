@@ -56,9 +56,8 @@ python manage.py runserver 0.0.0.0:8000
 ## 자주 쓰는 관리 명령
 
 ```bash
-python manage.py seed_dummy_emails
+python manage.py ensure_dev_database
 python manage.py process_email_outbox
-python manage.py seed_drone_dummy_data
 ```
 
 ## 더 읽을 문서

@@ -11,7 +11,10 @@ make dev
 root compose 파일은 실행 진입점이고, `compose/` 아래 파일은 내부 조립용입니다.
 일반 작업에서는 아래 `make` target을 사용합니다.
 
-Airflow, DB, FTP, MinIO, dummy ADFS는 유지하고 백엔드만 자주 실행하거나 재시작하려면 아래 명령을 사용합니다.
+`make dev`는 일반 개발에 필요한 Web, API, Nginx, MinIO, dummy ADFS를 실행합니다.
+API가 의존하는 DB는 compose 의존성으로 함께 올라가며, Airflow/FTP는 기본 실행에서 제외합니다.
+
+Airflow/FTP 기반 데이터 적재 작업이 필요하면 infra를 별도로 실행합니다.
 
 ```bash
 make dev-infra-up
@@ -27,7 +30,7 @@ make oidc-app-build
 make prod-app-build
 ```
 
-infra는 Airflow, FTP, DB만 포함합니다. 필요한 경우 infra만 별도로 올리거나 내릴 수 있습니다.
+infra는 Airflow, FTP, DB만 포함합니다. 데이터 적재 작업이 필요한 경우 infra만 별도로 올리거나 내릴 수 있습니다.
 
 ```bash
 make dev-infra-up
@@ -71,12 +74,11 @@ make makemigrations-check
 
 | Command | 설명 |
 | --- | --- |
-| `seed_dummy_emails` | 개발용 샘플 메일 생성 |
+| `ensure_dev_database` | dev 환경에서 Django 기본 DB와 필수 PostgreSQL extension 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `load_m_tkin_prevent` | `m_tkin_prevent` incoming 파일 적재 |
 | `load_ctttm_workorder_list` | `ctttm_workorder_list` incoming 파일 적재 |
 | `load_ct_process_comment` | `ct_process_comment` incoming 파일 적재 |
-| `seed_drone_dummy_data` | Drone 개발용 샘플 데이터 생성 |
 | `seed_drone_targets_from_file` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
 | `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
 | `purge_drone_sop` | Drone SOP 데이터 전체 삭제 또는 dry-run 확인 |
@@ -84,16 +86,18 @@ make makemigrations-check
 실행 예시:
 
 ```bash
-docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy_emails
+docker compose -f docker-compose.dev.yml exec -T api python manage.py ensure_dev_database
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_m_tkin_prevent
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ctttm_workorder_list
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ct_process_comment
-docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
 docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
 ```
+
+로컬 dev 로그인 사용자는 `env/api.dev.env`의 `DEV_AUTO_AFFILIATION_ALLOWED=1` 설정으로 기본 소속이 보장됩니다.
+OIDC/운영 환경에서는 자동 소속 변경을 실행하지 않습니다.
 
 ## Data Movement Airflow DAG
 
@@ -276,7 +280,7 @@ npm run agent:audit:docs
 | --- | --- |
 | 화면이 API를 못 부름 | `VITE_BACKEND_URL`, Nginx proxy, Django allowed hosts/CORS/CSRF |
 | 로그인 redirect 실패 | `OIDC_REDIRECT_URI`, `ALLOWED_REDIRECT_HOSTS`, session cookie secure/samesite |
-| Emails 수집 실패 | POP3 env, Airflow token, `seed_dummy_emails`/dummy mail 동작 |
+| Emails 수집 실패 | POP3 env, Airflow token, dummy mail endpoint 동작 |
 | RAG/Assistant 실패 | `ASSISTANT_*`, `RAG_*`, dummy RAG endpoint, permission group |
 | Drone 알림 실패 | SOP 수집 결과, target/channel/recipient 설정, Jira/Mail/Messenger env |
 | Timeline 조회 실패 | `TIMELINE_DB_*`, `TIMELINE_QUERY_DAYS`, 기준 정보 endpoint |

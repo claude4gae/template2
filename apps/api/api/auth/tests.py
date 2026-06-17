@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -19,6 +21,7 @@ from django.utils import timezone
 from django.urls import reverse
 
 import api.account.services as account_services
+from api.account.models import UserCurrentAffiliation, UserSdwtProdAccess
 from api.auth.services.oidc import _extract_user_info_from_claims, _upsert_user_from_claims
 
 
@@ -102,6 +105,63 @@ class AuthMeTests(TestCase):
         self.assertEqual(payload["email"], "hong@example.com")
         self.assertEqual(payload["department"], "Engineering")
         self.assertFalse(payload["has_pending_affiliation"])
+
+    def test_auth_me_does_not_auto_assign_dev_affiliation_without_flag(self) -> None:
+        """dev 자동 소속 플래그가 없으면 소속 없는 사용자를 변경하지 않아야 합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S52345", password="test-password")
+        user.knox_id = "KNOX-52345"
+        user.save(update_fields=["knox_id"])
+
+        self.client.force_login(user)
+        with patch.dict(
+            "os.environ",
+            {"ENVIRONMENT": "development"},
+            clear=True,
+        ):
+            response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIsNone(payload["user_sdwt_prod"])
+        self.assertFalse(UserCurrentAffiliation.objects.filter(user=user).exists())
+
+    def test_auth_me_auto_assigns_dev_affiliation_when_enabled(self) -> None:
+        """외부망 dev 자동 소속 플래그가 켜지면 기본 소속을 보장해야 합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S52346", password="test-password")
+        user.knox_id = "KNOX-52346"
+        user.department = "Engineering"
+        user.save(update_fields=["knox_id", "department"])
+
+        self.client.force_login(user)
+        with patch.dict(
+            "os.environ",
+            {
+                "ENVIRONMENT": "development",
+                "DEV_AUTO_AFFILIATION_ALLOWED": "1",
+                "DEV_AUTO_AFFILIATION_PREFIX": "TDEV",
+            },
+            clear=True,
+        ):
+            response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["department"], "Engineering")
+        self.assertEqual(payload["line"], "TDEV-L1")
+        self.assertEqual(payload["user_sdwt_prod"], "TDEV_ALPHA")
+
+        current = UserCurrentAffiliation.objects.get(user=user)
+        self.assertEqual(current.source, UserCurrentAffiliation.Sources.ADMIN_ASSIGNED)
+        self.assertEqual(current.affiliation.user_sdwt_prod, "TDEV_ALPHA")
+        self.assertTrue(
+            UserSdwtProdAccess.objects.filter(
+                user=user,
+                affiliation=current.affiliation,
+                role=UserSdwtProdAccess.Roles.MEMBER,
+            ).exists()
+        )
 
     def test_auth_me_includes_pending_user_sdwt_prod(self) -> None:
         """pending_user_sdwt_prod 값이 있을 때 응답에 포함되어야 합니다."""
