@@ -4,6 +4,7 @@ import { createBrowserRouter, Outlet } from "react-router-dom"
 import { PortalGlobalShell } from "@/components/layout"
 import { AuthAutoLoginGate, useAuth } from "@/lib/auth"
 
+import { accessStatsRoutes } from "@/features/access-stats"
 import { appstoreRoutes } from "@/features/appstore"
 import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
@@ -26,6 +27,7 @@ const protectedFeatureRoutes = [
   ...l3SpiderRoutes,
   ...pmComparisonRoutes,
   ...appstoreRoutes,
+  ...accessStatsRoutes,
   ...emailsRoutes,
   ...vocRoutes,
   ...accountRoutes,

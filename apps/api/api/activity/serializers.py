@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈 설명: 활동 로그 직렬화 유틸을 제공합니다.
-# - 주요 함수: serialize_activity_log
+# - 주요 함수: serialize_activity_log, normalize_app_access_payload
 # - 불변 조건: API 응답에서 내부 브리지 IP는 제외합니다.
 # =============================================================================
 from __future__ import annotations
@@ -12,6 +12,16 @@ from django.core.exceptions import ObjectDoesNotExist
 from .models import ActivityLog
 
 INTERNAL_BRIDGE_REMOTE_ADDR = "172.18.0.1"
+MAX_APP_ID_LENGTH = 120
+MAX_APP_NAME_LENGTH = 160
+
+
+def _clean_text(value: Any, *, max_length: int) -> str:
+    """문자열 입력값을 공백 제거와 길이 제한 기준으로 정리합니다."""
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:max_length]
 
 
 def _get_user_role(user: Any | None) -> Any | None:
@@ -77,4 +87,39 @@ def serialize_activity_log(entry: ActivityLog) -> dict[str, Any]:
     }
 
 
-__all__ = ["serialize_activity_log"]
+def normalize_app_access_payload(payload: Any) -> tuple[dict[str, str] | None, str | None]:
+    """앱 접속 기록 요청 payload를 검증하고 정규화합니다.
+
+    입력:
+    - payload: JSON 요청 본문
+
+    반환:
+    - tuple[dict[str, str] | None, str | None]: 정규화된 값 또는 오류 메시지
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음(검증 실패는 오류 메시지로 반환)
+    """
+
+    if not isinstance(payload, dict):
+        return None, "Invalid JSON body"
+
+    app_id = _clean_text(payload.get("appId") or payload.get("app_id"), max_length=MAX_APP_ID_LENGTH)
+    app_name = _clean_text(payload.get("appName") or payload.get("app_name"), max_length=MAX_APP_NAME_LENGTH)
+    path = _clean_text(payload.get("path"), max_length=512)
+
+    if not app_id:
+        return None, "appId is required"
+    if not app_name:
+        return None, "appName is required"
+
+    return {
+        "app_id": app_id,
+        "app_name": app_name,
+        "path": path,
+    }, None
+
+
+__all__ = ["normalize_app_access_payload", "serialize_activity_log"]

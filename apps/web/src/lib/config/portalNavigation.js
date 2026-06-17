@@ -2,6 +2,7 @@ import {
   BookOpenIcon,
   LayoutGridIcon,
   MessageSquareIcon,
+  ShieldCheckIcon,
 } from "lucide-react"
 
 function readEnvValue(key) {
@@ -36,6 +37,7 @@ export const portalNavigationItems = [
       { title: "PM SPIDER", href: "/pm-comparison" },
       { title: "Timeline", href: "/timeline" },
       { title: "메일함", href: "/emails/inbox" },
+      { title: "접속 현황", href: "/access-stats", icon: ShieldCheckIcon, requireSuperuser: true },
       externalLink("PMx", "VITE_PORTAL_PMX_URL"),
     ]),
   },

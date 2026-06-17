@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom"
 
 import { portalNavigationItems } from "@/lib/config/portalNavigation"
+import { AppAccessTracker } from "@/lib/activity"
 
 import { PortalNavbar } from "./PortalNavbar"
 
@@ -13,6 +14,7 @@ export function PortalGlobalShell({ children }) {
         </div>
       </header>
       <main className="flex-1 min-h-0 overflow-hidden pt-2">
+        <AppAccessTracker />
         {children ?? <Outlet />}
       </main>
     </div>

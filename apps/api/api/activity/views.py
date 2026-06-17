@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈 설명: 활동 로그 조회 APIView를 제공합니다.
-# - 주요 클래스: ActivityLogView
-# - 불변 조건: 권한 확인 후 최근 로그만 반환합니다.
+# - 주요 클래스: ActivityLogView, AppAccessEventView, AppAccessStatsView
+# - 불변 조건: 권한 확인 후 view는 HTTP 처리만 수행합니다.
 # =============================================================================
 
 """액티비티 로그 조회 엔드포인트를 제공합니다."""
@@ -10,9 +10,14 @@ from __future__ import annotations
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 
-from .services import get_recent_activity_payload
+from api.common.services import parse_json_body
+
+from .serializers import normalize_app_access_payload
+from .services import get_app_access_stats_payload, get_recent_activity_payload, record_app_access
 
 # 조회 건수 관련 상수(한 곳에서 관리)
 DEFAULT_LIMIT: int = 50
@@ -99,4 +104,87 @@ class ActivityLogView(APIView):
         return JsonResponse({"results": payload})
 
 
-__all__ = ["ActivityLogView"]
+@method_decorator(csrf_exempt, name="dispatch")
+class AppAccessEventView(APIView):
+    """앱 화면 진입 이벤트 기록 API입니다."""
+
+    permission_classes: list[type] = []
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """현재 사용자의 앱 접속 이벤트를 기록합니다.
+
+        입력:
+        - 요청: appId, appName, path를 담은 JSON body
+
+        반환:
+        - JsonResponse: 생성된 이벤트 id
+
+        부작용:
+        - ActivityLog 테이블에 APP_ACCESS 이벤트를 생성합니다.
+
+        오류:
+        - 401: 인증 실패
+        - 400: JSON/필수값 오류
+        """
+
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        payload = parse_json_body(request)
+        normalized, error = normalize_app_access_payload(payload)
+        if error or normalized is None:
+            return JsonResponse({"error": error or "Invalid payload"}, status=400)
+
+        entry = record_app_access(
+            user=request.user,
+            app_id=normalized["app_id"],
+            app_name=normalized["app_name"],
+            path=normalized["path"],
+        )
+        return JsonResponse({"id": entry.pk}, status=201)
+
+
+class AppAccessStatsView(APIView):
+    """슈퍼유저 전용 앱 접속 통계 조회 API입니다."""
+
+    permission_classes: list[type] = []
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """KST 기준 날짜 범위의 앱별 접속 통계를 반환합니다.
+
+        입력:
+        - from: YYYY-MM-DD(선택)
+        - to: YYYY-MM-DD(선택)
+        - appId: 특정 앱 id(선택)
+
+        반환:
+        - JsonResponse: summary/apps/series payload
+
+        부작용:
+        - 없음(읽기 전용)
+
+        오류:
+        - 401: 인증 실패
+        - 403: 슈퍼유저 아님
+        - 400: 날짜 범위 오류
+        """
+
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        if not request.user.is_superuser:
+            return JsonResponse({"error": "Forbidden"}, status=403)
+
+        try:
+            payload = get_app_access_stats_payload(
+                from_value=request.GET.get("from"),
+                to_value=request.GET.get("to"),
+                app_id=request.GET.get("appId") or request.GET.get("app_id"),
+            )
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        return JsonResponse(payload)
+
+
+__all__ = ["ActivityLogView", "AppAccessEventView", "AppAccessStatsView"]

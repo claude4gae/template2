@@ -29,6 +29,11 @@ const NAV_MENU_CONTENT_CLASS_NAME =
   "data-[motion=from-start]:slide-in-from-left-30! data-[motion=to-start]:slide-out-to-left-30! data-[motion=from-end]:slide-in-from-right-30! data-[motion=to-end]:slide-out-to-right-30! absolute z-50 w-auto"
 const NAV_SUB_LINK_CLASS_NAME = "block px-3 py-1.5"
 
+function canShowNavigationItem(item, user) {
+  if (!item?.requireSuperuser) return true
+  return Boolean(user?.is_superuser)
+}
+
 export function PortalNavbar({ navigationItems }) {
   const { user } = useAuth()
   const { pathname } = useLocation()
@@ -103,6 +108,14 @@ export function PortalNavbar({ navigationItems }) {
     return <Icon className={NAV_ICON_CLASS_NAME} />
   }
 
+  const visibleNavigationItems = navigationItems
+    .map((navItem) => ({
+      ...navItem,
+      items: navItem.items?.filter((item) => canShowNavigationItem(item, user)),
+    }))
+    .filter((navItem) => canShowNavigationItem(navItem, user))
+    .filter((navItem) => navItem.href || (Array.isArray(navItem.items) && navItem.items.length > 0))
+
   return (
     <div
       className="flex h-full w-full items-center gap-6 px-4 md:px-6"
@@ -123,7 +136,7 @@ export function PortalNavbar({ navigationItems }) {
         className="hidden flex-1 justify-center lg:flex"
       >
         <NavigationMenuList className="justify-center gap-1">
-          {navigationItems.map((navItem) => {
+          {visibleNavigationItems.map((navItem) => {
             const Icon = navItem.icon
             if (navItem.href) {
               return (
@@ -163,12 +176,17 @@ export function PortalNavbar({ navigationItems }) {
                               href={item.href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className={NAV_SUB_LINK_CLASS_NAME}
+                              className={cn(NAV_SUB_LINK_CLASS_NAME, "flex items-center gap-2")}
                             >
+                              {renderIcon(item.icon)}
                               {item.title}
                             </a>
                           ) : (
-                            <PortalNavLink href={item.href} className={NAV_SUB_LINK_CLASS_NAME}>
+                            <PortalNavLink
+                              href={item.href}
+                              className={cn(NAV_SUB_LINK_CLASS_NAME, "flex items-center gap-2")}
+                            >
+                              {renderIcon(item.icon)}
                               {item.title}
                             </PortalNavLink>
                           )}
