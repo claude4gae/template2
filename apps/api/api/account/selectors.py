@@ -588,6 +588,30 @@ def list_active_user_knox_lookup_keys_by_knox_ids(*, knox_ids: list[str]) -> set
     }
 
 
+def get_active_users_by_knox_lookup_keys(*, knox_ids: list[str]) -> dict[str, Any]:
+    """입력 knox_id 중 활성 account_user 매핑을 lookup key 기준으로 반환합니다."""
+
+    lookup_keys = sorted({value.lower() for value in _normalize_text_list(knox_ids)})
+    if not lookup_keys:
+        return {}
+
+    User = get_user_model()
+    rows = (
+        User.objects.filter(is_active=True)
+        .exclude(knox_id__isnull=True)
+        .exclude(knox_id__exact="")
+        .annotate(knox_lookup=Lower("knox_id"))
+        .filter(knox_lookup__in=lookup_keys)
+        .order_by("knox_lookup", "id")
+    )
+    users: dict[str, Any] = {}
+    for user in rows:
+        lookup_key = str(getattr(user, "knox_id", "") or "").strip().lower()
+        if lookup_key and lookup_key not in users:
+            users[lookup_key] = user
+    return users
+
+
 def _list_external_affiliation_pool(
     *,
     search: str = "",

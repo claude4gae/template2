@@ -2497,6 +2497,48 @@ class DroneSopTargetRecipientTests(TestCase):
                 actor=self.actor,
             )
 
+    def test_replace_promotes_joined_external_payload_to_user_recipient(self) -> None:
+        """가입자와 겹치는 externalKnoxIds는 user 수신인으로 저장해야 합니다."""
+
+        account_services.sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "external-71005",
+                    "username": "가입전외부사용자",
+                    "department": "ExtDept",
+                    "user_sdwt_prod": "ETCH_A",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+        User = get_user_model()
+        joined_user = User.objects.create_user(
+            sabun="S71005",
+            password="test-password",
+            knox_id="EXTERNAL-71005",
+            email="external-71005@samsung.com",
+        )
+
+        result = services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[],
+            external_knox_ids=["external-71005"],
+            actor=self.actor,
+        )
+
+        self.assertEqual([row["recipientType"] for row in result["recipients"]], ["user"])
+        self.assertEqual(result["recipients"][0]["userId"], joined_user.id)
+        self.assertTrue(
+            DroneSopTargetRecipient.objects.filter(
+                target__target_user_sdwt_prod="ETCH_A",
+                channel=DroneSopTargetRecipient.Channels.MAIL,
+                user_id=joined_user.id,
+                external_knox_id="",
+            ).exists()
+        )
+
     def test_user_creation_promotes_external_recipient_rows(self) -> None:
         """가입 사용자의 knox_id가 기존 외부 수신인과 같으면 user FK row로 승격되어야 합니다."""
 
@@ -3554,6 +3596,41 @@ class DroneSopTargetRecipientTests(TestCase):
                     "targetUserSdwtProd": "ETCH_A",
                     "channel": "mail",
                     "userIds": [],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(DroneSopTargetRecipient.objects.filter(id=recipient.id).exists())
+        self.assertEqual(response.json()["recipients"], [])
+
+    def test_notification_recipient_endpoint_empty_list_deletes_joined_external_recipient(self) -> None:
+        """가입자 knox_id와 겹치는 기존 외부 수신인도 빈 목록 저장으로 삭제해야 합니다."""
+
+        recipient = _create_target_recipient(
+            target_user_sdwt_prod="ETCH_A",
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            external_knox_id="external-71031",
+        )
+        User = get_user_model()
+        User.objects.create_user(
+            sabun="S71031",
+            password="test-password",
+            knox_id="external-71031",
+            email="external-71031@samsung.com",
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.put(
+            reverse("line-dashboard-notification-recipients"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "ETCH_A",
+                    "channel": "mail",
+                    "userIds": [],
+                    "externalKnoxIds": [],
                 }
             ),
             content_type="application/json",

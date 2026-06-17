@@ -186,8 +186,20 @@ def replace_drone_sop_channel_recipients(
     if not normalized_target:
         raise ValueError("targetUserSdwtProd is required")
     normalized_channel = normalize_recipient_channel(channel)
-    normalized_user_ids = _normalize_user_ids(user_ids)
-    normalized_external_knox_ids = _normalize_external_knox_ids(external_knox_ids)
+    requested_user_ids = _normalize_user_ids(user_ids)
+    requested_external_knox_ids = _normalize_external_knox_ids(external_knox_ids)
+    joined_external_users = account_selectors.get_active_users_by_knox_lookup_keys(
+        knox_ids=requested_external_knox_ids
+    )
+    joined_external_user_ids = [
+        getattr(joined_external_users[knox_id], "id", None)
+        for knox_id in requested_external_knox_ids
+        if knox_id in joined_external_users
+    ]
+    normalized_user_ids = _normalize_user_ids([*requested_user_ids, *joined_external_user_ids])
+    normalized_external_knox_ids = [
+        knox_id for knox_id in requested_external_knox_ids if knox_id not in joined_external_users
+    ]
 
     active_user_ids = account_selectors.list_active_user_ids_by_ids(user_ids=normalized_user_ids)
     missing_user_ids = sorted(set(normalized_user_ids) - active_user_ids)
@@ -209,11 +221,6 @@ def replace_drone_sop_channel_recipients(
     missing_external_knox_ids = sorted(set(normalized_external_knox_ids) - set(external_snapshots.keys()))
     if missing_external_knox_ids:
         raise ValueError("external recipients not found")
-    joined_external_knox_ids = account_selectors.list_active_user_knox_lookup_keys_by_knox_ids(
-        knox_ids=normalized_external_knox_ids
-    )
-    if joined_external_knox_ids:
-        raise ValueError("external recipients must be unregistered users")
 
     target, _ = ensure_drone_sop_notification_target(
         line_id=normalized_line_id,
