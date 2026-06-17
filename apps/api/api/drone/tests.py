@@ -2484,6 +2484,67 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(external_rows[0]["knoxId"], "external-71003")
         self.assertEqual(external_rows[0]["email"], "external-71003@samsung.com")
 
+    def test_replace_mixed_recipients_allows_add_and_remove(self) -> None:
+        """가입/미가입 수신인이 섞인 목록에서도 추가와 제거가 저장되어야 합니다."""
+
+        account_services.sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "external-71009",
+                    "username": "제거외부사용자",
+                    "department": "ExtDept",
+                    "user_sdwt_prod": "ETCH_A",
+                    "source_updated_at": timezone.now(),
+                },
+                {
+                    "knox_id": "external-71010",
+                    "username": "유지외부사용자",
+                    "department": "ExtDept",
+                    "user_sdwt_prod": "ETCH_A",
+                    "source_updated_at": timezone.now(),
+                },
+            ]
+        )
+        for channel in [
+            DroneSopTargetRecipient.Channels.MAIL,
+            DroneSopTargetRecipient.Channels.MESSENGER,
+        ]:
+            with self.subTest(channel=channel):
+                services.replace_drone_sop_channel_recipients(
+                    line_id="L1",
+                    target_user_sdwt_prod="ETCH_A",
+                    channel=channel,
+                    user_ids=[self.same_group_user.id],
+                    external_knox_ids=["external-71009", "external-71010"],
+                    actor=self.actor,
+                )
+
+                result = services.replace_drone_sop_channel_recipients(
+                    line_id="L1",
+                    target_user_sdwt_prod="ETCH_A",
+                    channel=channel,
+                    user_ids=[self.mail_user.id],
+                    external_knox_ids=["external-71010"],
+                    actor=self.actor,
+                )
+
+                recipient_keys = [row["recipientKey"] for row in result["recipients"]]
+                self.assertCountEqual(recipient_keys, [f"user:{self.mail_user.id}", "external:external-71010"])
+                self.assertFalse(
+                    DroneSopTargetRecipient.objects.filter(
+                        target__target_user_sdwt_prod="ETCH_A",
+                        channel=channel,
+                        user=self.same_group_user,
+                    ).exists()
+                )
+                self.assertFalse(
+                    DroneSopTargetRecipient.objects.filter(
+                        target__target_user_sdwt_prod="ETCH_A",
+                        channel=channel,
+                        external_knox_id="external-71009",
+                    ).exists()
+                )
+
     def test_replace_rejects_unknown_external_snapshot_recipient(self) -> None:
         """외부 스냅샷에 없는 knox_id는 수신인으로 저장할 수 없어야 합니다."""
 
