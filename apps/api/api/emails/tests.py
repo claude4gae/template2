@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from email.message import EmailMessage
+from io import BytesIO
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -33,6 +34,7 @@ from api.emails.services import (
     process_email_outbox_batch,
     store_email_html_and_assets,
 )
+from api.emails.services.ingest import _LongLinePOP3, _iter_pop3_messages
 from api.rag.services import RAG_INDEX_EMAILS, resolve_rag_index_name
 
 UTC = getattr(timezone, "utc", dt_timezone.utc)
@@ -2068,3 +2070,41 @@ class EmailIngestHtmlRetryTests(TestCase):
             cid_map=fields["cid_map"],
         )
         mock_delete.assert_called_once_with(session, [1])
+
+
+class EmailPop3MailboxTransportTests(SimpleTestCase):
+    """emails POP3 mailbox transport 동작을 검증합니다."""
+
+    def test_iter_pop3_messages_allows_long_html_lines(self) -> None:
+        """기본 poplib 제한보다 긴 HTML 라인도 메시지로 파싱하는지 확인합니다."""
+
+        long_html = b"<html><body>" + (b"A" * 3000) + b"</body></html>"
+        raw_response = (
+            b"+OK message follows\r\n"
+            b"Subject: long-line\r\n"
+            b"Content-Type: text/html; charset=utf-8\r\n"
+            b"\r\n"
+            + long_html
+            + b"\r\n.\r\n"
+        )
+
+        class FakePop3(_LongLinePOP3):
+            """네트워크 없이 long response를 재현하는 테스트 client입니다."""
+
+            def __init__(self) -> None:
+                self.file = BytesIO(raw_response)
+                self._debugging = 0
+
+            def _putcmd(self, line: str) -> None:
+                self.sent_command = line
+
+            def list(self) -> tuple[bytes, list[bytes], int]:
+                return b"+OK", [b"1 9999"], 9999
+
+        messages = list(_iter_pop3_messages(FakePop3()))
+
+        self.assertEqual(len(messages), 1)
+        msg_num, msg = messages[0]
+        self.assertEqual(msg_num, 1)
+        self.assertEqual(msg.get("Subject"), "long-line")
+        self.assertIn("A" * 3000, msg.get_content())

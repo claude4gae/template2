@@ -42,6 +42,36 @@ EXCLUDED_BODY_ELEMENT_IDS = {
     "bannersignimg",
     "confidentialsignimg",
 }
+_POP3_MAX_LINE_LENGTH = 10 * 1024 * 1024
+
+
+class _LongLinePop3Mixin:
+    """긴 HTML 라인을 포함한 POP3 응답을 읽기 위한 client mixin입니다."""
+
+    def _getline(self) -> tuple[bytes, int]:
+        line = self.file.readline(_POP3_MAX_LINE_LENGTH + 1)
+        if len(line) > _POP3_MAX_LINE_LENGTH:
+            raise poplib.error_proto("line too long")
+
+        if self._debugging > 1:
+            print("*get*", repr(line))
+        if not line:
+            raise poplib.error_proto("-ERR EOF")
+
+        octets = len(line)
+        if line[-2:] == poplib.CRLF:
+            return line[:-2], octets
+        if line[:1] == poplib.CR:
+            return line[1:-1], octets
+        return line[:-1], octets
+
+
+class _LongLinePOP3(_LongLinePop3Mixin, poplib.POP3):
+    """POP3 line 제한을 emails 수집 용도에 맞게 확장한 client입니다."""
+
+
+class _LongLinePOP3SSL(_LongLinePop3Mixin, poplib.POP3_SSL):
+    """SSL POP3 line 제한을 emails 수집 용도에 맞게 확장한 client입니다."""
 
 
 def _load_excluded_subject_prefixes() -> tuple[str, ...]:
@@ -726,7 +756,7 @@ def run_pop3_ingest(
     # -----------------------------------------------------------------------------
     # 2) 클라이언트 생성 및 로그인
     # -----------------------------------------------------------------------------
-    client_cls = poplib.POP3_SSL if use_ssl else poplib.POP3
+    client_cls = _LongLinePOP3SSL if use_ssl else _LongLinePOP3
     client = client_cls(host, port, timeout=timeout)
     deleted: List[int] = []
     reindexed = 0
