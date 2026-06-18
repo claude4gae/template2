@@ -30,6 +30,9 @@ TRACE_COLUMNS = [
     "time",
     "step_time",
     "value",
+    "ch_step",
+    "slot_no",
+    "group",
 ]
 
 OES_ID_COLUMNS = [
@@ -174,7 +177,7 @@ def _normalize_score_frame(frame: pd.DataFrame, selection: dict[str, object], da
     frame = frame.copy()
     frame["line_id"] = frame["line_id"].fillna(selection.get("lineId"))
     frame["eqp_id"] = frame["eqp_id"].fillna(selection.get("eqpId"))
-    chamber_id = str(selection.get("chamberId") or "")
+    chamber_id = str(selection.get("chamberId") or selection.get("fdcBin") or "")
     frame["chamber_id"] = frame["chamber_id"].fillna(chamber_id)
     frame["type"] = frame["type"].fillna(selection.get("type"))
     frame["data_type"] = frame["data_type"].fillna(data_type)
@@ -327,6 +330,8 @@ def _cycle_summary(
 def _trace_rank_rows(score_frame: pd.DataFrame, current_pm_date: str) -> list[dict[str, Any]]:
     """trace score row를 rank row로 변환합니다."""
 
+    if score_frame.empty or "pm_date" not in score_frame.columns:
+        return []
     current = score_frame[score_frame["pm_date"] == current_pm_date].copy()
     current = current.sort_values(["score", "item_name"])
     rows = []
@@ -353,6 +358,8 @@ def _trace_rank_rows(score_frame: pd.DataFrame, current_pm_date: str) -> list[di
 def _oes_rank_rows(score_frame: pd.DataFrame, current_pm_date: str) -> list[dict[str, Any]]:
     """OES score row를 rank row로 변환합니다."""
 
+    if score_frame.empty or "pm_date" not in score_frame.columns:
+        return []
     current = score_frame[score_frame["pm_date"] == current_pm_date].copy()
     current = current.sort_values(["score", "step", "wavelength", "item_name"])
     rows = []
@@ -407,17 +414,21 @@ def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings:
         frame = pd.concat(frames, ignore_index=True)
         if "trace_param_name" not in frame.columns and "name" in frame.columns:
             frame["trace_param_name"] = frame["name"]
-        if {"time", "value", DATE_COLUMN, "trace_param_name"}.issubset(frame.columns):
+        x_col = "time" if "time" in frame.columns else ("step_time" if "step_time" in frame.columns else None)
+        if x_col and {"value", DATE_COLUMN, "trace_param_name"}.issubset(frame.columns):
             frame = _filter_selected_cycles(_raw_cycle_frame(frame, cycle_map), selected_ref_dates)
-            frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
+            if x_col == "time":
+                frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
+                frame = frame[frame["time"].notna()]
             frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
-            frame = frame[frame["time"].notna() & frame["value"].notna()].copy()
+            frame = frame[frame["value"].notna()].copy()
             if selected_sensors:
                 frame = frame[frame["trace_param_name"].astype(str).isin(selected_sensors)]
-            frame = frame.sort_values(["cycle_index", "time"])
+            frame = frame.sort_values(["cycle_index", x_col])
             row_count = int(len(frame))
             columns = [
                 "time",
+                "step_time",
                 "period",
                 "phase",
                 "cycle_index",
@@ -427,12 +438,46 @@ def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings:
                 "root_lot_id",
                 "lot_id",
                 "wafer_id",
-                "step_time",
+                "ch_step",
+                "group",
+                "slot_no",
             ]
             visible_columns = [column for column in columns if column in frame.columns]
             trend_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
         else:
             warnings.append("trace data에 날짜/time/value/trace_param_name 컬럼이 없어 상세 plot을 건너뜁니다.")
+
+    # decomp_data에서 shape/jitter 상세 데이터를 읽습니다.
+    _SHAPE_COLS = [DATE_COLUMN, "ref_dates", "phase", "value", "group", "lot_id", "slot_no"]
+    _JITTER_COLS = [DATE_COLUMN, "ref_dates", "lot_id", "slot_no", "jitter_rms", "level", "group"]
+    shape_files = selectors.iter_decomp_files(selection, comp_dt=current_pm_date, param_names=selected_sensors, file_name="shape.parquet")
+    jitter_files = selectors.iter_decomp_files(selection, comp_dt=current_pm_date, param_names=selected_sensors, file_name="jitter.parquet")
+    shape_frames, _ = _read_frames(shape_files, columns=_SHAPE_COLS, warnings=warnings)
+    jitter_frames, _ = _read_frames(jitter_files, columns=_JITTER_COLS, warnings=warnings)
+    shape_rows: list[dict[str, Any]] = []
+    jitter_rows: list[dict[str, Any]] = []
+    if shape_frames:
+        sf = pd.concat(shape_frames, ignore_index=True)
+        if {DATE_COLUMN, "phase", "value"}.issubset(sf.columns):
+            sf = sf.rename(columns={"value": "shape", "phase": "norm_phase"})
+            sf = _filter_selected_cycles(_raw_cycle_frame(sf, cycle_map), selected_ref_dates)
+            sf["shape"] = pd.to_numeric(sf["shape"], errors="coerce")
+            sf["norm_phase"] = pd.to_numeric(sf.get("norm_phase", pd.Series(dtype=float)), errors="coerce")
+            sf = sf[sf["shape"].notna() & sf["norm_phase"].notna()].copy()
+            _vis = [c for c in ["norm_phase", "shape", "ch_step", "lot_id", "slot_no", "group",
+                                "cycle_index", "phase", "pm_date"]
+                    if c in sf.columns]
+            shape_rows = [_camelize_mapping(r) for r in sf[_vis].to_dict(orient="records")]
+    if jitter_frames:
+        jf = pd.concat(jitter_frames, ignore_index=True)
+        if {DATE_COLUMN, "jitter_rms", "group"}.issubset(jf.columns):
+            jf = _filter_selected_cycles(_raw_cycle_frame(jf, cycle_map), selected_ref_dates)
+            jf["jitter_rms"] = pd.to_numeric(jf["jitter_rms"], errors="coerce")
+            jf = jf[jf["jitter_rms"].notna()].copy()
+            _jvis = [c for c in ["lot_id", "slot_no", "jitter_rms", "level", "group", "ch_step",
+                                 "cycle_index", "phase", "pm_date"]
+                     if c in jf.columns]
+            jitter_rows = [_camelize_mapping(r) for r in jf[_jvis].to_dict(orient="records")]
 
     return {
         "fileCount": raw_file_count,
@@ -441,6 +486,8 @@ def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings:
         "worstSensor": rank_rows[0] if rank_rows else None,
         "summaryRows": rank_rows,
         "trendRows": trend_rows,
+        "shapeRows": shape_rows,
+        "jitterRows": jitter_rows,
         "scoreTrendRows": _score_trend_rows(score_frame, cycle_map, selected_ref_dates),
         "cycleSummary": _cycle_summary(score_frame, cycle_map, selected_ref_dates),
         "refCycles": _ref_cycle_rows(cycle_map, selected_ref_dates),
@@ -501,24 +548,40 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
     rank_rows = _oes_rank_rows(score_frame, current_pm_date)
     selected_step = str(selection.get("selectedStep") or (rank_rows[0].get("step") if rank_rows else "") or "")
 
-    files = selectors.iter_raw_files(
-        selection,
-        data_source=str(selection.get("oesDataSource") or "oes"),
-        trace_param_names=[],
-    )
+    _oes_source = str(selection.get("oesDataSource") or "oes")
+    files = selectors.iter_raw_files(selection, data_source=_oes_source, trace_param_names=[])
     frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
+    if not frames:
+        files = selectors.iter_raw_files(selection, data_source="oes_processed", trace_param_names=[])
+        frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
     detail_rows: list[dict[str, Any]] = []
     row_count = 0
     if frames:
         frame = _normalize_oes(pd.concat(frames, ignore_index=True), warnings)
         if {DATE_COLUMN, "rcp_step", "wavelength", "value"}.issubset(frame.columns):
+            if "phase" in frame.columns:
+                frame = frame.rename(columns={"phase": "traj_phase"})
             frame = _filter_selected_cycles(_raw_cycle_frame(frame, cycle_map), selected_ref_dates)
             frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
             if selected_step:
                 frame = frame[frame["rcp_step"].astype(str) == selected_step]
-            frame = frame[frame["value"].notna()].copy().sort_values(["cycle_index", "wavelength"])
+            selected_wl = str(selection.get("selectedWavelength") or "")
+            if selected_wl:
+                try:
+                    wl_val = float(selected_wl)
+                    frame = frame[frame["wavelength"].round(1) == round(wl_val, 1)]
+                except (ValueError, TypeError):
+                    pass
+            frame = frame[frame["value"].notna()].copy()
+            if "traj_phase" in frame.columns:
+                frame["traj_phase"] = pd.to_numeric(frame["traj_phase"], errors="coerce")
+                frame = frame[frame["traj_phase"].notna()]
+                frame = frame.sort_values(["cycle_index", "traj_phase"])
+            else:
+                frame = frame.sort_values(["cycle_index", "wavelength"])
             row_count = int(len(frame))
             columns = [
+                "traj_phase",
                 "phase",
                 "cycle_index",
                 "pm_date",
@@ -526,7 +589,9 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
                 "wavelength",
                 "value",
                 "lot_id",
+                "slot_no",
                 "slot_id",
+                "group",
                 "wafer_end_time",
             ]
             visible_columns = [column for column in columns if column in frame.columns]
@@ -556,6 +621,7 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
         "summaryRows": rank_rows,
         "stepRows": step_rows,
         "detailRows": detail_rows,
+        "trajectoryRows": detail_rows,
         "scoreTrendRows": _score_trend_rows(score_frame, cycle_map, selected_ref_dates),
         "cycleSummary": _cycle_summary(score_frame, cycle_map, selected_ref_dates),
         "refCycles": _ref_cycle_rows(cycle_map, selected_ref_dates),
@@ -575,6 +641,8 @@ def _empty_response(selection: dict[str, object], current_pm_date: str, warnings
             "worstSensor": None,
             "summaryRows": [],
             "trendRows": [],
+            "shapeRows": [],
+            "jitterRows": [],
             "scoreTrendRows": [],
             "cycleSummary": [],
             "refCycles": [],
@@ -588,6 +656,7 @@ def _empty_response(selection: dict[str, object], current_pm_date: str, warnings
             "summaryRows": [],
             "stepRows": [],
             "detailRows": [],
+            "trajectoryRows": [],
             "scoreTrendRows": [],
             "cycleSummary": [],
             "refCycles": [],

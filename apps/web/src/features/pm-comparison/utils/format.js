@@ -5,17 +5,9 @@ export const DEFAULT_PM_FORM = {
   lineId: "",
   eqpId: "",
   fdcBin: "",
-  type: "",
   ppid: "",
   recipeId: "",
   pmTimestamp: "",
-  beforeHours: "6",
-  afterHours: "6",
-  traceParamNames: "",
-  dtValues: "",
-  traceDataSource: "trace",
-  oesDataSource: "oes",
-  limit: "500",
 }
 
 export const PM_SPIDER_CATEGORIES = [
@@ -70,21 +62,16 @@ export function hasRequiredPmFilters(form) {
 }
 
 export function buildPmComparisonPayload(form) {
+  if (!hasRequiredPmFilters(form)) return null
   return {
     lineId: form.lineId.trim(),
     eqpId: form.eqpId.trim(),
-    fdcBin: form.fdcBin.trim(),
-    type: form.type.trim(),
-    ppid: form.ppid.trim(),
-    recipeId: form.recipeId.trim(),
+    fdcBin: (form.fdcBin || "").trim(),
+    ppid: (form.ppid || "").trim(),
+    recipeId: (form.recipeId || "").trim(),
     pmTimestamp: form.pmTimestamp,
-    beforeHours: Number(form.beforeHours || 24),
-    afterHours: Number(form.afterHours || 24),
-    traceParamNames: splitCsv(form.traceParamNames),
-    dtValues: splitCsv(form.dtValues),
-    traceDataSource: form.traceDataSource.trim() || "trace",
-    oesDataSource: form.oesDataSource.trim() || "oes",
-    limit: Number(form.limit || 1200),
+    traceDataSource: "trace",
+    oesDataSource: "oes",
   }
 }
 

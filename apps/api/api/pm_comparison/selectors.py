@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: PM SPIDER 파일 셀렉터
-# 주요 함수: iter_raw_files, iter_score_files, collect_partition_options, read_parquet
+# 주요 함수: iter_raw_files, iter_score_files, iter_decomp_files, collect_partition_options, read_parquet
 # 주요 가정: data와 result는 PM_COMPARISON_DATA_ROOT 바로 아래에 위치합니다.
 # =============================================================================
 from __future__ import annotations
@@ -15,6 +15,8 @@ import pandas as pd
 
 RAW_DIR_NAME = "data"
 SCORE_DIR_NAME = "result"
+SCORE_DATA_DIR_NAME = "score_data"
+DECOMP_DATA_DIR_NAME = "decomp_data"
 
 RAW_PARTITION_KEYS = [
     "line_id",
@@ -36,7 +38,18 @@ SCORE_PARTITION_KEYS = [
     "data_type",
 ]
 
-PARTITION_KEYS = sorted(set([*RAW_PARTITION_KEYS, *SCORE_PARTITION_KEYS]))
+# decomp_data: shape.parquet / jitter.parquet (DASHBOARD_SPEC §2)
+DECOMP_PARTITION_KEYS = [
+    "line_id",
+    "eqp_id",
+    "chamber_id",
+    "type",
+    "comp_dt",
+    "param",
+    "ch_step",
+]
+
+PARTITION_KEYS = sorted(set([*RAW_PARTITION_KEYS, *SCORE_PARTITION_KEYS, *DECOMP_PARTITION_KEYS]))
 
 REQUEST_TO_RAW_PARTITION = {
     "lineId": "line_id",
@@ -48,6 +61,13 @@ REQUEST_TO_RAW_PARTITION = {
 }
 
 REQUEST_TO_SCORE_PARTITION = {
+    "lineId": "line_id",
+    "eqpId": "eqp_id",
+    "chamberId": "chamber_id",
+    "type": "type",
+}
+
+REQUEST_TO_DECOMP_PARTITION = {
     "lineId": "line_id",
     "eqpId": "eqp_id",
     "chamberId": "chamber_id",
@@ -81,6 +101,15 @@ def ensure_dataset_root(dataset_name: str) -> Path:
     if not root.is_dir():
         raise NotADirectoryError(f"PM SPIDER {dataset_name} 경로가 폴더가 아닙니다: {root}")
     return root
+
+
+def _existing_child_root(parent: Path, child_name: str) -> Path | None:
+    """부모 디렉터리 아래 선택적 데이터셋 루트를 반환합니다."""
+
+    root = parent / child_name
+    if root.exists() and root.is_dir():
+        return root
+    return None
 
 
 def parse_partition_values(path: Path) -> dict[str, str]:
@@ -158,7 +187,10 @@ def iter_raw_files(
 ) -> Iterable[Path]:
     """data 아래에서 요청 조건에 맞는 Parquet 후보 파일을 순회합니다."""
 
-    root = ensure_dataset_root(RAW_DIR_NAME)
+    try:
+        root = ensure_dataset_root(RAW_DIR_NAME)
+    except (FileNotFoundError, NotADirectoryError):
+        return
     filters = _partition_filters(selection, REQUEST_TO_RAW_PARTITION)
     filters["data_source"] = data_source
 
@@ -185,17 +217,69 @@ def iter_raw_files(
 def iter_score_files(selection: dict[str, object], *, data_type: str) -> Iterable[Path]:
     """result 아래에서 요청 조건에 맞는 Parquet 후보 파일을 순회합니다."""
 
-    root = ensure_dataset_root(SCORE_DIR_NAME)
+    result_root = ensure_dataset_root(SCORE_DIR_NAME)
+    score_data_root = _existing_child_root(result_root, SCORE_DATA_DIR_NAME)
+    roots = [root for root in [score_data_root, result_root] if root is not None]
     filters = _partition_filters(selection, REQUEST_TO_SCORE_PARTITION)
+    # fdcBin과 chamber_id는 동일하므로 chamberId 미지정 시 fdcBin으로 대체합니다.
+    inferred_chamber_id = False
+    if not filters.get("chamber_id"):
+        fdc_bin = selection.get("fdcBin")
+        if fdc_bin:
+            filters["chamber_id"] = str(fdc_bin)
+            inferred_chamber_id = True
     filters["data_type"] = data_type
     max_files = int(getattr(settings, "PM_COMPARISON_MAX_FILES", 400))
     seen: set[Path] = set()
     key_variants = [SCORE_PARTITION_KEYS]
-    if not filters.get("chamber_id"):
+    if not filters.get("chamber_id") or inferred_chamber_id:
         key_variants.append([key for key in SCORE_PARTITION_KEYS if key != "chamber_id"])
-    for partition_keys in key_variants:
-        for path in _iter_partition_files(root, partition_keys, filters, max_files=max_files):
+    for root in roots:
+        for partition_keys in key_variants:
+            for path in _iter_partition_files(root, partition_keys, filters, max_files=max_files):
+                if path in seen:
+                    continue
+                seen.add(path)
+                yield path
+                if len(seen) >= max_files:
+                    return
+
+
+def iter_decomp_files(
+    selection: dict[str, object],
+    *,
+    comp_dt: str | None = None,
+    param_names: Sequence[str] | None = None,
+    file_name: str = "shape.parquet",
+) -> Iterable[Path]:
+    """decomp_data 아래에서 shape.parquet / jitter.parquet 파일을 순회합니다.
+
+    DASHBOARD_SPEC §2 경로:
+      decomp_data/line_id={}/eqp_id={}/chamber_id={}/type={}/comp_dt={}/param={}/ch_step={}/{file_name}
+    """
+
+    try:
+        result_root = ensure_dataset_root(SCORE_DIR_NAME)
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    root = _existing_child_root(result_root, DECOMP_DATA_DIR_NAME)
+    if root is None:
+        return
+
+    filters = _partition_filters(selection, REQUEST_TO_DECOMP_PARTITION)
+    filters["comp_dt"] = comp_dt or None
+    max_files = int(getattr(settings, "PM_COMPARISON_MAX_FILES", 400))
+    seen: set[Path] = set()
+
+    param_values = [str(p) for p in (param_names or []) if p]
+    param_candidates = param_values or [None]
+
+    for param in param_candidates:
+        filters["param"] = param
+        for path in _iter_partition_files(root, DECOMP_PARTITION_KEYS, filters, max_files=max_files):
             if path in seen:
+                continue
+            if path.name != file_name:
                 continue
             seen.add(path)
             yield path
@@ -203,18 +287,15 @@ def iter_score_files(selection: dict[str, object], *, data_type: str) -> Iterabl
                 return
 
 
-def collect_partition_options() -> dict[str, list[str]]:
-    """data 아래 partition 값을 제한된 범위에서 수집합니다."""
+def _scan_partition_dirs(root: Path, keys: list[str], max_dirs: int) -> dict[str, set[str]]:
+    """디렉터리 트리에서 key=value partition 값을 수집합니다."""
 
-    root = ensure_dataset_root(RAW_DIR_NAME)
-    max_dirs = int(getattr(settings, "PM_COMPARISON_MAX_META_DIRS", 5000))
-    options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
+    options: dict[str, set[str]] = {key: set() for key in keys}
     queue: deque[tuple[Path, int]] = deque([(root, 0)])
     visited = 0
-
     while queue and visited < max_dirs:
         current, depth = queue.popleft()
-        if depth >= len(RAW_PARTITION_KEYS):
+        if depth >= len(keys):
             continue
         try:
             children = sorted(path for path in current.iterdir() if path.is_dir())
@@ -229,6 +310,29 @@ def collect_partition_options() -> dict[str, list[str]]:
             queue.append((child, depth + 1))
             if visited >= max_dirs:
                 break
+    return options
+
+
+def collect_partition_options() -> dict[str, list[str]]:
+    """data 아래 partition 값을 수집하고 없으면 result score partition 값으로 대체합니다."""
+
+    max_dirs = int(getattr(settings, "PM_COMPARISON_MAX_META_DIRS", 5000))
+    try:
+        raw_root = ensure_dataset_root(RAW_DIR_NAME)
+        options = _scan_partition_dirs(raw_root, RAW_PARTITION_KEYS, max_dirs)
+    except (FileNotFoundError, NotADirectoryError):
+        # data가 없으면 result/score_data 또는 result partition 값으로 대체합니다.
+        options = {key: set() for key in RAW_PARTITION_KEYS}
+        try:
+            result_root = ensure_dataset_root(SCORE_DIR_NAME)
+            score_root = _existing_child_root(result_root, SCORE_DATA_DIR_NAME) or result_root
+            score_opts = _scan_partition_dirs(score_root, SCORE_PARTITION_KEYS, max_dirs)
+            # score chamber_id → fdc_bin 으로 노출
+            options["line_id"].update(score_opts.get("line_id", set()))
+            options["eqp_id"].update(score_opts.get("eqp_id", set()))
+            options["fdc_bin"].update(score_opts.get("chamber_id", set()))
+        except (FileNotFoundError, NotADirectoryError):
+            pass
 
     return {key: sorted(values) for key, values in options.items()}
 

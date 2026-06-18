@@ -72,6 +72,10 @@ export function usePmSpiderCategoryResults(payload, refPmDates = null) {
       source,
       rows,
       stepRows,
+      trendRows: Array.isArray(source?.trendRows) ? source.trendRows : [],
+      shapeRows: Array.isArray(source?.shapeRows) ? source.shapeRows : [],
+      jitterRows: Array.isArray(source?.jitterRows) ? source.jitterRows : [],
+      trajectoryRows: Array.isArray(source?.trajectoryRows) ? source.trajectoryRows : [],
       topRows: rows.slice(0, 5),
       rowCount: Number(source?.rowCount || 0),
       fileCount: Number(source?.fileCount || 0),
@@ -100,21 +104,27 @@ function getRowItemKey(category, row) {
   return `${row.step || ""}:${row.wavelength || ""}`
 }
 
-export function usePmSpiderDetailResult(category, row, refPmDates = null) {
+export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCell = null) {
   const itemKey = getRowItemKey(category, row)
+  // For OES: prefer oesCell (heatmap click) over row for step/wavelength
+  const oesStep = oesCell?.step ?? row?.step ?? ""
+  const oesWl   = oesCell?.wavelength != null ? String(oesCell.wavelength) : String(row?.wavelength ?? "")
+
   let payload = null
-  if (category?.payload && row && itemKey) {
+  const hasTarget = category?.kind === "trace" ? Boolean(itemKey) : Boolean(oesStep)
+  if (category?.payload && hasTarget) {
     payload = {
       ...withRefPmDates(category.payload, refPmDates),
-      traceParamNames: category.kind === "trace" ? [itemKey] : [],
-      selectedStep: category.kind === "oes" ? row.step || "" : "",
-      selectedWavelength: category.kind === "oes" ? String(row.wavelength || "") : "",
+      traceParamNames: category.kind === "trace" ? [itemKey].filter(Boolean) : [],
+      selectedStep: category.kind === "oes" ? oesStep : "",
+      selectedWavelength: category.kind === "oes" ? oesWl : "",
     }
   }
+  const cellKey = oesCell ? `${oesCell.step}:${oesCell.wavelength}` : "none"
   const payloadKey = buildPayloadKey(payload)
 
   return useQuery({
-    queryKey: pmComparisonQueryKeys.detail(category?.id || "empty", itemKey || "empty", payloadKey),
+    queryKey: pmComparisonQueryKeys.detail(category?.id || "empty", itemKey || cellKey || "empty", payloadKey),
     queryFn: () => fetchPmComparisonResult(payload),
     enabled: Boolean(payload),
     retry: false,
