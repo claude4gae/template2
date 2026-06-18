@@ -167,7 +167,7 @@ export function PortalNavbar({ navigationItems }) {
                   {navItem.title}
                 </NavigationMenuTrigger>
                 <NavigationMenuContent className={NAV_MENU_CONTENT_CLASS_NAME}>
-                  <ul className="grid w-max min-w-56 gap-4 p-2">
+                  <ul className="grid w-max gap-4 p-2">
                     <li>
                       {navItem.items?.map((item) => (
                         <NavigationMenuLink key={item.title} asChild>
