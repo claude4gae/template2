@@ -64,6 +64,9 @@ from api.common.services.request_helpers import (
 )
 
 from . import selectors, services
+from .services.jira.templates.jira_template_registry import TEMPLATE_SOURCES as JIRA_TEMPLATE_SOURCES
+from .services.mail.templates.mail_template_registry import MAIL_TEMPLATE_SOURCES
+from .services.messenger.templates.messenger_template_registry import EXCEL_TABLE_TEMPLATE_SENDERS
 from .serializers import (
     DroneRequestValidationError,
     normalize_custom_end_step,
@@ -84,6 +87,40 @@ from .serializers import (
 from .services.table_schema import DEFAULT_TABLE as TABLE_DEFAULT_TABLE, sanitize_identifier
 
 logger = logging.getLogger(__name__)
+
+TEMPLATE_OPTION_LABELS = {
+    "common": "기본",
+    "H1": "H1",
+    "auto_sp": "Auto S/P",
+}
+DEFAULT_NOTIFICATION_TEMPLATE_KEY = "common"
+
+
+def _serialize_template_options(template_sources: dict[str, object]) -> list[dict[str, str]]:
+    """registry key 목록을 template select 옵션으로 변환합니다."""
+
+    return [
+        {
+            "key": key,
+            "label": TEMPLATE_OPTION_LABELS.get(key, key),
+        }
+        for key in template_sources
+    ]
+
+
+def _validate_notification_template_key(
+    *,
+    field_name: str,
+    template_key: str | None,
+    template_sources: dict[str, object],
+) -> str:
+    """채널별 template key가 registry에 존재하는지 검증합니다."""
+
+    resolved_key = template_key or DEFAULT_NOTIFICATION_TEMPLATE_KEY
+    if resolved_key not in template_sources:
+        raise DroneRequestValidationError(f"{field_name} is not supported")
+    return resolved_key
+
 
 def _ensure_authenticated(request: HttpRequest) -> JsonResponse | None:
     """인증 여부를 확인하고 실패 시 JsonResponse를 반환합니다.
@@ -995,6 +1032,27 @@ class DroneNotificationTargetMappingView(DroneAuthenticatedView):
         )
 
 
+class DroneNotificationTemplateOptionView(DroneAuthenticatedView):
+    """채널별 알림 템플릿 옵션을 registry 기준으로 반환합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """알림 채널별 선택 가능한 템플릿 목록을 반환합니다."""
+
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+
+        return JsonResponse(
+            {
+                "templates": {
+                    "jira": _serialize_template_options(JIRA_TEMPLATE_SOURCES),
+                    "messenger": _serialize_template_options(EXCEL_TABLE_TEMPLATE_SENDERS),
+                    "mail": _serialize_template_options(MAIL_TEMPLATE_SOURCES),
+                }
+            }
+        )
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class DroneJiraKeyView(DroneAuthenticatedView):
     """target_user_sdwt_prod 단위 Jira 템플릿/프로젝트 키 조회/갱신 엔드포인트입니다."""
@@ -1051,6 +1109,8 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         )
         jira_key = entry.jira_key if entry and entry.jira_key else None
         template_key = entry.jira_template_key if entry and entry.jira_template_key else None
+        messenger_template_key = entry.messenger_template_key if entry and entry.messenger_template_key else None
+        mail_template_key = entry.mail_template_key if entry and entry.mail_template_key else None
         return JsonResponse(
             {
                 "userSdwtProd": target_user_sdwt_prod,
@@ -1058,6 +1118,9 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 "lineId": entry.line_id if entry else "",
                 "jiraKey": jira_key,
                 "templateKey": template_key,
+                "jiraTemplateKey": template_key,
+                "messengerTemplateKey": messenger_template_key,
+                "mailTemplateKey": mail_template_key,
                 "jiraEnabled": bool(entry.jira_enabled) if entry else True,
                 "messengerEnabled": bool(entry.messenger_enabled) if entry else True,
                 "messengerForceNewChatroom": bool(entry.messenger_force_new_chatroom) if entry else False,
@@ -1069,7 +1132,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         )
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """슈퍼유저가 userSdwtProd에 대한 Jira 키/템플릿 키를 갱신합니다.
+        """운영자가 userSdwtProd에 대한 Jira 키/템플릿 키를 갱신합니다.
 
         입력:
         - 요청: Django HttpRequest
@@ -1084,7 +1147,6 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         오류:
         - 400: 입력 오류
         - 401: 미인증
-        - 403: 권한 없음
         - 403: 권한 없음
         - 404: userSdwtProd 없음
 
@@ -1101,7 +1163,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         auth_response = self._authorize_user(request)
         if auth_response is not None:
             return auth_response
-        if not getattr(request.user, "is_superuser", False):
+        if not selectors.user_can_manage_drone_sop_recipients(user=request.user):
             return JsonResponse({"error": "forbidden"}, status=403)
 
         # -----------------------------------------------------------------------------
@@ -1133,6 +1195,21 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             template_key_provided, template_key = parse_optional_text_field(
                 payload,
                 field_name="templateKey",
+                max_length=self.MAX_TEMPLATE_KEY_LENGTH,
+            )
+            jira_template_key_provided, jira_template_key = parse_optional_text_field(
+                payload,
+                field_name="jiraTemplateKey",
+                max_length=self.MAX_TEMPLATE_KEY_LENGTH,
+            )
+            messenger_template_key_provided, messenger_template_key = parse_optional_text_field(
+                payload,
+                field_name="messengerTemplateKey",
+                max_length=self.MAX_TEMPLATE_KEY_LENGTH,
+            )
+            mail_template_key_provided, mail_template_key = parse_optional_text_field(
+                payload,
+                field_name="mailTemplateKey",
                 max_length=self.MAX_TEMPLATE_KEY_LENGTH,
             )
             jira_enabled_provided, jira_enabled = parse_optional_bool_field(
@@ -1167,9 +1244,40 @@ class DroneJiraKeyView(DroneAuthenticatedView):
         except DroneRequestValidationError as exc:
             return _validation_error_response(exc)
 
+        try:
+            if template_key_provided:
+                template_key = _validate_notification_template_key(
+                    field_name="templateKey",
+                    template_key=template_key,
+                    template_sources=JIRA_TEMPLATE_SOURCES,
+                )
+            if jira_template_key_provided:
+                jira_template_key = _validate_notification_template_key(
+                    field_name="jiraTemplateKey",
+                    template_key=jira_template_key,
+                    template_sources=JIRA_TEMPLATE_SOURCES,
+                )
+            if messenger_template_key_provided:
+                messenger_template_key = _validate_notification_template_key(
+                    field_name="messengerTemplateKey",
+                    template_key=messenger_template_key,
+                    template_sources=EXCEL_TABLE_TEMPLATE_SENDERS,
+                )
+            if mail_template_key_provided:
+                mail_template_key = _validate_notification_template_key(
+                    field_name="mailTemplateKey",
+                    template_key=mail_template_key,
+                    template_sources=MAIL_TEMPLATE_SOURCES,
+                )
+        except DroneRequestValidationError as exc:
+            return _validation_error_response(exc)
+
         if not (
             jira_key_provided
             or template_key_provided
+            or jira_template_key_provided
+            or messenger_template_key_provided
+            or mail_template_key_provided
             or jira_enabled_provided
             or messenger_enabled_provided
             or messenger_force_new_chatroom_provided
@@ -1189,8 +1297,12 @@ class DroneJiraKeyView(DroneAuthenticatedView):
             payload_kwargs["actor"] = request.user
         if jira_key_provided:
             payload_kwargs["jira_key"] = jira_key
-        if template_key_provided:
-            payload_kwargs["jira_template_key"] = template_key
+        if template_key_provided or jira_template_key_provided:
+            payload_kwargs["jira_template_key"] = jira_template_key if jira_template_key_provided else template_key
+        if messenger_template_key_provided:
+            payload_kwargs["messenger_template_key"] = messenger_template_key
+        if mail_template_key_provided:
+            payload_kwargs["mail_template_key"] = mail_template_key
         if jira_enabled_provided:
             payload_kwargs["jira_enabled"] = jira_enabled
         if messenger_enabled_provided:
@@ -1217,6 +1329,9 @@ class DroneJiraKeyView(DroneAuthenticatedView):
                 "lineId": template.line_id or line_id,
                 "jiraKey": template.jira_key,
                 "templateKey": template.jira_template_key,
+                "jiraTemplateKey": template.jira_template_key,
+                "messengerTemplateKey": template.messenger_template_key,
+                "mailTemplateKey": template.mail_template_key,
                 "jiraEnabled": template.jira_enabled,
                 "messengerEnabled": template.messenger_enabled,
                 "messengerForceNewChatroom": template.messenger_force_new_chatroom,

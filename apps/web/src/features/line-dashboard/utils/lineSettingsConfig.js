@@ -7,6 +7,7 @@ export const MAX_NEED_TO_SEND_KEYWORD_LENGTH = 64
 export const MAX_TARGET_FIELD_LENGTH = 64
 export const DEFAULT_CHANNEL_ENABLED = { jira: true, messenger: true, mail: true }
 export const DEFAULT_NEED_TO_SEND_RULE = { commentKeyword: "", enabled: false, ignoreSampleType: false }
+export const DEFAULT_TEMPLATE_KEYS = { jira: "common", messenger: "common", mail: "common" }
 export const RECIPIENT_CHANNELS = [
   {
     channel: "messenger",

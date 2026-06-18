@@ -8,6 +8,7 @@ import {
   createLineSetting,
   deleteNotificationTargetMapping,
   deleteLineSetting,
+  fetchNotificationTemplateOptions,
   fetchNotificationRecipients,
   fetchNotificationTargets,
   fetchUserSdwtJiraKey,
@@ -25,6 +26,8 @@ const EMPTY_MAPPING_OPTION_LINES = []
 const DEFAULT_CHANNEL_ENABLED = { jira: true, messenger: true, mail: true }
 const DEFAULT_NEED_TO_SEND_RULE = { commentKeyword: "", enabled: false, ignoreSampleType: false }
 const DEFAULT_MESSENGER_FORCE_NEW_CHATROOM = false
+const DEFAULT_TEMPLATE_KEYS = { jira: "common", messenger: "common", mail: "common" }
+const DEFAULT_TEMPLATE_OPTIONS = { jira: [], messenger: [], mail: [] }
 
 const normalizeId = (value) => String(value ?? "")
 const nowLabel = () => timeFormatter.format(new Date())
@@ -38,6 +41,8 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
   const [jiraKey, setJiraKey] = React.useState("")
   const [channelEnabled, setChannelEnabled] = React.useState(DEFAULT_CHANNEL_ENABLED)
   const [needToSendRule, setNeedToSendRule] = React.useState(DEFAULT_NEED_TO_SEND_RULE)
+  const [templateKeys, setTemplateKeys] = React.useState(DEFAULT_TEMPLATE_KEYS)
+  const [templateOptions, setTemplateOptions] = React.useState(DEFAULT_TEMPLATE_OPTIONS)
   const [messengerForceNewChatroom, setMessengerForceNewChatroom] = React.useState(
     DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
   )
@@ -76,6 +81,8 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     setJiraKey("")
     setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
     setNeedToSendRule(DEFAULT_NEED_TO_SEND_RULE)
+    setTemplateKeys(DEFAULT_TEMPLATE_KEYS)
+    setTemplateOptions(DEFAULT_TEMPLATE_OPTIONS)
     setMessengerForceNewChatroom(DEFAULT_MESSENGER_FORCE_NEW_CHATROOM)
     setMailRecipients([])
     setMailRecipientsTargetUserSdwtProd("")
@@ -103,6 +110,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     setJiraKey("")
     setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
     setNeedToSendRule(DEFAULT_NEED_TO_SEND_RULE)
+    setTemplateKeys(DEFAULT_TEMPLATE_KEYS)
     setMessengerForceNewChatroom(DEFAULT_MESSENGER_FORCE_NEW_CHATROOM)
     setMailRecipients([])
     setMailRecipientsTargetUserSdwtProd(userSdwtProd || "")
@@ -152,16 +160,19 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
       const [
         settingsResult,
         targetsResult,
+        templateOptionsResult,
         jiraResult,
         mailRecipientsResult,
         messengerRecipientsResult,
       ] = await Promise.allSettled([
         fetchLineSettings(lineId),
         fetchNotificationTargets({ lineId }),
+        fetchNotificationTemplateOptions(),
         userSdwtProd
           ? fetchUserSdwtJiraKey(userSdwtProd)
           : Promise.resolve({
               jiraKey: "",
+              templateKeys: DEFAULT_TEMPLATE_KEYS,
               messengerForceNewChatroom: DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
             }),
         shouldLoadRecipients
@@ -218,10 +229,23 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         ok = false
       }
 
+      if (templateOptionsResult.status === "fulfilled") {
+        setTemplateOptions(templateOptionsResult.value?.templateOptions || DEFAULT_TEMPLATE_OPTIONS)
+      } else {
+        const message =
+          templateOptionsResult.reason instanceof Error
+            ? templateOptionsResult.reason.message
+            : "Failed to load notification template options"
+        setError(message)
+        setTemplateOptions(DEFAULT_TEMPLATE_OPTIONS)
+        ok = false
+      }
+
       if (jiraResult.status === "fulfilled") {
         setJiraKey(jiraResult.value?.jiraKey || "")
         setChannelEnabled(jiraResult.value?.channelEnabled || DEFAULT_CHANNEL_ENABLED)
         setNeedToSendRule(jiraResult.value?.needToSendRule || DEFAULT_NEED_TO_SEND_RULE)
+        setTemplateKeys(jiraResult.value?.templateKeys || DEFAULT_TEMPLATE_KEYS)
         setMessengerForceNewChatroom(
           Boolean(jiraResult.value?.messengerForceNewChatroom),
         )
@@ -234,6 +258,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         setJiraKey("")
         setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
         setNeedToSendRule(DEFAULT_NEED_TO_SEND_RULE)
+        setTemplateKeys(DEFAULT_TEMPLATE_KEYS)
         setMessengerForceNewChatroom(DEFAULT_MESSENGER_FORCE_NEW_CHATROOM)
         ok = false
       }
@@ -322,7 +347,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
   }, [])
 
   const updateJiraKey = React.useCallback(
-    async ({ jiraKey: nextJiraKey, channelEnabled: nextChannelEnabled }) => {
+    async ({ jiraKey: nextJiraKey, channelEnabled: nextChannelEnabled, templateKeys: nextTemplateKeys }) => {
       if (!userSdwtProd) {
         throw new Error("Select a notification target to update Jira key")
       }
@@ -332,17 +357,20 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         jiraKey: savedKey,
         channelEnabled: savedChannelEnabled,
         needToSendRule: savedNeedToSendRule,
+        templateKeys: savedTemplateKeys,
         messengerForceNewChatroom: savedMessengerForceNewChatroom,
       } = await updateUserSdwtJiraKey({
         lineId: requestLineId,
         userSdwtProd,
         jiraKey: nextJiraKey,
         channelEnabled: nextChannelEnabled || channelEnabled,
+        templateKeys: nextTemplateKeys || templateKeys,
       })
       if (isCurrentContext(requestLineId, requestUserSdwtProd)) {
         setJiraKey(savedKey || "")
         setChannelEnabled(savedChannelEnabled || DEFAULT_CHANNEL_ENABLED)
         setNeedToSendRule(savedNeedToSendRule || DEFAULT_NEED_TO_SEND_RULE)
+        setTemplateKeys(savedTemplateKeys || DEFAULT_TEMPLATE_KEYS)
         setMessengerForceNewChatroom(Boolean(savedMessengerForceNewChatroom))
         setJiraKeyError(null)
         setLastUpdatedLabel(nowLabel())
@@ -351,10 +379,11 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         jiraKey: savedKey,
         channelEnabled: savedChannelEnabled || DEFAULT_CHANNEL_ENABLED,
         needToSendRule: savedNeedToSendRule || DEFAULT_NEED_TO_SEND_RULE,
+        templateKeys: savedTemplateKeys || DEFAULT_TEMPLATE_KEYS,
         messengerForceNewChatroom: Boolean(savedMessengerForceNewChatroom),
       }
     },
-    [channelEnabled, isCurrentContext, lineId, userSdwtProd],
+    [channelEnabled, isCurrentContext, lineId, templateKeys, userSdwtProd],
   )
 
   const updateNeedToSendRule = React.useCallback(
@@ -587,6 +616,8 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     jiraKey,
     channelEnabled,
     needToSendRule,
+    templateKeys,
+    templateOptions,
     messengerForceNewChatroom,
     mailRecipients,
     mailRecipientsTargetUserSdwtProd,

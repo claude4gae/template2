@@ -13,7 +13,11 @@ export {
   fetchLineSettings,
   updateLineSetting,
 } from "./lineSettings"
-export { fetchUserSdwtJiraKey, updateUserSdwtJiraKey } from "./lineJiraKey"
+export {
+  fetchNotificationTemplateOptions,
+  fetchUserSdwtJiraKey,
+  updateUserSdwtJiraKey,
+} from "./lineJiraKey"
 export {
   createNotificationTargetMapping,
   createNotificationTarget,

@@ -4344,6 +4344,12 @@ class DroneJiraKeyEndpointTests(TestCase):
             password="test-password",
             knox_id="knox-70001",
         )
+        self.staff_user = User.objects.create_user(
+            sabun="S70002",
+            password="test-password",
+            knox_id="knox-70002",
+            is_staff=True,
+        )
         account_services.ensure_affiliation_option(
             department="Dept",
             line="L1",
@@ -4360,6 +4366,8 @@ class DroneJiraKeyEndpointTests(TestCase):
         _upsert_target(
             target_user_sdwt_prod="SDWT",
             jira_template_key="common",
+            messenger_template_key="H1",
+            mail_template_key="auto_sp",
             jira_key="PROJ",
             jira_enabled=False,
             messenger_enabled=False,
@@ -4375,6 +4383,9 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["jiraKey"], "PROJ")
         self.assertEqual(response.json()["templateKey"], "common")
+        self.assertEqual(response.json()["jiraTemplateKey"], "common")
+        self.assertEqual(response.json()["messengerTemplateKey"], "H1")
+        self.assertEqual(response.json()["mailTemplateKey"], "auto_sp")
         self.assertFalse(response.json()["jiraEnabled"])
         self.assertFalse(response.json()["messengerEnabled"])
         self.assertTrue(response.json()["messengerForceNewChatroom"])
@@ -4411,6 +4422,26 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(response.json()["jiraKey"], "PROJ")
         self.assertEqual(response.json()["templateKey"], "common")
 
+    def test_notification_template_options_requires_authentication(self) -> None:
+        """템플릿 옵션 조회는 인증이 필요합니다."""
+
+        response = self.client.get(reverse("line-dashboard-notification-template-options"))
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_notification_template_options_returns_registry_keys(self) -> None:
+        """템플릿 옵션 조회가 registry 기반 key 목록을 반환하는지 확인합니다."""
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("line-dashboard-notification-template-options"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["templates"]
+        self.assertEqual([item["key"] for item in payload["jira"]], ["common", "H1"])
+        self.assertEqual([item["key"] for item in payload["messenger"]], ["common", "H1"])
+        self.assertEqual([item["key"] for item in payload["mail"]], ["common", "H1", "auto_sp"])
+        self.assertEqual(payload["mail"][2]["label"], "Auto S/P")
+
     def test_jira_key_get_rejects_snake_case_query_key(self) -> None:
         """GET 조회는 user_sdwt_prod(snake_case) 쿼리 키를 허용하지 않는지 확인합니다."""
 
@@ -4422,8 +4453,8 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "userSdwtProd is required")
 
-    def test_jira_key_update_requires_superuser(self) -> None:
-        """Jira 키 갱신은 슈퍼유저만 가능해야 합니다."""
+    def test_jira_key_update_requires_operator(self) -> None:
+        """Jira 키 갱신은 운영자 권한이 필요하고 staff도 허용되는지 확인합니다."""
         payload = {"lineId": "L1", "userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "common"}
 
         self.client.force_login(self.user)
@@ -4434,7 +4465,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-        self.client.force_login(self.superuser)
+        self.client.force_login(self.staff_user)
         response = self.client.post(
             reverse("line-dashboard-jira-keys"),
             data=json.dumps(payload),
@@ -4475,6 +4506,80 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertFalse(refreshed.jira_enabled)
         self.assertTrue(refreshed.messenger_enabled)
         self.assertFalse(refreshed.mail_enabled)
+
+    def test_jira_key_update_saves_channel_template_keys(self) -> None:
+        """Jira/Teams/Mail 템플릿 키를 채널별로 저장하는지 확인합니다."""
+        payload = {
+            "lineId": "L1",
+            "userSdwtProd": "SDWT",
+            "jiraTemplateKey": "H1",
+            "messengerTemplateKey": "common",
+            "mailTemplateKey": "auto_sp",
+        }
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["templateKey"], "H1")
+        self.assertEqual(response.json()["jiraTemplateKey"], "H1")
+        self.assertEqual(response.json()["messengerTemplateKey"], "common")
+        self.assertEqual(response.json()["mailTemplateKey"], "auto_sp")
+
+        refreshed = DroneSopTarget.objects.get(target_user_sdwt_prod="SDWT")
+        self.assertEqual(refreshed.jira_template_key, "H1")
+        self.assertEqual(refreshed.messenger_template_key, "common")
+        self.assertEqual(refreshed.mail_template_key, "auto_sp")
+
+    def test_jira_key_update_rejects_unknown_channel_template_key(self) -> None:
+        """등록되지 않은 채널 템플릿 키는 저장하지 않는지 확인합니다."""
+        payload = {
+            "lineId": "L1",
+            "userSdwtProd": "SDWT",
+            "mailTemplateKey": "unknown_template",
+        }
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "mailTemplateKey is not supported")
+        self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="SDWT").exists())
+
+    def test_jira_key_update_defaults_empty_channel_template_key_to_common(self) -> None:
+        """빈 채널 템플릿 키는 common 기본값으로 저장하는지 확인합니다."""
+        payload = {
+            "lineId": "L1",
+            "userSdwtProd": "SDWT",
+            "jiraTemplateKey": "",
+            "messengerTemplateKey": "",
+            "mailTemplateKey": "",
+        }
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            reverse("line-dashboard-jira-keys"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["jiraTemplateKey"], "common")
+        self.assertEqual(response.json()["messengerTemplateKey"], "common")
+        self.assertEqual(response.json()["mailTemplateKey"], "common")
+
+        refreshed = DroneSopTarget.objects.get(target_user_sdwt_prod="SDWT")
+        self.assertEqual(refreshed.jira_template_key, "common")
+        self.assertEqual(refreshed.messenger_template_key, "common")
+        self.assertEqual(refreshed.mail_template_key, "common")
 
     def test_jira_key_update_saves_messenger_force_new_chatroom(self) -> None:
         """다음 메신저 발송 시 새 채팅방 생성 옵션을 저장하는지 확인합니다."""

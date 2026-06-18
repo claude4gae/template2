@@ -15,6 +15,54 @@ const DEFAULT_NEED_TO_SEND_RULE = {
   ignoreSampleType: false,
 }
 const DEFAULT_MESSENGER_FORCE_NEW_CHATROOM = false
+const DEFAULT_TEMPLATE_KEY = "common"
+const DEFAULT_TEMPLATE_KEYS = {
+  jira: DEFAULT_TEMPLATE_KEY,
+  messenger: DEFAULT_TEMPLATE_KEY,
+  mail: DEFAULT_TEMPLATE_KEY,
+}
+const DEFAULT_TEMPLATE_OPTIONS = {
+  jira: [],
+  messenger: [],
+  mail: [],
+}
+
+function normalizeTemplateKey(value) {
+  const normalized = typeof value === "string" ? value.trim() : ""
+  return normalized || DEFAULT_TEMPLATE_KEY
+}
+
+function normalizeTemplateKeys(payload) {
+  const legacyTemplateKey = normalizeTemplateKey(payload?.templateKey)
+  return {
+    jira: normalizeTemplateKey(payload?.jiraTemplateKey) || legacyTemplateKey,
+    messenger: normalizeTemplateKey(payload?.messengerTemplateKey),
+    mail: normalizeTemplateKey(payload?.mailTemplateKey),
+  }
+}
+
+function normalizeTemplateOption(rawOption) {
+  if (!rawOption || typeof rawOption !== "object") return null
+  const key = typeof rawOption.key === "string" ? rawOption.key.trim() : ""
+  if (!key) return null
+  return {
+    key,
+    label: typeof rawOption.label === "string" && rawOption.label.trim() ? rawOption.label.trim() : key,
+  }
+}
+
+function normalizeTemplateOptionList(values) {
+  return (Array.isArray(values) ? values : []).map(normalizeTemplateOption).filter(Boolean)
+}
+
+function normalizeTemplateOptions(payload) {
+  const templates = payload?.templates && typeof payload.templates === "object" ? payload.templates : {}
+  return {
+    jira: normalizeTemplateOptionList(templates.jira),
+    messenger: normalizeTemplateOptionList(templates.messenger),
+    mail: normalizeTemplateOptionList(templates.mail),
+  }
+}
 
 function normalizeChannelEnabled(payload) {
   return {
@@ -49,6 +97,7 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
       channelEnabled: DEFAULT_CHANNEL_ENABLED,
       needToSendRule: DEFAULT_NEED_TO_SEND_RULE,
       messengerForceNewChatroom: DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
+      templateKeys: DEFAULT_TEMPLATE_KEYS,
     }
   }
 
@@ -75,11 +124,12 @@ export async function fetchUserSdwtJiraKey(userSdwtProd) {
       typeof payload?.messengerForceNewChatroom === "boolean"
         ? payload.messengerForceNewChatroom
         : DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
+    templateKeys: normalizeTemplateKeys(payload),
   }
 }
 
 export async function updateUserSdwtJiraKey(options) {
-  const { lineId, userSdwtProd, channelEnabled, needToSendRule } = options
+  const { lineId, userSdwtProd, channelEnabled, needToSendRule, templateKeys } = options
   const endpoint = buildBackendUrl("/api/v1/line-dashboard/jira-keys")
   const requestBody = {
     lineId,
@@ -93,6 +143,12 @@ export async function updateUserSdwtJiraKey(options) {
     requestBody.jiraEnabled = Boolean(channelEnabled.jira)
     requestBody.messengerEnabled = Boolean(channelEnabled.messenger)
     requestBody.mailEnabled = Boolean(channelEnabled.mail)
+  }
+  if (templateKeys) {
+    requestBody.jiraTemplateKey = normalizeTemplateKey(templateKeys.jira)
+    requestBody.messengerTemplateKey =
+      normalizeTemplateKey(templateKeys.messenger)
+    requestBody.mailTemplateKey = normalizeTemplateKey(templateKeys.mail)
   }
   if (needToSendRule) {
     requestBody.needtosendCommentLastAt =
@@ -127,5 +183,26 @@ export async function updateUserSdwtJiraKey(options) {
       typeof payload?.messengerForceNewChatroom === "boolean"
         ? payload.messengerForceNewChatroom
         : DEFAULT_MESSENGER_FORCE_NEW_CHATROOM,
+    templateKeys: normalizeTemplateKeys(payload),
+  }
+}
+
+export async function fetchNotificationTemplateOptions() {
+  const response = await fetch(buildBackendUrl("/api/v1/line-dashboard/notification-template-options"), {
+    cache: "no-store",
+    credentials: "include",
+  })
+  const payload = await safeParseJson(response)
+
+  if (!response.ok) {
+    throw buildApiError(
+      response,
+      payload,
+      `Failed to load notification template options (status ${response.status})`,
+    )
+  }
+
+  return {
+    templateOptions: normalizeTemplateOptions(payload) || DEFAULT_TEMPLATE_OPTIONS,
   }
 }

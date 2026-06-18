@@ -19,6 +19,7 @@ import { useLineSettings } from "../hooks/useLineSettings"
 import {
   DEFAULT_CHANNEL_ENABLED,
   DEFAULT_NEED_TO_SEND_RULE,
+  DEFAULT_TEMPLATE_KEYS,
   DUPLICATE_MESSAGE,
   DUPLICATE_TARGET_MAPPING_MESSAGE,
   DUPLICATE_TARGET_MESSAGE,
@@ -170,6 +171,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     jiraKey,
     channelEnabled,
     needToSendRule,
+    templateKeys,
+    templateOptions,
     messengerForceNewChatroom,
     mailRecipients,
     mailRecipientsTargetUserSdwtProd,
@@ -226,6 +229,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [deletingMappingKey, setDeletingMappingKey] = React.useState("")
   const [jiraKeyDraft, setJiraKeyDraft] = React.useState("")
   const [channelEnabledDraft, setChannelEnabledDraft] = React.useState(DEFAULT_CHANNEL_ENABLED)
+  const [templateKeyDraft, setTemplateKeyDraft] = React.useState(DEFAULT_TEMPLATE_KEYS)
   const [needToSendRuleDraft, setNeedToSendRuleDraft] = React.useState(DEFAULT_NEED_TO_SEND_RULE)
   const [jiraKeyFormError, setJiraKeyFormError] = React.useState(null)
   const [isSavingJiraKey, setIsSavingJiraKey] = React.useState(false)
@@ -277,7 +281,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     (target) => target.targetUserSdwtProd === selectedUserSdwtProd,
   )
   const canManageRecipients = Boolean(selectedUserSdwtProd && isGlobalOperator)
-  const canManageChannelSettings = Boolean(lineId && selectedUserSdwtProd && user?.is_superuser)
+  const canManageChannelSettings = Boolean(lineId && selectedUserSdwtProd && isGlobalOperator)
   const canCreateTarget = Boolean(lineId && isGlobalOperator)
   const canManageMappings = Boolean(selectedNotificationTarget && isGlobalOperator)
   const mappingUserLineOptions = React.useMemo(
@@ -715,12 +719,13 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   React.useEffect(() => {
     setJiraKeyDraft(jiraKey || "")
     setChannelEnabledDraft(channelEnabled || DEFAULT_CHANNEL_ENABLED)
+    setTemplateKeyDraft(templateKeys || DEFAULT_TEMPLATE_KEYS)
     setNeedToSendRuleDraft(needToSendRule || DEFAULT_NEED_TO_SEND_RULE)
     setJiraKeyFormError(null)
     setNeedToSendRuleFormError(null)
     setIsSavingJiraKey(false)
     setIsSavingNeedToSendRule(false)
-  }, [channelEnabled, jiraKey, lineId, needToSendRule, selectedUserSdwtProd])
+  }, [channelEnabled, jiraKey, lineId, needToSendRule, selectedUserSdwtProd, templateKeys])
 
   React.useEffect(() => {
     sourceGroupRequestRef.current.mail += 1
@@ -781,28 +786,34 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setHasLoadedPermissionContext(false)
 
     async function loadRecipientOptions() {
-      try {
-        const [{ departments, userSdwtProds }, permissionContext] = await Promise.all([
-          fetchAccountUserPool({ limit: 1, includeExternalSnapshots: true }),
-          fetchNotificationRecipientPermissions(),
-        ])
-        if (isActive) {
-          setAccountDepartmentValues(departments || [])
-          setAccountUserSdwtValues(userSdwtProds || [])
-          setIsGlobalOperator(Boolean(permissionContext?.isOperator))
-          setHasLoadedPermissionContext(true)
-        }
-      } catch (requestError) {
-        if (isActive) {
-          const message =
-            requestError instanceof Error ? requestError.message : "Failed to load user groups"
-          setIsGlobalOperator(false)
-          setHasLoadedPermissionContext(true)
-          setAccountDepartmentValues([])
-          setAccountUserSdwtValues([])
-          setRecipientActionErrors({ mail: message, messenger: message })
-        }
+      const [accountOptionsResult, permissionContextResult] = await Promise.allSettled([
+        fetchAccountUserPool({ limit: 1, includeExternalSnapshots: true }),
+        fetchNotificationRecipientPermissions(),
+      ])
+      if (!isActive) {
+        return
       }
+
+      if (accountOptionsResult.status === "fulfilled") {
+        const { departments, userSdwtProds } = accountOptionsResult.value
+        setAccountDepartmentValues(departments || [])
+        setAccountUserSdwtValues(userSdwtProds || [])
+      } else {
+        const message =
+          accountOptionsResult.reason instanceof Error
+            ? accountOptionsResult.reason.message
+            : "Failed to load user groups"
+        setAccountDepartmentValues([])
+        setAccountUserSdwtValues([])
+        setRecipientActionErrors({ mail: message, messenger: message })
+      }
+
+      if (permissionContextResult.status === "fulfilled") {
+        setIsGlobalOperator(Boolean(permissionContextResult.value?.isOperator))
+      } else {
+        setIsGlobalOperator(false)
+      }
+      setHasLoadedPermissionContext(true)
     }
 
     loadRecipientOptions()
@@ -1065,7 +1076,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       }
 
       const normalized = jiraKeyDraft.trim()
-      if (!normalized) {
+      if (channelEnabledDraft.jira && !normalized) {
         setJiraKeyFormError("Jira Project Key를 입력하세요.")
         return
       }
@@ -1082,7 +1093,11 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       setJiraKeyFormError(null)
 
       try {
-        await updateJiraKey({ jiraKey: normalized, channelEnabled: channelEnabledDraft })
+        await updateJiraKey({
+          jiraKey: normalized,
+          channelEnabled: channelEnabledDraft,
+          templateKeys: templateKeyDraft,
+        })
         showJiraKeyToast()
       } catch (requestError) {
         const message =
@@ -1093,8 +1108,19 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         setIsSavingJiraKey(false)
       }
     },
-    [canManageChannelSettings, channelEnabledDraft, jiraKeyDraft, selectedUserSdwtProd, updateJiraKey],
+    [
+      canManageChannelSettings,
+      channelEnabledDraft,
+      jiraKeyDraft,
+      selectedUserSdwtProd,
+      templateKeyDraft,
+      updateJiraKey,
+    ],
   )
+
+  const handleTemplateKeyChange = React.useCallback((channelKey, value) => {
+    setTemplateKeyDraft((prev) => ({ ...prev, [channelKey]: value }))
+  }, [])
 
   const handleChannelEnabledChange = React.useCallback(async (channelKey, isEnabled) => {
     if (!selectedUserSdwtProd) {
@@ -1112,7 +1138,11 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setIsSavingJiraKey(true)
     setJiraKeyFormError(null)
     try {
-      await updateJiraKey({ jiraKey: jiraKey || "", channelEnabled: nextDraft })
+      await updateJiraKey({
+        jiraKey: jiraKeyDraft.trim(),
+        channelEnabled: nextDraft,
+        templateKeys: templateKeyDraft,
+      })
       showAlarmChannelApplyToast(channelKey, isEnabled)
     } catch (requestError) {
       const message =
@@ -1126,8 +1156,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [
     canManageChannelSettings,
     channelEnabledDraft,
-    jiraKey,
+    jiraKeyDraft,
     selectedUserSdwtProd,
+    templateKeyDraft,
     updateJiraKey,
   ])
 
@@ -1677,6 +1708,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       selectedUserSdwtProd={selectedUserSdwtProd}
       jiraKeyDraft={jiraKeyDraft}
       channelEnabledDraft={channelEnabledDraft}
+      templateKeyDraft={templateKeyDraft}
+      templateOptions={templateOptions}
       maxJiraKeyLength={MAX_JIRA_KEY_LENGTH}
       jiraKeyFormError={jiraKeyFormError}
       jiraKeyError={jiraKeyError}
@@ -1685,6 +1718,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       canManage={canManageChannelSettings}
       onJiraKeyDraftChange={setJiraKeyDraft}
       onChannelEnabledChange={handleChannelEnabledChange}
+      onTemplateKeyChange={handleTemplateKeyChange}
       onSaveJiraKey={handleJiraKeySave}
     />
   )
