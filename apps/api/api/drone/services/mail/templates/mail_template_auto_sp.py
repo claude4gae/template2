@@ -49,6 +49,13 @@ BODY_TEMPLATE = """<div>
     </div>
   </div>
 
+  {% if comment_raw %}
+    <div style="margin:4px 0;">
+      <div style="font-size:14px; margin-top:12px; white-space:pre-wrap;">🎨 Comment : {{ comment_raw }}</div>
+      <div style="font-size:14px; margin-top:12px; white-space:pre-wrap;">💬 답변  :&nbsp; </div>
+    </div>
+  {% endif %}
+
   <div style="margin:4px 0;">
     <div style="font-size:14px; margin-top:12px;">💿 Defect Image :</div>
     {% if defect_urls %}
@@ -57,7 +64,7 @@ BODY_TEMPLATE = """<div>
           {% if item.image_urls %}
             {% for image_url in item.image_urls %}
               <a href="{{ item.map_url }}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin:0 8px 8px 0; text-decoration:none;">
-                <img src="{{ image_url }}" alt="Defect {{ item.label }}" width="500" style="display:block; max-width:500px; width:100%; height:auto; border:1px solid #ddd;" />
+                <img src="{{ image_url }}" alt="Defect {{ item.label }}" width="250" style="display:block; max-width:250px; width:100%; height:auto; border:1px solid #ddd;" />
               </a>
             {% endfor %}
           {% else %}
@@ -69,13 +76,6 @@ BODY_TEMPLATE = """<div>
       <span style="font-size:14px; color:#999;">-</span>
     {% endif %}
   </div>
-
-  {% if comment_raw %}
-    <div style="margin:4px 0;">
-      <div style="font-size:14px; margin-top:12px; white-space:pre-wrap;">🎨 Comment : {{ comment_raw }}</div>
-      <div style="font-size:14px; margin-top:12px; white-space:pre-wrap;">💬 답변  :&nbsp; </div>
-    </div>
-  {% endif %}
 </div>
 """
 

@@ -426,7 +426,7 @@ export function DataTable({ lineId }) {
   )
 
   /* 페이지네이션/컬럼 사이징 로컬 상태 */
-  const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 15 })
+  const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 100 })
   const [columnSizing, setColumnSizing] = React.useState({})
   const [isCompactMode, setIsCompactMode] = React.useState(false)
   const [rowRefreshAnimations, setRowRefreshAnimations] = React.useState({})

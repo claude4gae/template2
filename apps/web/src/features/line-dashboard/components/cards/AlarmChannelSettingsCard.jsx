@@ -147,7 +147,10 @@ export function AlarmChannelSettingsCard({
                       </SelectContent>
                     </Select>
                   </div>
-                  <Badge variant={isEnabled ? "default" : "secondary"} className="shrink-0 text-[10px]">
+                  <Badge
+                    variant={isEnabled ? "default" : "secondary"}
+                    className="w-12 shrink-0 justify-center text-[10px]"
+                  >
                     {isEnabled ? "활성" : "비활성"}
                   </Badge>
                 </div>
