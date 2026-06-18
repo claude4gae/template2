@@ -430,7 +430,6 @@ def _meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
         "lineId": "line_id",
         "eqpId": "eqp_id",
         "fdcBin": "fdc_bin",
-        "pmTimestamp": "dt",
         "type": "type",
         "ppid": "ppid",
         "recipeId": "recipe_id",

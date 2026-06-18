@@ -432,6 +432,51 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(line_meta["eqpIds"], ["EQP1"])
         self.assertEqual(eqp_meta["fdcBins"], ["BIN1"])
 
+    def test_meta_options_after_pm_timestamp_do_not_require_raw_dt_match(self) -> None:
+        """score PM 날짜와 raw dt 폴더명이 달라도 하위 옵션을 반환해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw_target = (
+                root
+                / selectors.RAW_DIR_NAME
+                / "L1"
+                / "EQP1"
+                / "BIN1"
+                / "20260601"
+                / "trace"
+                / "type=ag"
+                / "ppid=PPID1"
+                / "recipe_id=RCP1"
+                / "priority=1"
+                / "trace_param_name=PRESSURE"
+            )
+            raw_target.mkdir(parents=True)
+            score_target = (
+                root
+                / selectors.SCORE_DIR_NAME
+                / "line_id=L1"
+                / "eqp_id=EQP1"
+                / "type=ag"
+                / "data_type=trace"
+            )
+            score_target.mkdir(parents=True)
+            pd.DataFrame([{"날짜": "2026-06-01"}]).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                timestamp_meta = services.get_meta(
+                    {
+                        "lineId": "L1",
+                        "eqpId": "EQP1",
+                        "fdcBin": "BIN1",
+                        "pmTimestamp": "2026-06-01",
+                    }
+                )
+
+        self.assertEqual(timestamp_meta["pmDates"], ["2026-06-01"])
+        self.assertEqual(timestamp_meta["ppids"], ["PPID1"])
+        self.assertEqual(timestamp_meta["recipeIds"], ["RCP1"])
+
     def test_compare_pm_window_returns_empty_response_without_score_rows(self) -> None:
         """result 파일이 없을 때도 pm_date KeyError 없이 빈 응답을 반환합니다."""
 
