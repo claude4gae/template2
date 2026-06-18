@@ -374,6 +374,7 @@ class PmComparisonServiceTests(SimpleTestCase):
                 all_meta = services.get_meta()
                 line_meta = services.get_meta({"lineId": "L1"})
                 eqp_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
+                fdc_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1", "fdcBin": "BIN1"})
                 ppid_meta = services.get_meta(
                     {
                         "lineId": "L1",
@@ -388,6 +389,9 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertNotIn("BAD_LINE", all_meta["lineIds"])
         self.assertEqual(line_meta["eqpIds"], ["EQP1"])
         self.assertEqual(eqp_meta["fdcBins"], ["BIN1"])
+        self.assertEqual(fdc_meta["pmDates"], ["2026-06-01"])
+        self.assertEqual(fdc_meta["ppids"], ["PPID1", "PPID2"])
+        self.assertEqual(fdc_meta["recipeIds"], ["RCP1", "RCP2"])
         self.assertEqual(ppid_meta["recipeIds"], ["RCP1"])
 
     def test_score_fallback_meta_options_are_scoped(self) -> None:

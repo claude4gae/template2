@@ -722,12 +722,14 @@ def get_meta(selection: dict[str, object] | None = None) -> dict[str, object]:
     except NotADirectoryError as exc:
         raise PmComparisonServiceError(str(exc), status_code=400) from exc
 
+    pm_dates = _collect_pm_dates(warnings, selection)
+
     return {
         "lineIds": options.get("line_id", []),
         "eqpIds": options.get("eqp_id", []),
         "fdcBins": options.get("fdc_bin", []),
         "dtValues": options.get("dt", []),
-        "pmDates": _collect_pm_dates(warnings, selection),
+        "pmDates": pm_dates or options.get("dt", []),
         "types": options.get("type", []),
         "ppids": options.get("ppid", []),
         "recipeIds": options.get("recipe_id", []),

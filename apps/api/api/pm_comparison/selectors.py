@@ -477,7 +477,9 @@ def _should_descend_for_key(filters: dict[str, str], key: str, value: str) -> bo
     """선택된 partition 값과 일치할 때만 하위 단계로 내려갑니다."""
 
     expected = filters.get(key)
-    return bool(expected and expected == value)
+    if expected:
+        return expected == value
+    return bool(filters.get("fdc_bin") and key in {"dt", "type", "ppid", "recipe_id", "data_source"})
 
 
 def _scan_hive_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
