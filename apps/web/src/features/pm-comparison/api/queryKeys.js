@@ -3,7 +3,7 @@
 
 export const pmComparisonQueryKeys = {
   all: ["pm-comparison"],
-  meta: () => ["pm-comparison", "meta"],
+  meta: (selectionKey = "all") => ["pm-comparison", "meta", selectionKey],
   result: (payloadKey) => ["pm-comparison", "result", payloadKey],
   category: (pattern, payloadKey) => ["pm-comparison", "category", pattern, payloadKey],
   detail: (categoryId, itemKey, payloadKey) => [

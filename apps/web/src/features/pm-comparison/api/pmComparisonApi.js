@@ -33,8 +33,14 @@ function postJson(path, body) {
   })
 }
 
-export function fetchPmComparisonMeta() {
-  return request("/meta")
+export function fetchPmComparisonMeta(selection = {}) {
+  const params = new URLSearchParams()
+  for (const key of ["lineId", "eqpId", "fdcBin", "pmTimestamp", "type", "ppid", "recipeId", "traceDataSource"]) {
+    const value = selection[key]
+    if (value) params.set(key, value)
+  }
+  const query = params.toString()
+  return request(query ? `/meta?${query}` : "/meta")
 }
 
 export function fetchPmComparisonResult(payload) {

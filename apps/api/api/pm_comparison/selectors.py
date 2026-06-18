@@ -30,6 +30,18 @@ RAW_PARTITION_KEYS = [
     "trace_param_name",
 ]
 
+RAW_OPTION_DEPENDENCIES = {
+    "line_id": [],
+    "eqp_id": ["line_id"],
+    "fdc_bin": ["line_id", "eqp_id"],
+    "dt": ["line_id", "eqp_id", "fdc_bin"],
+    "type": ["line_id", "eqp_id", "fdc_bin", "dt"],
+    "ppid": ["line_id", "eqp_id", "fdc_bin", "dt", "type"],
+    "recipe_id": ["line_id", "eqp_id", "fdc_bin", "dt", "type", "ppid"],
+    "data_source": ["line_id", "eqp_id", "fdc_bin", "dt", "type", "ppid", "recipe_id"],
+    "trace_param_name": ["line_id", "eqp_id", "fdc_bin", "dt", "type", "ppid", "recipe_id", "data_source"],
+}
+
 SCORE_PARTITION_KEYS = [
     "line_id",
     "eqp_id",
@@ -37,6 +49,14 @@ SCORE_PARTITION_KEYS = [
     "type",
     "data_type",
 ]
+
+SCORE_OPTION_DEPENDENCIES = {
+    "line_id": [],
+    "eqp_id": ["line_id"],
+    "chamber_id": ["line_id", "eqp_id"],
+    "type": ["line_id", "eqp_id", "chamber_id"],
+    "data_type": ["line_id", "eqp_id", "chamber_id", "type"],
+}
 
 # decomp_data: shape.parquet / jitter.parquet (DASHBOARD_SPEC §2)
 DECOMP_PARTITION_KEYS = [
@@ -112,6 +132,12 @@ def _existing_child_root(parent: Path, child_name: str) -> Path | None:
     return None
 
 
+def _is_ignored_path(path: Path) -> bool:
+    """Jupyter checkpoint 등 탐색 제외 경로인지 확인합니다."""
+
+    return ".ipynb_checkpoints" in path.parts
+
+
 def parse_partition_values(path: Path) -> dict[str, str]:
     """경로에서 key=value partition 값을 추출합니다."""
 
@@ -132,6 +158,8 @@ def _safe_relative_file(path: Path, root: Path) -> Path | None:
         resolved = path.resolve()
         resolved.relative_to(root.resolve())
     except (OSError, ValueError):
+        return None
+    if _is_ignored_path(resolved):
         return None
     if not resolved.is_file():
         return None
@@ -378,7 +406,7 @@ def _scan_partition_dirs(root: Path, keys: list[str], max_dirs: int) -> dict[str
         if depth >= len(keys):
             continue
         try:
-            children = sorted(path for path in current.iterdir() if path.is_dir())
+            children = sorted(path for path in current.iterdir() if path.is_dir() and not _is_ignored_path(path))
         except OSError:
             continue
         visited += len(children)
@@ -393,13 +421,89 @@ def _scan_partition_dirs(root: Path, keys: list[str], max_dirs: int) -> dict[str
     return options
 
 
-def _scan_plain_raw_dirs(root: Path, max_dirs: int) -> dict[str, set[str]]:
+def _meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
+    """메타 조회 선택값을 partition key 기준 필터로 변환합니다."""
+
+    if not selection:
+        return {}
+    mapping = {
+        "lineId": "line_id",
+        "eqpId": "eqp_id",
+        "fdcBin": "fdc_bin",
+        "pmTimestamp": "dt",
+        "type": "type",
+        "ppid": "ppid",
+        "recipeId": "recipe_id",
+        "traceDataSource": "data_source",
+    }
+    filters: dict[str, str] = {}
+    for request_key, partition_key in mapping.items():
+        value = selection.get(request_key)
+        if value:
+            filters[partition_key] = str(value)
+    return filters
+
+
+def _score_meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
+    """메타 조회 선택값을 score partition key 기준 필터로 변환합니다."""
+
+    if not selection:
+        return {}
+    filters = _meta_filters(selection)
+    score_filters: dict[str, str] = {}
+    for raw_key, score_key in [("line_id", "line_id"), ("eqp_id", "eqp_id"), ("fdc_bin", "chamber_id"), ("type", "type")]:
+        value = filters.get(raw_key)
+        if value:
+            score_filters[score_key] = value
+    return score_filters
+
+
+def _matches_dependencies(
+    values: dict[str, str],
+    filters: dict[str, str],
+    dependencies_by_key: dict[str, list[str]],
+    key: str,
+) -> bool:
+    """옵션 key보다 상위 선택값이 path 값과 일치하는지 확인합니다."""
+
+    for dependency in dependencies_by_key.get(key, []):
+        expected = filters.get(dependency)
+        if expected and values.get(dependency) != expected:
+            return False
+    return True
+
+
+def _scan_hive_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
+    """key=value raw layout에서 cascade 옵션을 수집합니다."""
+
+    options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
+    queue: deque[Path] = deque([root])
+    visited = 0
+    while queue and visited < max_dirs:
+        current = queue.popleft()
+        try:
+            children = sorted(path for path in current.iterdir() if path.is_dir() and not _is_ignored_path(path))
+        except OSError:
+            continue
+        visited += len(children)
+        for child in children:
+            partition = parse_partition_values(child)
+            for key, value in partition.items():
+                if key in options and _matches_dependencies(partition, filters, RAW_OPTION_DEPENDENCIES, key):
+                    options[key].add(value)
+            queue.append(child)
+            if visited >= max_dirs:
+                break
+    return options
+
+
+def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
     """plain raw layout에서 주요 선택값을 수집합니다."""
 
     options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
     visited = 0
     try:
-        line_dirs = sorted(path for path in root.iterdir() if path.is_dir())
+        line_dirs = sorted(path for path in root.iterdir() if path.is_dir() and not _is_ignored_path(path))
     except OSError:
         return options
 
@@ -407,33 +511,41 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int) -> dict[str, set[str]]:
         if "=" in line_dir.name:
             continue
         options["line_id"].add(line_dir.name)
+        if filters.get("line_id") and line_dir.name != filters["line_id"]:
+            continue
         visited += 1
         if visited >= max_dirs:
             break
         try:
-            eqp_dirs = sorted(path for path in line_dir.iterdir() if path.is_dir())
+            eqp_dirs = sorted(path for path in line_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
         except OSError:
             continue
         for eqp_dir in eqp_dirs:
             options["eqp_id"].add(eqp_dir.name)
+            if filters.get("eqp_id") and eqp_dir.name != filters["eqp_id"]:
+                continue
             visited += 1
             if visited >= max_dirs:
                 break
             try:
-                chamber_dirs = sorted(path for path in eqp_dir.iterdir() if path.is_dir())
+                chamber_dirs = sorted(path for path in eqp_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
             except OSError:
                 continue
             for chamber_dir in chamber_dirs:
                 options["fdc_bin"].add(chamber_dir.name)
+                if filters.get("fdc_bin") and chamber_dir.name != filters["fdc_bin"]:
+                    continue
                 visited += 1
                 if visited >= max_dirs:
                     break
                 try:
-                    dt_dirs = sorted(path for path in chamber_dir.iterdir() if path.is_dir())
+                    dt_dirs = sorted(path for path in chamber_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
                 except OSError:
                     continue
                 for dt_dir in dt_dirs:
                     options["dt"].add(dt_dir.name)
+                    if filters.get("dt") and dt_dir.name != filters["dt"]:
+                        continue
                     visited += 1
                     if visited >= max_dirs:
                         break
@@ -443,16 +555,25 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int) -> dict[str, set[str]]:
                             options["data_source"].add(source_name)
                     trace_root = dt_dir / "trace"
                     if trace_root.is_dir():
+                        base_values = {
+                            "line_id": line_dir.name,
+                            "eqp_id": eqp_dir.name,
+                            "fdc_bin": chamber_dir.name,
+                            "dt": dt_dir.name,
+                            "data_source": "trace",
+                        }
                         try:
-                            trace_dirs = sorted(path for path in trace_root.rglob("*") if path.is_dir())
+                            trace_dirs = sorted(
+                                path for path in trace_root.rglob("*") if path.is_dir() and not _is_ignored_path(path)
+                            )
                         except OSError:
                             trace_dirs = []
                         for trace_dir in trace_dirs:
                             visited += 1
-                            partition = parse_partition_values(trace_dir)
+                            partition = {**base_values, **parse_partition_values(trace_dir)}
                             for key in ("type", "ppid", "recipe_id", "trace_param_name"):
                                 value = partition.get(key)
-                                if value:
+                                if value and _matches_dependencies(partition, filters, RAW_OPTION_DEPENDENCIES, key):
                                     options[key].add(value)
                             if visited >= max_dirs:
                                 break
@@ -462,14 +583,39 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int) -> dict[str, set[str]]:
     return options
 
 
-def collect_partition_options() -> dict[str, list[str]]:
+def _scan_score_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
+    """score layout에서 cascade 옵션을 수집합니다."""
+
+    options: dict[str, set[str]] = {key: set() for key in SCORE_PARTITION_KEYS}
+    queue: deque[Path] = deque([root])
+    visited = 0
+    while queue and visited < max_dirs:
+        current = queue.popleft()
+        try:
+            children = sorted(path for path in current.iterdir() if path.is_dir() and not _is_ignored_path(path))
+        except OSError:
+            continue
+        visited += len(children)
+        for child in children:
+            partition = parse_partition_values(child)
+            for key, value in partition.items():
+                if key in options and _matches_dependencies(partition, filters, SCORE_OPTION_DEPENDENCIES, key):
+                    options[key].add(value)
+            queue.append(child)
+            if visited >= max_dirs:
+                break
+    return options
+
+
+def collect_partition_options(selection: dict[str, object] | None = None) -> dict[str, list[str]]:
     """data 아래 partition 값을 수집하고 없으면 result score partition 값으로 대체합니다."""
 
     max_dirs = int(getattr(settings, "PM_COMPARISON_MAX_META_DIRS", 5000))
+    filters = _meta_filters(selection)
     try:
         raw_root = ensure_dataset_root(RAW_DIR_NAME)
-        options = _scan_partition_dirs(raw_root, RAW_PARTITION_KEYS, max_dirs)
-        plain_options = _scan_plain_raw_dirs(raw_root, max_dirs)
+        options = _scan_hive_raw_dirs(raw_root, max_dirs, filters)
+        plain_options = _scan_plain_raw_dirs(raw_root, max_dirs, filters)
         for key, values in plain_options.items():
             options.setdefault(key, set()).update(values)
     except (FileNotFoundError, NotADirectoryError):
@@ -478,7 +624,7 @@ def collect_partition_options() -> dict[str, list[str]]:
         try:
             result_root = ensure_dataset_root(SCORE_DIR_NAME)
             score_root = _existing_child_root(result_root, SCORE_DATA_DIR_NAME) or result_root
-            score_opts = _scan_partition_dirs(score_root, SCORE_PARTITION_KEYS, max_dirs)
+            score_opts = _scan_score_dirs(score_root, max_dirs, _score_meta_filters(selection))
             # score chamber_id → fdc_bin 으로 노출
             options["line_id"].update(score_opts.get("line_id", set()))
             options["eqp_id"].update(score_opts.get("eqp_id", set()))

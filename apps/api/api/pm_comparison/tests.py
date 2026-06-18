@@ -317,6 +317,105 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(result["trace"]["summaryRows"][0]["traceSensor"], "PRESSURE")
         self.assertEqual(len(result["trace"]["trendRows"]), 1)
 
+    def test_meta_options_are_scoped_and_ignore_ipynb_checkpoints(self) -> None:
+        """선택값 하위 옵션만 반환하고 checkpoint 폴더는 제외해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for line_id, eqp_id, fdc_bin in [
+                ("L1", "EQP1", "BIN1"),
+                ("L2", "EQP2", "BIN2"),
+            ]:
+                target = (
+                    root
+                    / selectors.RAW_DIR_NAME
+                    / line_id
+                    / eqp_id
+                    / fdc_bin
+                    / "2026-06-01"
+                    / "trace"
+                    / "type=ag"
+                    / "ppid=PPID1"
+                    / "recipe_id=RCP1"
+                    / "priority=1"
+                    / "trace_param_name=PRESSURE"
+                )
+                target.mkdir(parents=True)
+            checkpoint_target = (
+                root
+                / selectors.RAW_DIR_NAME
+                / ".ipynb_checkpoints"
+                / "BAD_LINE"
+                / "BAD_EQP"
+                / "BAD_BIN"
+            )
+            checkpoint_target.mkdir(parents=True)
+            ppid_scoped_target = (
+                root
+                / selectors.RAW_DIR_NAME
+                / "L1"
+                / "EQP1"
+                / "BIN1"
+                / "2026-06-01"
+                / "trace"
+                / "type=ag"
+                / "ppid=PPID2"
+                / "recipe_id=RCP2"
+                / "priority=1"
+                / "trace_param_name=PRESSURE"
+            )
+            ppid_scoped_target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                all_meta = services.get_meta()
+                line_meta = services.get_meta({"lineId": "L1"})
+                eqp_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
+                ppid_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1", "fdcBin": "BIN1", "ppid": "PPID1"})
+
+        self.assertEqual(all_meta["lineIds"], ["L1", "L2"])
+        self.assertNotIn("BAD_LINE", all_meta["lineIds"])
+        self.assertEqual(line_meta["eqpIds"], ["EQP1"])
+        self.assertEqual(eqp_meta["fdcBins"], ["BIN1"])
+        self.assertEqual(ppid_meta["recipeIds"], ["RCP1"])
+
+    def test_score_fallback_meta_options_are_scoped(self) -> None:
+        """raw data가 없을 때 score fallback 메타도 선택값으로 좁혀야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for line_id, eqp_id, chamber_id in [
+                ("L1", "EQP1", "BIN1"),
+                ("L2", "EQP2", "BIN2"),
+            ]:
+                target = (
+                    root
+                    / selectors.SCORE_DIR_NAME
+                    / selectors.SCORE_DATA_DIR_NAME
+                    / f"line_id={line_id}"
+                    / f"eqp_id={eqp_id}"
+                    / f"chamber_id={chamber_id}"
+                    / "type=ag"
+                    / "data_type=trace"
+                )
+                target.mkdir(parents=True)
+            checkpoint_target = (
+                root
+                / selectors.SCORE_DIR_NAME
+                / selectors.SCORE_DATA_DIR_NAME
+                / ".ipynb_checkpoints"
+                / "line_id=BAD_LINE"
+            )
+            checkpoint_target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                all_meta = services.get_meta()
+                line_meta = services.get_meta({"lineId": "L1"})
+                eqp_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
+
+        self.assertEqual(all_meta["lineIds"], ["L1", "L2"])
+        self.assertEqual(line_meta["eqpIds"], ["EQP1"])
+        self.assertEqual(eqp_meta["fdcBins"], ["BIN1"])
+
     def test_compare_pm_window_returns_empty_response_without_score_rows(self) -> None:
         """result 파일이 없을 때도 pm_date KeyError 없이 빈 응답을 반환합니다."""
 

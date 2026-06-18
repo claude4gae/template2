@@ -686,15 +686,18 @@ def _build_filter_response(selection: dict[str, object]) -> dict[str, Any]:
     return {key: _json_safe_value(selection.get(key)) for key in keys}
 
 
-def _collect_pm_dates(warnings: list[str]) -> list[str]:
+def _collect_pm_dates(warnings: list[str], selection: dict[str, object] | None = None) -> list[str]:
     """result 전체에서 PM 날짜 목록을 수집합니다."""
 
     dates: set[str] = set()
     try:
-        score_root = selectors.ensure_dataset_root(selectors.SCORE_DIR_NAME)
+        files = [
+            *selectors.iter_score_files(selection or {}, data_type="trace"),
+            *selectors.iter_score_files(selection or {}, data_type="oes"),
+        ]
     except (FileNotFoundError, NotADirectoryError):
         return []
-    for path in score_root.rglob("*.parquet"):
+    for path in files:
         try:
             frame = selectors.read_parquet(path, [DATE_COLUMN])
         except Exception as exc:
@@ -705,12 +708,12 @@ def _collect_pm_dates(warnings: list[str]) -> list[str]:
     return sorted(dates)
 
 
-def get_meta() -> dict[str, object]:
+def get_meta(selection: dict[str, object] | None = None) -> dict[str, object]:
     """PM SPIDER 데이터 선택 메타데이터를 반환합니다."""
 
     warnings: list[str] = []
     try:
-        options = selectors.collect_partition_options()
+        options = selectors.collect_partition_options(selection)
     except FileNotFoundError as exc:
         raise PmComparisonServiceError(str(exc), status_code=404) from exc
     except NotADirectoryError as exc:
@@ -721,7 +724,7 @@ def get_meta() -> dict[str, object]:
         "eqpIds": options.get("eqp_id", []),
         "fdcBins": options.get("fdc_bin", []),
         "dtValues": options.get("dt", []),
-        "pmDates": _collect_pm_dates(warnings),
+        "pmDates": _collect_pm_dates(warnings, selection),
         "types": options.get("type", []),
         "ppids": options.get("ppid", []),
         "recipeIds": options.get("recipe_id", []),

@@ -12,6 +12,17 @@ from rest_framework.views import APIView
 from . import services
 from .serializers import PmComparisonRequestSerializer
 
+META_QUERY_KEYS = [
+    "lineId",
+    "eqpId",
+    "fdcBin",
+    "pmTimestamp",
+    "type",
+    "ppid",
+    "recipeId",
+    "traceDataSource",
+]
+
 
 def _error_response(error: Exception) -> Response:
     """서비스 오류를 일관된 JSON 응답으로 변환합니다."""
@@ -28,8 +39,13 @@ class PmComparisonMetaView(APIView):
     def get(self, request, *args, **kwargs) -> Response:
         """사용 가능한 partition 값 목록을 반환합니다."""
 
+        selection = {
+            key: value
+            for key in META_QUERY_KEYS
+            if (value := request.query_params.get(key))
+        }
         try:
-            return Response(services.get_meta())
+            return Response(services.get_meta(selection))
         except services.PmComparisonServiceError as error:
             return _error_response(error)
 

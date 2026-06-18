@@ -37,8 +37,13 @@ export function PmComparisonPage() {
   const [form, setForm] = useState(DEFAULT_PM_FORM)
   const [payload, setPayload] = useState(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState("ag")
-  const metaQuery = usePmComparisonMeta()
+  const metaQuery = usePmComparisonMeta(form)
   const categoryResults = usePmSpiderCategoryResults(payload, null)
+
+  const updateForm = (nextForm) => {
+    setForm(nextForm)
+    setPayload(null)
+  }
 
   const submit = () => {
     setPayload(buildPmComparisonPayload(form))
@@ -79,7 +84,7 @@ export function PmComparisonPage() {
         meta={metaQuery.data}
         isMetaLoading={metaQuery.isFetching}
         isResultFetching={categoryResults.isFetching}
-        onFormChange={setForm}
+        onFormChange={updateForm}
         onSubmit={submit}
       />
 

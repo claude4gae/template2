@@ -12,7 +12,7 @@ import {
   buildPmSpiderTypePayloads,
 } from "../utils/format"
 
-function buildPayloadKey(payload) {
+export function buildPayloadKey(payload) {
   if (!payload) return "empty"
   return JSON.stringify(payload)
 }
@@ -25,10 +25,11 @@ function withRefPmDates(payload, refPmDates) {
   }
 }
 
-export function usePmComparisonMeta() {
+export function usePmComparisonMeta(selection = {}) {
+  const selectionKey = buildPayloadKey(selection)
   return useQuery({
-    queryKey: pmComparisonQueryKeys.meta(),
-    queryFn: fetchPmComparisonMeta,
+    queryKey: pmComparisonQueryKeys.meta(selectionKey),
+    queryFn: () => fetchPmComparisonMeta(selection),
     retry: false,
   })
 }

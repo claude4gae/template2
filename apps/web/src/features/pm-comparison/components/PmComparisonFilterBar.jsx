@@ -41,6 +41,14 @@ function MetaSelect({ id, value, onChange, options, placeholder, disabled }) {
   )
 }
 
+const RESET_FIELDS_BY_KEY = {
+  lineId: ["eqpId", "fdcBin", "pmTimestamp", "ppid", "recipeId"],
+  eqpId: ["fdcBin", "pmTimestamp", "ppid", "recipeId"],
+  fdcBin: ["pmTimestamp", "ppid", "recipeId"],
+  pmTimestamp: ["ppid", "recipeId"],
+  ppid: ["recipeId"],
+}
+
 export function PmComparisonFilterBar({
   form,
   meta,
@@ -52,7 +60,11 @@ export function PmComparisonFilterBar({
   const canSubmit = hasRequiredPmFilters(form) && !isResultFetching
 
   const setField = (key, value) => {
-    onFormChange({ ...form, [key]: value })
+    const nextForm = { ...form, [key]: value }
+    for (const resetKey of RESET_FIELDS_BY_KEY[key] || []) {
+      nextForm[resetKey] = ""
+    }
+    onFormChange(nextForm)
   }
 
   const submit = (event) => {
