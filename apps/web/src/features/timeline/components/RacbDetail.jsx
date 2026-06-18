@@ -5,7 +5,6 @@ import Field from "./Field";
 export default function RacbDetail({ log }) {
   return (
     <>
-      <Field label="ID" value={log.id} />
       <Field label="Log Type" value={log.logType} />
       <Field label="RACB Alarm" value={log.eventType} />
       <Field label="Time" value={log.eventTime} />

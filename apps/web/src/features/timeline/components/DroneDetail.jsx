@@ -4,7 +4,6 @@ import Field from "./Field";
 export default function DroneDetail({ log }) {
   return (
     <>
-      <Field label="ID" value={log.id} />
       <Field label="Log Type" value={log.logType} />
       <Field label="Sample Type" value={log.eventType} />
       <Field label="Status" value={log.status} />

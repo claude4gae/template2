@@ -7572,12 +7572,13 @@ class DroneSopJiraSummaryTests(TestCase):
         row = {
             "main_step": "ST003",
             "eqp_id": "EQP",
+            "chamber_ids": "1",
             "lot_id": "LOT.1",
             "ppid": "PPID",
         }
         subject = mail_template_auto_sp.build_subject(row)
 
-        self.assertEqual(subject, "[Auto S/P][ST003][EQP][LOT.1][PPID]")
+        self.assertEqual(subject, "[Auto S/P][ST003][EQP-1][LOT.1][PPID]")
 
     def test_mail_sender_accepts_auto_sp_template_key(self) -> None:
         """메일 발송 제목 생성기가 Auto S/P 템플릿 키를 지원하는지 확인합니다."""
@@ -7591,6 +7592,7 @@ class DroneSopJiraSummaryTests(TestCase):
         row = {
             "step_seq": "ST009",
             "eqpid": "EQP9",
+            "chamber_ids": "9",
             "lot_id": "LOT.9",
             "ppid": "PPID9",
         }
@@ -7600,7 +7602,7 @@ class DroneSopJiraSummaryTests(TestCase):
         self.assertIs(MAIL_SUBJECT_BUILDERS["auto_sp"], mail_template_auto_sp.build_subject)
         self.assertEqual(
             _build_mail_subject(template_key="auto_sp", row=row),
-            "[Auto S/P][ST009][EQP9][LOT.9][PPID9]",
+            "[Auto S/P][ST009][EQP9-9][LOT.9][PPID9]",
         )
 
 

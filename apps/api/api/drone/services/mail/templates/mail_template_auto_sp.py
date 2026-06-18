@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 TEMPLATE_KEY = "auto_sp"
-SUBJECT_TEMPLATE = "[Auto S/P][{step_seq}][{eqpid}][{lot_id}][{ppid}]"
+SUBJECT_TEMPLATE = "[Auto S/P][{step_seq}][{eqpid}-{chamber_ids}][{lot_id}][{ppid}]"
 BODY_TEMPLATE = """<div>
   <div style="margin:8px 0;">
     <table style="border:1px solid #ccc; border-collapse:collapse; width:auto;">
@@ -106,6 +106,7 @@ def build_subject(row: dict[str, Any]) -> str:
     context = {
         "step_seq": _first_row_value(row, "step_seq", "main_step"),
         "eqpid": _first_row_value(row, "eqpid", "eqp_id"),
+        "chamber_ids": _first_row_value(row, "chamber_ids"),
         "lot_id": _first_row_value(row, "lot_id"),
         "ppid": _first_row_value(row, "ppid"),
     }

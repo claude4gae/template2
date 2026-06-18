@@ -5,7 +5,6 @@ import Field from "./Field";
 export default function TipDetail({ log }) {
   return (
     <>
-      <Field label="ID" value={log.id} />
       <Field label="Log Type" value={log.logType} />
       <Field label="TIP Event" value={log.eventType} />
       <Field label="Time" value={log.eventTime} />

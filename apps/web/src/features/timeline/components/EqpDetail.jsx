@@ -6,7 +6,6 @@ import { formatDuration } from "../utils/logs";
 export default function EqpDetail({ log }) {
   return (
     <>
-      <Field label="ID" value={log.id} />
       <Field label="Log Type" value={log.logType} />
       <Field label="EQP State" value={log.eventType} />
       <Field label="Time" value={log.eventTime} />

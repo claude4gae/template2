@@ -1,3 +1,5 @@
+import { getTipGroupKey } from "./tipUtils";
+
 const RANGE_LOG_TYPES = new Set(["EQP", "TIP"]);
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -44,6 +46,34 @@ export function addDurationToLogs(logs = [], logType) {
     (a, b) => new Date(a.eventTime) - new Date(b.eventTime)
   );
   const isRangeType = RANGE_LOG_TYPES.has(logType);
+
+  if (isRangeType && logType === "TIP") {
+    const durationByLog = new WeakMap();
+    const logsByTipGroup = new Map();
+
+    sortedLogs.forEach((log) => {
+      const groupKey = getTipGroupKey(log);
+      const groupLogs = logsByTipGroup.get(groupKey) ?? [];
+      groupLogs.push(log);
+      logsByTipGroup.set(groupKey, groupLogs);
+    });
+
+    logsByTipGroup.forEach((groupLogs) => {
+      groupLogs.forEach((log, index) => {
+        const start = new Date(log.eventTime);
+        const end = getContinuousRangeEnd(start, groupLogs, index);
+        durationByLog.set(log, {
+          duration: end.getTime() - start.getTime(),
+          endTime: end.toISOString(),
+        });
+      });
+    });
+
+    return sortedLogs.map((log) => ({
+      ...log,
+      ...durationByLog.get(log),
+    }));
+  }
 
   return sortedLogs.map((log, index) => {
     if (!isRangeType) {
