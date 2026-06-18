@@ -689,6 +689,9 @@ def _build_filter_response(selection: dict[str, object]) -> dict[str, Any]:
 def _collect_pm_dates(warnings: list[str], selection: dict[str, object] | None = None) -> list[str]:
     """result 전체에서 PM 날짜 목록을 수집합니다."""
 
+    if not selection or not selection.get("lineId") or not selection.get("eqpId"):
+        return []
+
     dates: set[str] = set()
     try:
         files = [

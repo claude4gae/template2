@@ -252,9 +252,11 @@ class PmComparisonServiceTests(SimpleTestCase):
                     }
                 )
                 meta = services.get_meta()
+                selected_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
 
         self.assertEqual(meta["lineIds"], ["L1"])
-        self.assertIn("2026-06-01", meta["pmDates"])
+        self.assertEqual(meta["eqpIds"], [])
+        self.assertIn("2026-06-01", selected_meta["pmDates"])
         self.assertEqual(result["trace"]["worstSensor"]["traceSensor"], "PRESSURE")
         self.assertEqual(result["trace"]["worstSensor"]["score"], 0.12)
         self.assertEqual(result["trace"]["trendRows"][0]["cycleIndex"], -2)
@@ -309,11 +311,13 @@ class PmComparisonServiceTests(SimpleTestCase):
 
             with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
                 meta = services.get_meta()
+                line_meta = services.get_meta({"lineId": "L1"})
+                eqp_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
                 result = services.compare_pm_window(selection)
 
         self.assertEqual(meta["lineIds"], ["L1"])
-        self.assertEqual(meta["eqpIds"], ["EQP1"])
-        self.assertEqual(meta["fdcBins"], ["BIN1"])
+        self.assertEqual(line_meta["eqpIds"], ["EQP1"])
+        self.assertEqual(eqp_meta["fdcBins"], ["BIN1"])
         self.assertEqual(result["trace"]["summaryRows"][0]["traceSensor"], "PRESSURE")
         self.assertEqual(len(result["trace"]["trendRows"]), 1)
 
@@ -370,7 +374,15 @@ class PmComparisonServiceTests(SimpleTestCase):
                 all_meta = services.get_meta()
                 line_meta = services.get_meta({"lineId": "L1"})
                 eqp_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
-                ppid_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1", "fdcBin": "BIN1", "ppid": "PPID1"})
+                ppid_meta = services.get_meta(
+                    {
+                        "lineId": "L1",
+                        "eqpId": "EQP1",
+                        "fdcBin": "BIN1",
+                        "pmTimestamp": "2026-06-01",
+                        "ppid": "PPID1",
+                    }
+                )
 
         self.assertEqual(all_meta["lineIds"], ["L1", "L2"])
         self.assertNotIn("BAD_LINE", all_meta["lineIds"])

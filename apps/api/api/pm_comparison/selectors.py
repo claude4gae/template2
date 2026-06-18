@@ -473,25 +473,39 @@ def _matches_dependencies(
     return True
 
 
+def _should_descend_for_key(filters: dict[str, str], key: str, value: str) -> bool:
+    """선택된 partition 값과 일치할 때만 하위 단계로 내려갑니다."""
+
+    expected = filters.get(key)
+    return bool(expected and expected == value)
+
+
 def _scan_hive_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
     """key=value raw layout에서 cascade 옵션을 수집합니다."""
 
     options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
-    queue: deque[Path] = deque([root])
+    queue: deque[tuple[Path, int, dict[str, str]]] = deque([(root, 0, {})])
     visited = 0
     while queue and visited < max_dirs:
-        current = queue.popleft()
+        current, depth, parent_values = queue.popleft()
+        if depth >= len(RAW_PARTITION_KEYS):
+            continue
+        expected_key = RAW_PARTITION_KEYS[depth]
         try:
             children = sorted(path for path in current.iterdir() if path.is_dir() and not _is_ignored_path(path))
         except OSError:
             continue
         visited += len(children)
         for child in children:
-            partition = parse_partition_values(child)
-            for key, value in partition.items():
-                if key in options and _matches_dependencies(partition, filters, RAW_OPTION_DEPENDENCIES, key):
-                    options[key].add(value)
-            queue.append(child)
+            child_values = parse_partition_values(child)
+            value = child_values.get(expected_key)
+            if not value:
+                continue
+            partition = {**parent_values, expected_key: value}
+            if _matches_dependencies(partition, filters, RAW_OPTION_DEPENDENCIES, expected_key):
+                options[expected_key].add(value)
+            if _should_descend_for_key(filters, expected_key, value):
+                queue.append((child, depth + 1, partition))
             if visited >= max_dirs:
                 break
     return options
@@ -511,7 +525,7 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> 
         if "=" in line_dir.name:
             continue
         options["line_id"].add(line_dir.name)
-        if filters.get("line_id") and line_dir.name != filters["line_id"]:
+        if not _should_descend_for_key(filters, "line_id", line_dir.name):
             continue
         visited += 1
         if visited >= max_dirs:
@@ -522,7 +536,7 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> 
             continue
         for eqp_dir in eqp_dirs:
             options["eqp_id"].add(eqp_dir.name)
-            if filters.get("eqp_id") and eqp_dir.name != filters["eqp_id"]:
+            if not _should_descend_for_key(filters, "eqp_id", eqp_dir.name):
                 continue
             visited += 1
             if visited >= max_dirs:
@@ -533,7 +547,7 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> 
                 continue
             for chamber_dir in chamber_dirs:
                 options["fdc_bin"].add(chamber_dir.name)
-                if filters.get("fdc_bin") and chamber_dir.name != filters["fdc_bin"]:
+                if not _should_descend_for_key(filters, "fdc_bin", chamber_dir.name):
                     continue
                 visited += 1
                 if visited >= max_dirs:
@@ -544,7 +558,7 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> 
                     continue
                 for dt_dir in dt_dirs:
                     options["dt"].add(dt_dir.name)
-                    if filters.get("dt") and dt_dir.name != filters["dt"]:
+                    if not _should_descend_for_key(filters, "dt", dt_dir.name):
                         continue
                     visited += 1
                     if visited >= max_dirs:
@@ -587,21 +601,28 @@ def _scan_score_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict
     """score layout에서 cascade 옵션을 수집합니다."""
 
     options: dict[str, set[str]] = {key: set() for key in SCORE_PARTITION_KEYS}
-    queue: deque[Path] = deque([root])
+    queue: deque[tuple[Path, int, dict[str, str]]] = deque([(root, 0, {})])
     visited = 0
     while queue and visited < max_dirs:
-        current = queue.popleft()
+        current, depth, parent_values = queue.popleft()
+        if depth >= len(SCORE_PARTITION_KEYS):
+            continue
+        expected_key = SCORE_PARTITION_KEYS[depth]
         try:
             children = sorted(path for path in current.iterdir() if path.is_dir() and not _is_ignored_path(path))
         except OSError:
             continue
         visited += len(children)
         for child in children:
-            partition = parse_partition_values(child)
-            for key, value in partition.items():
-                if key in options and _matches_dependencies(partition, filters, SCORE_OPTION_DEPENDENCIES, key):
-                    options[key].add(value)
-            queue.append(child)
+            child_values = parse_partition_values(child)
+            value = child_values.get(expected_key)
+            if not value:
+                continue
+            partition = {**parent_values, expected_key: value}
+            if _matches_dependencies(partition, filters, SCORE_OPTION_DEPENDENCIES, expected_key):
+                options[expected_key].add(value)
+            if _should_descend_for_key(filters, expected_key, value):
+                queue.append((child, depth + 1, partition))
             if visited >= max_dirs:
                 break
     return options

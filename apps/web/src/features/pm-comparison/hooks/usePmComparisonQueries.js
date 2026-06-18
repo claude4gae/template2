@@ -1,6 +1,6 @@
 // 파일 경로: src/features/pm-comparison/hooks/usePmComparisonQueries.js
 // PM SPIDER 서버 데이터 조회 훅입니다.
-import { useQueries, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query"
 
 import {
   fetchPmComparisonMeta,
@@ -30,6 +30,9 @@ export function usePmComparisonMeta(selection = {}) {
   return useQuery({
     queryKey: pmComparisonQueryKeys.meta(selectionKey),
     queryFn: () => fetchPmComparisonMeta(selection),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     retry: false,
   })
 }
