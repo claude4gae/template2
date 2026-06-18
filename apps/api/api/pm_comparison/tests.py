@@ -55,6 +55,31 @@ class PmComparisonServiceTests(SimpleTestCase):
             / f"data_type={data_type}"
         )
 
+    def _plain_raw_base(
+        self,
+        root: Path,
+        *,
+        data_source: str,
+        trace_param_name: str,
+        raw_dir: str = selectors.RAW_DIR_NAME,
+    ) -> Path:
+        """plain raw layout 테스트 경로를 반환합니다."""
+
+        return (
+            root
+            / raw_dir
+            / "L1"
+            / "EQP1"
+            / "BIN1"
+            / "2026-06-01"
+            / data_source
+            / "type=ag"
+            / "ppid=PPID1"
+            / "recipe_id=RCP1"
+            / "priority=1"
+            / f"trace_param_name={trace_param_name}"
+        )
+
     def _write_trace_sample(
         self,
         root: Path,
@@ -114,6 +139,38 @@ class PmComparisonServiceTests(SimpleTestCase):
                     "item_name": "PRESSURE",
                     "step": None,
                     "wavelength": None,
+                    "score": 0.12,
+                },
+            ]
+        ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
+
+    def _write_plain_trace_sample(self, root: Path) -> None:
+        """plain raw layout trace와 기존 score 데이터를 생성합니다."""
+
+        raw_target = self._plain_raw_base(
+            root,
+            data_source="trace",
+            trace_param_name="PRESSURE",
+        )
+        raw_target.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {"날짜": "2026-04-01", "time": "2026-04-01T01:00:00Z", "value": 10.0},
+                {"날짜": "2026-06-01", "time": "2026-06-01T01:00:00Z", "value": 30.0},
+            ]
+        ).to_parquet(raw_target / "part-000.parquet", engine="pyarrow")
+
+        score_target = self._score_base(root, data_type="trace")
+        score_target.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "날짜": "2026-06-01",
+                    "type": "ag",
+                    "data_type": "trace",
+                    "item_name": "PRESSURE",
                     "score": 0.12,
                 },
             ]
@@ -230,6 +287,35 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(raw_root.name, "data")
         self.assertEqual(score_root.name, "result")
         self.assertEqual(meta["lineIds"], ["L1"])
+
+    def test_plain_raw_layout_returns_meta_and_trace_rows(self) -> None:
+        """plain raw layout에서도 메타와 trace 상세 row를 반환해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_plain_trace_sample(root)
+            selection = {
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "fdcBin": "BIN1",
+                "type": "ag",
+                "ppid": "PPID1",
+                "recipeId": "RCP1",
+                "pmTimestamp": "2026-06-01",
+                "traceParamNames": ["PRESSURE"],
+                "traceDataSource": "trace",
+                "oesDataSource": "oes",
+            }
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                meta = services.get_meta()
+                result = services.compare_pm_window(selection)
+
+        self.assertEqual(meta["lineIds"], ["L1"])
+        self.assertEqual(meta["eqpIds"], ["EQP1"])
+        self.assertEqual(meta["fdcBins"], ["BIN1"])
+        self.assertEqual(result["trace"]["summaryRows"][0]["traceSensor"], "PRESSURE")
+        self.assertEqual(len(result["trace"]["trendRows"]), 1)
 
     def test_compare_pm_window_returns_empty_response_without_score_rows(self) -> None:
         """result 파일이 없을 때도 pm_date KeyError 없이 빈 응답을 반환합니다."""

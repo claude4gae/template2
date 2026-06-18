@@ -179,6 +179,71 @@ def _iter_partition_files(
                 return
 
 
+def _plain_segment(value: str | None) -> str:
+    """plain layout glob segment를 생성합니다."""
+
+    return value or "*"
+
+
+def _iter_plain_raw_files(
+    root: Path,
+    filters: dict[str, str | None],
+    *,
+    data_source: str,
+    dt_candidates: Sequence[str | None],
+    trace_candidates: Sequence[str | None],
+    max_files: int,
+) -> Iterable[Path]:
+    """BASE_DATA/{LINE_ID}/{EQP_ID}/{CHAMBER_ID}/... plain layout 파일을 순회합니다."""
+
+    line_id = _plain_segment(filters.get("line_id"))
+    eqp_id = _plain_segment(filters.get("eqp_id"))
+    chamber_id = _plain_segment(filters.get("fdc_bin"))
+    type_segment = _segment("type", filters.get("type"))
+    ppid_segment = _segment("ppid", filters.get("ppid"))
+    recipe_segment = _segment("recipe_id", filters.get("recipe_id"))
+    seen: set[Path] = set()
+
+    source_dir = "trace" if data_source == "trace" else "oes" if data_source.startswith("oes") else data_source
+    for dt_value in dt_candidates:
+        dt_segment = _plain_segment(dt_value)
+        if source_dir == "trace":
+            for trace_value in trace_candidates:
+                param_segment = _segment("trace_param_name", trace_value)
+                pattern = (
+                    f"{line_id}/{eqp_id}/{chamber_id}/{dt_segment}/trace/"
+                    f"{type_segment}/{ppid_segment}/{recipe_segment}/priority=*/{param_segment}"
+                )
+                leaf_patterns = ["*.parquet", "*/*.parquet"]
+                for leaf_pattern in leaf_patterns:
+                    for path in root.glob(f"{pattern}/{leaf_pattern}"):
+                        safe_path = _safe_relative_file(path, root)
+                        if safe_path is None or safe_path in seen:
+                            continue
+                        seen.add(safe_path)
+                        yield safe_path
+                        if len(seen) >= max_files:
+                            return
+            continue
+
+        if source_dir == "oes":
+            pattern = (
+                f"{line_id}/{eqp_id}/{chamber_id}/{dt_segment}/oes/"
+                f"{_plain_segment(filters.get('type'))}/*/"
+                f"{_plain_segment(filters.get('ppid'))}/{_plain_segment(filters.get('recipe_id'))}"
+            )
+            leaf_patterns = ["*/*/*.parquet", "*/*/*/*.parquet"]
+            for leaf_pattern in leaf_patterns:
+                for path in root.glob(f"{pattern}/{leaf_pattern}"):
+                    safe_path = _safe_relative_file(path, root)
+                    if safe_path is None or safe_path in seen:
+                        continue
+                    seen.add(safe_path)
+                    yield safe_path
+                    if len(seen) >= max_files:
+                        return
+
+
 def iter_raw_files(
     selection: dict[str, object],
     *,
@@ -212,6 +277,21 @@ def iter_raw_files(
                 yield path
                 if len(seen) >= max_files:
                     return
+
+    for path in _iter_plain_raw_files(
+        root,
+        filters,
+        data_source=data_source,
+        dt_candidates=dt_candidates,
+        trace_candidates=trace_candidates,
+        max_files=max_files,
+    ):
+        if path in seen:
+            continue
+        seen.add(path)
+        yield path
+        if len(seen) >= max_files:
+            return
 
 
 def iter_score_files(selection: dict[str, object], *, data_type: str) -> Iterable[Path]:
@@ -313,6 +393,75 @@ def _scan_partition_dirs(root: Path, keys: list[str], max_dirs: int) -> dict[str
     return options
 
 
+def _scan_plain_raw_dirs(root: Path, max_dirs: int) -> dict[str, set[str]]:
+    """plain raw layout에서 주요 선택값을 수집합니다."""
+
+    options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
+    visited = 0
+    try:
+        line_dirs = sorted(path for path in root.iterdir() if path.is_dir())
+    except OSError:
+        return options
+
+    for line_dir in line_dirs:
+        if "=" in line_dir.name:
+            continue
+        options["line_id"].add(line_dir.name)
+        visited += 1
+        if visited >= max_dirs:
+            break
+        try:
+            eqp_dirs = sorted(path for path in line_dir.iterdir() if path.is_dir())
+        except OSError:
+            continue
+        for eqp_dir in eqp_dirs:
+            options["eqp_id"].add(eqp_dir.name)
+            visited += 1
+            if visited >= max_dirs:
+                break
+            try:
+                chamber_dirs = sorted(path for path in eqp_dir.iterdir() if path.is_dir())
+            except OSError:
+                continue
+            for chamber_dir in chamber_dirs:
+                options["fdc_bin"].add(chamber_dir.name)
+                visited += 1
+                if visited >= max_dirs:
+                    break
+                try:
+                    dt_dirs = sorted(path for path in chamber_dir.iterdir() if path.is_dir())
+                except OSError:
+                    continue
+                for dt_dir in dt_dirs:
+                    options["dt"].add(dt_dir.name)
+                    visited += 1
+                    if visited >= max_dirs:
+                        break
+                    for source_name in ("trace", "oes"):
+                        source_root = dt_dir / source_name
+                        if source_root.is_dir():
+                            options["data_source"].add(source_name)
+                    trace_root = dt_dir / "trace"
+                    if trace_root.is_dir():
+                        try:
+                            trace_dirs = sorted(path for path in trace_root.rglob("*") if path.is_dir())
+                        except OSError:
+                            trace_dirs = []
+                        for trace_dir in trace_dirs:
+                            visited += 1
+                            partition = parse_partition_values(trace_dir)
+                            for key in ("type", "ppid", "recipe_id", "trace_param_name"):
+                                value = partition.get(key)
+                                if value:
+                                    options[key].add(value)
+                            if visited >= max_dirs:
+                                break
+        if visited >= max_dirs:
+            break
+
+    return options
+
+
 def collect_partition_options() -> dict[str, list[str]]:
     """data 아래 partition 값을 수집하고 없으면 result score partition 값으로 대체합니다."""
 
@@ -320,6 +469,9 @@ def collect_partition_options() -> dict[str, list[str]]:
     try:
         raw_root = ensure_dataset_root(RAW_DIR_NAME)
         options = _scan_partition_dirs(raw_root, RAW_PARTITION_KEYS, max_dirs)
+        plain_options = _scan_plain_raw_dirs(raw_root, max_dirs)
+        for key, values in plain_options.items():
+            options.setdefault(key, set()).update(values)
     except (FileNotFoundError, NotADirectoryError):
         # data가 없으면 result/score_data 또는 result partition 값으로 대체합니다.
         options = {key: set() for key in RAW_PARTITION_KEYS}
