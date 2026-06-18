@@ -350,7 +350,7 @@ export function RecipientPickerDialog({
               <Input
                 value={searchValue}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="이름/사번/Knox/email 검색"
+                placeholder="이름/사번/Knox/email 검색, 여러 명은 콤마로 구분"
                 disabled={!canManageRecipients || isSearchingRecipients}
               />
               <Button

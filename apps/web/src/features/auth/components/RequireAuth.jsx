@@ -40,7 +40,18 @@ export function RequireAuth({ children }) {
     }
   }, [isLoading, location.pathname, location.search, navigate, nextParam, user])
 
-  if (isLoading || !user) {
+  if (isLoading && !user) {
+    return (
+      <CenteredPage>
+        <div className="flex flex-col items-center gap-3">
+          <Spinner className="size-8 text-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </CenteredPage>
+    )
+  }
+
+  if (!user) {
     return (
       <CenteredPage>
         <div className="flex flex-col items-center gap-3">

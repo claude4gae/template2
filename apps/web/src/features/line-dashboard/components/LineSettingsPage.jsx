@@ -1,5 +1,6 @@
 // 파일 경로: src/features/line-dashboard/components/LineSettingsPage.jsx
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth"
 import { LineSettingsHeader } from "./LineSettingsHeader"
@@ -134,10 +135,29 @@ function buildTargetMappingKey({ userSdwtProd, sdwtProd }) {
   return `${String(userSdwtProd || "").trim().toLowerCase()}::${String(sdwtProd || "").trim().toLowerCase()}`
 }
 
+function findMatchingUserSdwtValue(values, preferredValue) {
+  const normalizedPreferred = String(preferredValue || "").trim().toLowerCase()
+  if (!normalizedPreferred) return ""
+  return (Array.isArray(values) ? values : []).find((value) => (
+    String(value || "").trim().toLowerCase() === normalizedPreferred
+  )) || ""
+}
+
+function parseRecipientSearchTerms(value) {
+  return String(value || "")
+    .split(/[,，]/)
+    .map((term) => term.trim())
+    .filter(Boolean)
+}
+
 export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const isRecipientSettings = mode === "recipients"
   const isNotificationSettings = !isRecipientSettings
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const targetSearchValue = isRecipientSettings
+    ? String(searchParams.get("target") || "").trim()
+    : ""
   const [selectedUserSdwtProd, setSelectedUserSdwtProd] = React.useState("")
   const [isGlobalOperator, setIsGlobalOperator] = React.useState(false)
   const [hasLoadedPermissionContext, setHasLoadedPermissionContext] = React.useState(false)
@@ -214,6 +234,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [isSavingMessengerForceNewChatroom, setIsSavingMessengerForceNewChatroom] = React.useState(false)
   const [recipientDrafts, setRecipientDrafts] = React.useState({ mail: [], messenger: [] })
   const [recipientDraftTargets, setRecipientDraftTargets] = React.useState({ mail: "", messenger: "" })
+  const [recipientDraftDirty, setRecipientDraftDirty] = React.useState({ mail: false, messenger: false })
   const [recipientSearches, setRecipientSearches] = React.useState({ mail: "", messenger: "" })
   const [recipientPickerOpen, setRecipientPickerOpen] = React.useState({ mail: false, messenger: false })
   const [recipientPickerTabs, setRecipientPickerTabs] = React.useState({ mail: "group", messenger: "group" })
@@ -239,6 +260,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const sourceGroupRequestRef = React.useRef({ mail: 0, messenger: 0 })
   const sourceLoadRequestRef = React.useRef({ mail: 0, messenger: 0 })
   const didResetMappingDraftRef = React.useRef(false)
+  const didSyncLineChangeRef = React.useRef(false)
+  const selectedTargetByLineRef = React.useRef({})
+  const selectedLineIdRef = React.useRef(lineId)
   recipientContextRef.current = { lineId, selectedUserSdwtProd }
 
   const isRefreshing = isLoading && hasLoadedOnce
@@ -305,6 +329,23 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       sameUserSdwtProd(context.selectedUserSdwtProd, requestUserSdwtProd)
     )
   }, [])
+
+  const replaceTargetSearchParam = React.useCallback(
+    (nextTarget) => {
+      if (!isRecipientSettings) return
+      setSearchParams((prev) => {
+        const nextParams = new URLSearchParams(prev)
+        const normalizedTarget = String(nextTarget || "").trim()
+        if (normalizedTarget) {
+          nextParams.set("target", normalizedTarget)
+        } else {
+          nextParams.delete("target")
+        }
+        return nextParams
+      }, { replace: true })
+    },
+    [isRecipientSettings, setSearchParams],
+  )
 
   const loadMyRecipientTargets = React.useCallback(async () => {
     const requestLineId = lineId
@@ -517,14 +558,62 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [])
 
   React.useEffect(() => {
-    if (!lineId || userSdwtValues.length === 0) {
+    if (selectedLineIdRef.current === lineId) return
+    selectedLineIdRef.current = lineId
+    didSyncLineChangeRef.current = true
+    if (!lineId) {
       setSelectedUserSdwtProd("")
+      replaceTargetSearchParam("")
       return
     }
-    if (!userSdwtValues.includes(selectedUserSdwtProd)) {
-      setSelectedUserSdwtProd(userSdwtValues[0])
+
+    const rememberedTarget = selectedTargetByLineRef.current[lineId] || ""
+    setSelectedUserSdwtProd(targetSearchValue || rememberedTarget || "")
+  }, [lineId, replaceTargetSearchParam, targetSearchValue])
+
+  React.useEffect(() => {
+    if (!lineId) {
+      if (selectedUserSdwtProd) setSelectedUserSdwtProd("")
+      replaceTargetSearchParam("")
+      return
     }
-  }, [lineId, selectedUserSdwtProd, userSdwtValues])
+    if (didSyncLineChangeRef.current) {
+      didSyncLineChangeRef.current = false
+      return
+    }
+
+    if (userSdwtValues.length === 0) {
+      if (targetSearchValue && !sameUserSdwtProd(selectedUserSdwtProd, targetSearchValue)) {
+        setSelectedUserSdwtProd(targetSearchValue)
+      }
+      return
+    }
+
+    const urlTarget = findMatchingUserSdwtValue(userSdwtValues, targetSearchValue)
+    const currentTarget = findMatchingUserSdwtValue(userSdwtValues, selectedUserSdwtProd)
+    const rememberedTarget = findMatchingUserSdwtValue(
+      userSdwtValues,
+      selectedTargetByLineRef.current[lineId],
+    )
+    const nextTarget = urlTarget || currentTarget || rememberedTarget || userSdwtValues[0] || ""
+
+    if (!nextTarget) return
+
+    selectedTargetByLineRef.current[lineId] = nextTarget
+    if (!sameUserSdwtProd(selectedUserSdwtProd, nextTarget)) {
+      setSelectedUserSdwtProd(nextTarget)
+      return
+    }
+    if (!sameUserSdwtProd(targetSearchValue, nextTarget)) {
+      replaceTargetSearchParam(nextTarget)
+    }
+  }, [
+    lineId,
+    replaceTargetSearchParam,
+    selectedUserSdwtProd,
+    targetSearchValue,
+    userSdwtValues,
+  ])
 
   React.useEffect(() => {
     setNewTargetDraft("")
@@ -640,6 +729,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     sourceLoadRequestRef.current.messenger += 1
     setRecipientDrafts({ mail: [], messenger: [] })
     setRecipientDraftTargets({ mail: selectedUserSdwtProd || "", messenger: selectedUserSdwtProd || "" })
+    setRecipientDraftDirty({ mail: false, messenger: false })
     setRecipientActionErrors({ mail: null, messenger: null })
     setRecipientPickerOpen({ mail: false, messenger: false })
     setRecipientPickerResults({ mail: { group: [], search: [] }, messenger: { group: [], search: [] } })
@@ -656,15 +746,21 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     if (!sameUserSdwtProd(mailRecipientsTargetUserSdwtProd, selectedUserSdwtProd)) {
       return
     }
+    if (recipientDraftDirty.mail) {
+      return
+    }
     setRecipientDrafts((prev) => ({ ...prev, mail: mailRecipients || [] }))
     setRecipientDraftTargets((prev) => ({ ...prev, mail: selectedUserSdwtProd || "" }))
     setRecipientActionErrors((prev) => ({ ...prev, mail: null }))
     setRecipientPickerResults((prev) => ({ ...prev, mail: { group: [], search: [] } }))
     setRecipientPickerSelectedIds((prev) => ({ ...prev, mail: [] }))
-  }, [mailRecipients, mailRecipientsTargetUserSdwtProd, selectedUserSdwtProd])
+  }, [mailRecipients, mailRecipientsTargetUserSdwtProd, recipientDraftDirty.mail, selectedUserSdwtProd])
 
   React.useEffect(() => {
     if (!sameUserSdwtProd(messengerRecipientsTargetUserSdwtProd, selectedUserSdwtProd)) {
+      return
+    }
+    if (recipientDraftDirty.messenger) {
       return
     }
     setRecipientDrafts((prev) => ({ ...prev, messenger: messengerRecipients || [] }))
@@ -672,7 +768,12 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setRecipientActionErrors((prev) => ({ ...prev, messenger: null }))
     setRecipientPickerResults((prev) => ({ ...prev, messenger: { group: [], search: [] } }))
     setRecipientPickerSelectedIds((prev) => ({ ...prev, messenger: [] }))
-  }, [messengerRecipients, messengerRecipientsTargetUserSdwtProd, selectedUserSdwtProd])
+  }, [
+    messengerRecipients,
+    messengerRecipientsTargetUserSdwtProd,
+    recipientDraftDirty.messenger,
+    selectedUserSdwtProd,
+  ])
 
   React.useEffect(() => {
     let isActive = true
@@ -784,7 +885,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     try {
       const target = await createTarget({ targetUserSdwtProd: normalized })
       if (target?.targetUserSdwtProd) {
+        selectedTargetByLineRef.current[lineId] = target.targetUserSdwtProd
         setSelectedUserSdwtProd(target.targetUserSdwtProd)
+        replaceTargetSearchParam(target.targetUserSdwtProd)
         setNewTargetDraft("")
         showTargetCreateToast(target.targetUserSdwtProd)
       }
@@ -800,7 +903,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     } finally {
       setIsCreatingTarget(false)
     }
-  }, [canCreateTarget, createTarget, lineId, newTargetDraft])
+  }, [canCreateTarget, createTarget, lineId, newTargetDraft, replaceTargetSearchParam])
 
   const handleMappingDraftChange = React.useCallback((key, value) => {
     setMappingDraft((prev) => ({ ...prev, [key]: value }))
@@ -817,8 +920,13 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [])
 
   const handleSelectNotificationTarget = React.useCallback((value) => {
-    setSelectedUserSdwtProd(value)
-  }, [])
+    const normalizedValue = String(value || "").trim()
+    if (lineId && normalizedValue) {
+      selectedTargetByLineRef.current[lineId] = normalizedValue
+    }
+    setSelectedUserSdwtProd(normalizedValue)
+    replaceTargetSearchParam(normalizedValue)
+  }, [lineId, replaceTargetSearchParam])
 
   const handleCreateTargetMapping = React.useCallback(async (event) => {
     event.preventDefault()
@@ -1125,8 +1233,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     async (channel, event) => {
       event.preventDefault()
       const config = RECIPIENT_CHANNEL_CONFIG[channel]
-      const normalized = String(recipientSearches[channel] || "").trim()
-      if (!normalized) {
+      const searchTerms = parseRecipientSearchTerms(recipientSearches[channel])
+      if (searchTerms.length === 0) {
         setRecipientActionErrors((prev) => ({ ...prev, [channel]: "검색어를 입력하세요." }))
         return
       }
@@ -1138,24 +1246,31 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       setIsSearchingRecipients((prev) => ({ ...prev, [channel]: true }))
       setRecipientActionErrors((prev) => ({ ...prev, [channel]: null }))
       try {
-        const { results } = await fetchAccountUserPool({
-          search: normalized,
-          contactField: config.contactField,
-          limit: 20,
-          includeExternalSnapshots: true,
-        })
-        const previousSearchIds = new Set(
-          (recipientPickerResults[channel]?.search || []).map(getRecipientKey).filter(Boolean),
+        const searchResults = await Promise.allSettled(
+          searchTerms.map((search) =>
+            fetchAccountUserPool({
+              search,
+              contactField: config.contactField,
+              limit: 20,
+              includeExternalSnapshots: true,
+            }),
+          ),
         )
+        const failedSearch = searchResults.find((result) => result.status === "rejected")
+        const results = searchResults.flatMap((result) => (
+          result.status === "fulfilled" ? result.value?.results || [] : []
+        ))
+        if (results.length === 0 && failedSearch?.status === "rejected") {
+          throw failedSearch.reason
+        }
         setRecipientPickerResults((prev) => ({
           ...prev,
-          [channel]: { ...(prev[channel] || { group: [], search: [] }), search: results || [] },
+          [channel]: {
+            ...(prev[channel] || { group: [], search: [] }),
+            search: mergeRecipientUsers(prev[channel]?.search || [], results),
+          },
         }))
-        setRecipientPickerSelectedIds((prev) => ({
-          ...prev,
-          [channel]: (prev[channel] || []).filter((userId) => !previousSearchIds.has(userId)),
-        }))
-        if (!results?.length) {
+        if (results.length === 0) {
           setRecipientActionErrors((prev) => ({ ...prev, [channel]: "검색 결과가 없습니다." }))
         }
       } catch (requestError) {
@@ -1167,7 +1282,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         setIsSearchingRecipients((prev) => ({ ...prev, [channel]: false }))
       }
     },
-    [canManageRecipients, recipientPickerResults, recipientSearches],
+    [canManageRecipients, recipientSearches],
   )
 
   const handleRemoveRecipientUser = React.useCallback((channel, userToRemove) => {
@@ -1182,6 +1297,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       ...prev,
       [channel]: prev[channel].filter((item) => getRecipientKey(item) !== removeKey),
     }))
+    setRecipientDraftDirty((prev) => ({ ...prev, [channel]: true }))
   }, [canManageRecipients])
 
   const handleLoadSourceRecipients = React.useCallback(async (channel) => {
@@ -1288,6 +1404,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       ...prev,
       [channel]: mergeRecipientUsers(prev[channel], selectedUsers),
     }))
+    setRecipientDraftDirty((prev) => ({ ...prev, [channel]: true }))
     setRecipientActionErrors((prev) => ({ ...prev, [channel]: null }))
     setRecipientPickerOpen((prev) => ({ ...prev, [channel]: false }))
     showRecipientCandidatesToast(selectedUsers.length)
@@ -1320,6 +1437,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       if (result?.stale) {
         return
       }
+      setRecipientDrafts((prev) => ({ ...prev, [channel]: result?.recipients || [] }))
+      setRecipientDraftTargets((prev) => ({ ...prev, [channel]: selectedUserSdwtProd || "" }))
+      setRecipientDraftDirty((prev) => ({ ...prev, [channel]: false }))
       void loadMyRecipientTargets()
       showRecipientsSaveToast(config.saveDescription)
     } catch (requestError) {

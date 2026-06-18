@@ -49,9 +49,10 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
  * @typedef {Object} AuthContextValue
  * @property {AuthUser | null} user
  * @property {boolean} isLoading
+ * @property {boolean} isRefreshing
  * @property {(options?: { next?: string }) => Promise<{ method: "redirect"; url?: string }>} login
  * @property {() => Promise<void>} logout
- * @property {() => Promise<void>} refresh
+ * @property {(options?: { background?: boolean }) => Promise<void>} refresh
  * @property {AuthConfig} config
  */
 
@@ -98,9 +99,11 @@ export function AuthProvider({ children }) {
    */
   const [config, setConfig] = useState(DEFAULT_AUTH_CONFIG)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const mountedRef = useRef(false)
   const lastRefreshRef = useRef(0)
+  const userRef = useRef(null)
 
   // 세션 만료 시간의 절반 정도에 맞춰 자동 새로고침 주기를 계산합니다.
   const sessionRefreshIntervalMs = getSessionRefreshIntervalMs(config.sessionMaxAgeSeconds)
@@ -116,6 +119,11 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // 백그라운드 갱신 중 최신 사용자 존재 여부를 안정적으로 확인합니다.
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
   /** 서버에서 인증 설정을 로드 (/api/v1/auth/config) */
   const loadConfig = useCallback(async () => {
     try {
@@ -130,21 +138,34 @@ export function AuthProvider({ children }) {
   }, [])
 
   /** 현재 사용자 정보를 가져오는 함수 (/api/v1/auth/me) */
-  const loadUser = useCallback(async () => {
-    if (mountedRef.current) setIsLoading(true)
+  const loadUser = useCallback(async (options = {}) => {
+    const useBackgroundRefresh = Boolean(options?.background && userRef.current)
+    if (mountedRef.current) {
+      if (useBackgroundRefresh) {
+        setIsRefreshing(true)
+      } else {
+        setIsLoading(true)
+      }
+    }
     try {
       const endpoint = buildBackendUrl("/api/v1/auth/me")
       const result = await fetchJson(endpoint, { cache: "no-store" })
       if (!mountedRef.current) return
       if (result.ok && result.data) {
         setUser(/** 타입: AuthUser @type {AuthUser} */ (result.data))
-      } else {
+      } else if (!useBackgroundRefresh || result.status === 401 || result.status === 403) {
         setUser(null)
       }
     } catch {
-      if (mountedRef.current) setUser(null)
+      if (mountedRef.current && !useBackgroundRefresh) setUser(null)
     } finally {
-      if (mountedRef.current) setIsLoading(false)
+      if (mountedRef.current) {
+        if (useBackgroundRefresh) {
+          setIsRefreshing(false)
+        } else {
+          setIsLoading(false)
+        }
+      }
       lastRefreshRef.current = Date.now()
     }
   }, [])
@@ -165,7 +186,7 @@ export function AuthProvider({ children }) {
         return
       }
       lastRefreshRef.current = now
-      loadUser()
+      loadUser({ background: true })
     }
 
     window.addEventListener("focus", onFocus)
@@ -178,11 +199,17 @@ export function AuthProvider({ children }) {
     if (!sessionRefreshIntervalMs) return undefined
 
     const timer = window.setInterval(() => {
-      loadUser()
+      loadUser({ background: true })
     }, sessionRefreshIntervalMs)
 
     return () => window.clearInterval(timer)
   }, [loadUser, sessionRefreshIntervalMs])
+
+  // 외부에서 호출하는 refresh는 화면 언마운트를 만들지 않는 백그라운드 갱신을 기본값으로 둡니다.
+  const refresh = useCallback(
+    (options = {}) => loadUser({ background: true, ...options }),
+    [loadUser],
+  )
 
   /** 로그인: next 파라미터를 안전하게 붙여 백엔드 로그인 페이지로 이동 */
   const login = useCallback(
@@ -236,12 +263,13 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       isLoading,
+      isRefreshing,
       login,
       logout,
-      refresh: loadUser,
+      refresh,
       config,
     }),
-    [user, isLoading, login, logout, loadUser, config],
+    [user, isLoading, isRefreshing, login, logout, refresh, config],
   )
 
   return (

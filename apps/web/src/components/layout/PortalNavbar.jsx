@@ -27,7 +27,7 @@ const NAV_MENU_LINK_CLASS_NAME = "flex flex-row items-center gap-1.5"
 const NAV_MENU_TRIGGER_CLASS_NAME = "gap-1.5"
 const NAV_MENU_CONTENT_CLASS_NAME =
   "data-[motion=from-start]:slide-in-from-left-30! data-[motion=to-start]:slide-out-to-left-30! data-[motion=from-end]:slide-in-from-right-30! data-[motion=to-end]:slide-out-to-right-30! absolute z-50 w-auto"
-const NAV_SUB_LINK_CLASS_NAME = "block px-3 py-1.5"
+const NAV_SUB_LINK_CLASS_NAME = "block whitespace-nowrap px-3 py-1.5"
 
 function canShowNavigationItem(item, user) {
   if (!item?.requireSuperuser) return true
@@ -167,7 +167,7 @@ export function PortalNavbar({ navigationItems }) {
                   {navItem.title}
                 </NavigationMenuTrigger>
                 <NavigationMenuContent className={NAV_MENU_CONTENT_CLASS_NAME}>
-                  <ul className="grid w-38 gap-4 p-2">
+                  <ul className="grid w-max min-w-56 gap-4 p-2">
                     <li>
                       {navItem.items?.map((item) => (
                         <NavigationMenuLink key={item.title} asChild>
