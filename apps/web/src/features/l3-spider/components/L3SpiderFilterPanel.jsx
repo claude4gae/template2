@@ -1,169 +1,293 @@
 import { useMemo, useState } from "react"
+import { ChevronRight } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 
-import { sortedValues, toggleSetValue } from "../utils/selection"
+import { sortedValues } from "../utils/selection"
 
-function NativeCheck({ checked, indeterminate, label, onChange }) {
+function SelectRow({ label, hint, selected, onClick }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs hover:bg-muted/60">
-      <input
-        type="checkbox"
-        checked={checked}
-        ref={(node) => {
-          if (node) node.indeterminate = Boolean(indeterminate)
-        }}
-        onChange={onChange}
-        className="size-3.5 accent-primary"
-      />
-      <span className="min-w-0 truncate">{label}</span>
-    </label>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex h-9 w-full min-w-0 items-center justify-between gap-3 rounded-md border border-transparent px-3 text-left transition",
+        "hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "border-primary/30 bg-primary/10 text-primary shadow-sm",
+      )}
+    >
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground",
+          selected && "text-primary",
+        )}
+      >
+        {label}
+      </span>
+      {hint != null && (
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {hint}
+        </span>
+      )}
+      <ChevronRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
   )
 }
 
-export function L3SpiderFilterPanel({
-  stepPpids,
-  bins,
-  checkedPpids,
-  checkedBins,
-  onCheckedPpidsChange,
-  onCheckedBinsChange,
-  onClearChartFilter,
-}) {
-  const [stepQuery, setStepQuery] = useState("")
-  const [binQuery, setBinQuery] = useState("")
-  const steps = useMemo(() => sortedValues(Object.keys(stepPpids || {})), [stepPpids])
-  const allPpids = useMemo(
-    () => sortedValues(new Set(steps.flatMap((step) => stepPpids?.[step] ?? []))),
-    [stepPpids, steps],
-  )
-  const visibleSteps = useMemo(() => {
-    const query = stepQuery.trim().toLowerCase()
-    if (!query) return steps
-    return steps.filter(
-      (step) =>
-        step.toLowerCase().includes(query) ||
-        (stepPpids?.[step] ?? []).some((ppid) => ppid.toLowerCase().includes(query)),
-    )
-  }, [stepPpids, stepQuery, steps])
-  const visibleBins = useMemo(() => {
-    const query = binQuery.trim().toLowerCase()
-    return query ? bins.filter((bin) => bin.toLowerCase().includes(query)) : bins
-  }, [binQuery, bins])
-
-  const allPpidsChecked = allPpids.length > 0 && allPpids.every((ppid) => checkedPpids.has(ppid))
-  const somePpidsChecked = allPpids.some((ppid) => checkedPpids.has(ppid)) && !allPpidsChecked
-  const allBinsChecked = bins.length > 0 && bins.every((bin) => checkedBins.has(bin))
-  const someBinsChecked = bins.some((bin) => checkedBins.has(bin)) && !allBinsChecked
-
-  const toggleStep = (step) => {
-    const ppids = stepPpids?.[step] ?? []
-    const isAllChecked = ppids.length > 0 && ppids.every((ppid) => checkedPpids.has(ppid))
-    const next = new Set(checkedPpids)
-    ppids.forEach((ppid) => {
-      if (isAllChecked) next.delete(ppid)
-      else next.add(ppid)
-    })
-    onCheckedPpidsChange(next)
-  }
+function ColumnCard({ title, badge, disabled, placeholder, isActive, children }) {
+  const [query, setQuery] = useState("")
 
   return (
-    <aside className="grid min-h-0 grid-rows-[auto,1fr] border-r bg-card">
-      <div className="border-b px-3 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Filters</h2>
-          <Button type="button" variant="ghost" size="sm" onClick={onClearChartFilter}>
-            선택 해제
-          </Button>
+    <Card
+      className={cn(
+        "grid min-h-0 grid-rows-[48px_40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl border bg-card py-0 shadow-sm transition-all",
+        isActive && "ring-2 ring-primary/50",
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-12 items-center border-b px-4",
+          isActive ? "bg-primary/10" : "bg-muted/40",
+        )}
+      >
+        <div className="flex h-full min-w-0 flex-1 items-center justify-between gap-2">
+          <CardTitle
+            className={cn(
+              "truncate text-sm font-semibold leading-5",
+              disabled && "text-muted-foreground",
+              isActive && "text-primary",
+            )}
+          >
+            {title}
+          </CardTitle>
+          {badge != null ? (
+            <Badge variant={isActive ? "default" : "secondary"} className="shrink-0 text-[11px]">
+              {badge}
+            </Badge>
+          ) : null}
         </div>
       </div>
-      <div className="min-h-0 overflow-y-auto py-2">
-        <section className="border-b">
-          <div className="flex items-center gap-2 px-3 py-2">
-            <h3 className="flex-1 text-xs font-semibold text-foreground">step_seq / ppid</h3>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-              {checkedPpids.size}/{allPpids.length}
-            </span>
+      <div className="border-b px-2 py-1.5">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="검색…"
+          className="h-7 text-xs"
+          disabled={disabled}
+        />
+      </div>
+      <CardContent className="min-h-0 overflow-y-auto bg-background/60 p-2">
+        {disabled ? (
+          <div className="flex h-full min-h-16 items-center justify-center text-center text-sm text-muted-foreground">
+            {placeholder}
           </div>
-          <div className="grid gap-1 px-3 pb-3">
-            <Input
-              value={stepQuery}
-              onChange={(event) => setStepQuery(event.target.value)}
-              placeholder="Search…"
-              className="h-8"
-            />
-            <NativeCheck
-              label="All"
-              checked={allPpidsChecked}
-              indeterminate={somePpidsChecked}
-              onChange={() =>
-                onCheckedPpidsChange(allPpidsChecked ? new Set() : new Set(allPpids))}
-            />
-            <div className="grid gap-1">
-              {visibleSteps.map((step) => {
-                const ppids = stepPpids?.[step] ?? []
-                const checkedCount = ppids.filter((ppid) => checkedPpids.has(ppid)).length
-                return (
-                  <details key={step} className="border-t py-1" open>
-                    <summary className="cursor-pointer px-2 text-xs font-semibold">
-                      {step}{" "}
-                      <span className="text-[10px] text-muted-foreground">
-                        ({checkedCount}/{ppids.length})
-                      </span>
-                    </summary>
-                    <NativeCheck
-                      label={`${step} All`}
-                      checked={ppids.length > 0 && checkedCount === ppids.length}
-                      indeterminate={checkedCount > 0 && checkedCount < ppids.length}
-                      onChange={() => toggleStep(step)}
-                    />
-                    {ppids.map((ppid) => (
-                      <NativeCheck
-                        key={`${step}-${ppid}`}
-                        label={ppid}
-                        checked={checkedPpids.has(ppid)}
-                        onChange={() => onCheckedPpidsChange(toggleSetValue(checkedPpids, ppid))}
-                      />
-                    ))}
-                  </details>
-                )
-              })}
-            </div>
+        ) : (
+          <div className="grid content-start gap-1.5">
+            {children(query)}
           </div>
-        </section>
-        <section className="border-b">
-          <div className="flex items-center gap-2 px-3 py-2">
-            <h3 className="flex-1 text-xs font-semibold text-foreground">bin_name</h3>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-              {checkedBins.size}/{bins.length}
-            </span>
-          </div>
-          <div className="grid gap-1 px-3 pb-3">
-            <Input
-              value={binQuery}
-              onChange={(event) => setBinQuery(event.target.value)}
-              placeholder="Search…"
-              className="h-8"
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function applyQuery(items, query) {
+  const q = query.trim().toLowerCase()
+  return q ? items.filter((item) => item.toLowerCase().includes(q)) : items
+}
+
+export function L3SpiderFilterPanel({
+  edsStepSeqs,
+  edsStepPpids,
+  ppidEqcs,
+  eqcBins,
+  eqcAnomalyBins,
+  checkedEdsStep,  // string | null
+  checkedStep,     // string | null
+  checkedPpid,     // string | null
+  checkedEqc,      // string | null — EQPCH 모드 (단일)
+  checkedBin,      // string | null — Bin 모드 (단일)
+  onCheckedEdsStepChange,
+  onCheckedStepChange,
+  onCheckedPpidChange,
+  onCheckedEqcChange,
+  onCheckedBinChange,
+  onAnalysisModeChange,
+}) {
+  const edsSteps = useMemo(() => sortedValues(Object.keys(edsStepSeqs || {})), [edsStepSeqs])
+
+  const visibleSteps = useMemo(
+    () => checkedEdsStep ? sortedValues(edsStepSeqs?.[checkedEdsStep] ?? []) : [],
+    [checkedEdsStep, edsStepSeqs],
+  )
+
+  const visiblePpids = useMemo(
+    () => (checkedEdsStep && checkedStep)
+      ? sortedValues(edsStepPpids?.[`${checkedEdsStep}|||${checkedStep}`] ?? [])
+      : [],
+    [checkedEdsStep, checkedStep, edsStepPpids],
+  )
+
+  const visibleEqcs = useMemo(
+    () => checkedPpid ? sortedValues(ppidEqcs?.[checkedPpid] ?? []) : [],
+    [checkedPpid, ppidEqcs],
+  )
+
+  // EQPCH 선택 시 이상 감지된 bin_name만 표시
+  const visibleBins = useMemo(
+    () => checkedEqc ? sortedValues(eqcAnomalyBins?.[checkedEqc] ?? []) : [],
+    [checkedEqc, eqcAnomalyBins],
+  )
+
+  // 상위 해제 시 하위 전부 리셋
+  const selectEdsStep = (eds) => {
+    const next = checkedEdsStep === eds ? null : eds
+    onCheckedEdsStepChange(next)
+    onCheckedStepChange(null)
+    onCheckedPpidChange(null)
+    onCheckedEqcChange(null)
+    onCheckedBinChange(null)
+  }
+
+  const selectStep = (step) => {
+    const next = checkedStep === step ? null : step
+    onCheckedStepChange(next)
+    onCheckedPpidChange(null)
+    onCheckedEqcChange(null)
+    onCheckedBinChange(null)
+  }
+
+  const selectPpid = (ppid) => {
+    const next = checkedPpid === ppid ? null : ppid
+    onCheckedPpidChange(next)
+    onCheckedEqcChange(null)
+    onCheckedBinChange(null)
+  }
+
+  // EQPCH 선택 → 모드 'eqpch', Bin 클리어
+  const selectEqc = (eqc) => {
+    const next = checkedEqc === eqc ? null : eqc
+    onCheckedEqcChange(next)
+    onCheckedBinChange(null)
+    if (next !== null) onAnalysisModeChange("eqpch")
+  }
+
+  // Bin 선택 → 해당 bin의 전체 EQPCH trellis (모드 전환, EQPCH는 유지)
+  const selectBin = (bin) => {
+    const next = checkedBin === bin ? null : bin
+    onCheckedBinChange(next)
+    onAnalysisModeChange(next !== null ? 'bin' : 'eqpch')
+  }
+
+  const showBinCol = checkedEqc !== null
+
+  return (
+    <section className={`grid h-[320px] gap-4 ${showBinCol ? 'grid-cols-5' : 'grid-cols-4'}`}>
+      <ColumnCard
+        title="EDS Step"
+        badge={`${edsSteps.length}`}
+        disabled={edsSteps.length === 0}
+        placeholder="항목 없음"
+        isActive={checkedEdsStep !== null}
+      >
+        {(query) =>
+          applyQuery(edsSteps, query).map((eds) => (
+            <SelectRow
+              key={eds}
+              label={eds}
+              selected={checkedEdsStep === eds}
+              onClick={() => selectEdsStep(eds)}
             />
-            <NativeCheck
-              label="All"
-              checked={allBinsChecked}
-              indeterminate={someBinsChecked}
-              onChange={() =>
-                onCheckedBinsChange(allBinsChecked ? new Set() : new Set(bins))}
+          ))
+        }
+      </ColumnCard>
+
+      <ColumnCard
+        title="Step Seq"
+        badge={visibleSteps.length > 0 ? `${visibleSteps.length}` : null}
+        disabled={!checkedEdsStep}
+        placeholder="EDS Step을 먼저 선택하세요"
+        isActive={checkedStep !== null}
+      >
+        {(query) =>
+          applyQuery(visibleSteps, query).map((step) => (
+            <SelectRow
+              key={step}
+              label={step}
+              selected={checkedStep === step}
+              onClick={() => selectStep(step)}
             />
-            {visibleBins.map((bin) => (
-              <NativeCheck
+          ))
+        }
+      </ColumnCard>
+
+      <ColumnCard
+        title="PPID"
+        badge={visiblePpids.length > 0 ? `${visiblePpids.length}` : null}
+        disabled={!checkedStep}
+        placeholder="Step Seq를 먼저 선택하세요"
+        isActive={checkedPpid !== null}
+      >
+        {(query) =>
+          applyQuery(visiblePpids, query).map((ppid) => (
+            <SelectRow
+              key={ppid}
+              label={ppid}
+              selected={checkedPpid === ppid}
+              onClick={() => selectPpid(ppid)}
+            />
+          ))
+        }
+      </ColumnCard>
+
+      {/* EQPCH: 단일 선택 → bin_name trellis */}
+      <ColumnCard
+        title="EQPCH"
+        badge={visibleEqcs.length > 0 ? `${visibleEqcs.length}` : null}
+        disabled={!checkedPpid}
+        placeholder="PPID를 먼저 선택하세요"
+        isActive={checkedEqc !== null}
+      >
+        {(query) =>
+          applyQuery(visibleEqcs, query).map((eqc) => {
+            const binCount = eqcBins?.[eqc]?.length ?? 0
+            return (
+              <SelectRow
+                key={eqc}
+                label={eqc}
+                hint={binCount > 0 ? `bin ${binCount}` : null}
+                selected={checkedEqc === eqc}
+                onClick={() => selectEqc(eqc)}
+              />
+            )
+          })
+        }
+      </ColumnCard>
+
+      {/* Bin Name: EQPCH 선택 후 세부 필터 */}
+      {showBinCol && (
+        <ColumnCard
+          title="Bin Name"
+          badge={visibleBins.length > 0 ? `${visibleBins.length}` : null}
+          disabled={false}
+          placeholder=""
+          isActive={checkedBin !== null}
+        >
+          {(query) =>
+            applyQuery(visibleBins, query).map((bin) => (
+              <SelectRow
                 key={bin}
                 label={bin}
-                checked={checkedBins.has(bin)}
-                onChange={() => onCheckedBinsChange(toggleSetValue(checkedBins, bin))}
+                selected={checkedBin === bin}
+                onClick={() => selectBin(bin)}
               />
-            ))}
-          </div>
-        </section>
-      </div>
-    </aside>
+            ))
+          }
+        </ColumnCard>
+      )}
+    </section>
   )
 }

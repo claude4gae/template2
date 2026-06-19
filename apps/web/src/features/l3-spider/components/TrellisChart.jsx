@@ -1,0 +1,1024 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import Plotly from 'plotly.js-dist-min'
+import { CHART_MARKER_SIZE, EQC_TIME_STATUS_MARKER, STATUS_MARKER, STATUS_ORDER } from '../utils/chartStatus'
+import './TrellisChart.css'
+
+const NCOLS = 3
+const EQC_TIME_NCOLS = 1
+const SUBPLOT_H = 340
+const SUBPLOT_H_WAFER = 420
+const AXIS_FONT_SIZE = 12
+const SUBPLOT_TITLE_FONT_SIZE = 13
+const AXIS_TITLE_FONT_SIZE = 12
+const RISK_TITLE_MARKER = '▌'
+const RISK_BADGE_XSHIFT = -62
+const RISK_TITLE_START_X = 0.16
+const X_JITTER_OFFSET = 0.28
+const MAX_X_TICKS_PER_SUBPLOT = 12
+const MAX_POINTS_PER_SUBPLOT = 900
+const OVERSCAN_ROWS = 1
+const DEFAULT_VIEWPORT_H = 1200
+const LASSO_KEY_SEPARATOR = '\u0000'
+const HIGHLIGHT_COLOR = 'var(--chart-2)'
+const HIGHLIGHT_GLOW = 'hsl(var(--chart-2) / 0.28)'
+const HIGHLIGHT_SHINE = 'var(--chart-1)'
+const HOVER_LABEL = { align: 'left' }
+const EQC_COLOR_PALETTE = [
+  'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)',
+  'var(--primary)', 'var(--destructive)', 'var(--muted-foreground)',
+]
+
+const ACTIVE_MODEBAR_TITLES = new Set(['Pan', 'Box select wafer', 'Box select lot'])
+const PRESERVE_ACTIVE_MODEBAR_TITLES = new Set(['Autoscale', 'Reset axes'])
+
+const HAND_PAN_ICON = {
+  width: 512, height: 512,
+  path: 'M176 232V96c0-22 18-40 40-40s40 18 40 40v120h16V56c0-22 18-40 40-40s40 18 40 40v176h16V88c0-22 18-40 40-40s40 18 40 40v184h16V144c0-22 18-40 40-40s40 18 40 40v176c0 93-75 168-168 168h-56c-56 0-108-28-139-75L48 334c-13-20-8-47 12-60s47-8 60 12l40 60V232c0-22 18-40 40-40s40 18 40 40z',
+}
+
+const LASSO_WAFER_ICON = {
+  width: 512, height: 512,
+  path: 'M254 72c104 0 188 57 188 128s-84 128-188 128S66 271 66 200 150 72 254 72zm0 52c-72 0-132 35-132 76s60 76 132 76 132-35 132-76-60-76-132-76zm-34 252h68v68h-68z',
+}
+
+const LASSO_LOT_ICON = {
+  width: 512, height: 512,
+  path: 'M254 72c104 0 188 57 188 128s-84 128-188 128S66 271 66 200 150 72 254 72zm0 52c-72 0-132 35-132 76s60 76 132 76 132-35 132-76-60-76-132-76zM154 366h58v58h-58zm73 0h58v58h-58zm73 0h58v58h-58z',
+}
+
+function getActiveModebarTitle(dragMode, lassoMode, lassoShape) {
+  if (dragMode === 'pan') return 'Pan'
+  if (dragMode === 'select' && lassoShape === 'box') {
+    if (lassoMode === 'wafer') return 'Box select wafer'
+    if (lassoMode === 'lot') return 'Box select lot'
+  }
+  return null
+}
+
+function syncModebarActiveButtons(plotEl, activeTitle) {
+  plotEl.querySelectorAll('.modebar-btn[data-title]').forEach(button => {
+    const title = button.getAttribute('data-title')
+    if (!title || !ACTIVE_MODEBAR_TITLES.has(title)) return
+    const active = title === activeTitle
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', active ? 'true' : 'false')
+  })
+}
+
+function parseTimeMs(value) {
+  const ms = new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+function formatAxisTime(value) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return value
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${month}-${day}`
+}
+
+function getWaferJitterOffset(waferId) {
+  const waferNo = Number.parseInt(waferId, 10)
+  if (Number.isFinite(waferNo)) {
+    const clamped = Math.max(1, Math.min(25, waferNo))
+    return ((clamped - 13) / 12) * X_JITTER_OFFSET
+  }
+  let hash = 0
+  for (let i = 0; i < waferId.length; i += 1) hash = (hash * 31 + waferId.charCodeAt(i)) % 997
+  return ((hash / 996) * 2 - 1) * X_JITTER_OFFSET
+}
+
+function buildTimeXAxis(subData) {
+  const xByRow = new Map()
+  subData.forEach(d => xByRow.set(d, d.tkinTime))
+  const times = subData.map(d => d.tkinTime)
+  const lineMin = times.reduce((a, b) => a < b ? a : b)
+  const lineMax = times.reduce((a, b) => a > b ? a : b)
+  return {
+    axis: {
+      title: { text: 'eqp_tkin_time', font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 10 },
+      type: 'date',
+      tickformat: '%m-%d',
+      nticks: MAX_X_TICKS_PER_SUBPLOT,
+      tickangle: -90,
+    },
+    xByRow, lineMin, lineMax,
+  }
+}
+
+function buildWaferXAxis(subData) {
+  const sorted = [...subData].sort((a, b) => {
+    const byTime = parseTimeMs(a.tkinTime) - parseTimeMs(b.tkinTime)
+    if (byTime !== 0) return byTime
+    return a.waferId.localeCompare(b.waferId, undefined, { numeric: true })
+  })
+  const xByRow = new Map()
+  sorted.forEach((d, idx) => xByRow.set(d, idx + getWaferJitterOffset(d.waferId)))
+  const step = Math.max(1, Math.ceil(sorted.length / MAX_X_TICKS_PER_SUBPLOT))
+  const sampled = sorted.filter((_, idx) => idx % step === 0)
+  return {
+    axis: {
+      title: { text: 'eqp_tkin_time, wafer_id', font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 12 },
+      type: 'linear',
+      tickmode: 'array',
+      tickangle: -90,
+      range: [-0.7, Math.max(sorted.length - 0.3, 0.7)],
+      tickvals: sampled.map(d => sorted.indexOf(d)),
+      ticktext: sampled.map(d => `${formatAxisTime(d.tkinTime)}_${d.waferId}`),
+    },
+    xByRow,
+    lineMin: -0.5,
+    lineMax: Math.max(sorted.length - 0.5, 0.5),
+  }
+}
+
+function buildXAxis(subData, mode) {
+  return mode === 'tkin_time_wafer_id' ? buildWaferXAxis(subData) : buildTimeXAxis(subData)
+}
+
+function buildEqcTimeXAxis(subData) {
+  const sorted = [...subData].sort((a, b) => {
+    const byEqc = a.eqc.localeCompare(b.eqc, undefined, { numeric: true })
+    if (byEqc !== 0) return byEqc
+    const byTime = parseTimeMs(a.tkinTime) - parseTimeMs(b.tkinTime)
+    if (byTime !== 0) return byTime
+    return a.waferId.localeCompare(b.waferId, undefined, { numeric: true })
+  })
+  const xByRow = new Map()
+  const eqcOrder = [...new Set(sorted.map(d => d.eqc))]
+  const eqcColor = new Map(eqcOrder.map((eqc, idx) => [eqc, EQC_COLOR_PALETTE[idx % EQC_COLOR_PALETTE.length]]))
+  const boundaries = []
+  const tickvals = []
+  const ticktext = []
+
+  let cursor = 0
+  eqcOrder.forEach((eqc, eqcIdx) => {
+    const rows = sorted.filter(d => d.eqc === eqc)
+    const start = cursor
+    rows.forEach((row, idx) => xByRow.set(row, start + idx))
+    cursor += rows.length
+    const end = cursor - 1
+    tickvals.push((start + end) / 2)
+    ticktext.push(eqc)
+    if (eqcIdx < eqcOrder.length - 1) boundaries.push(end + 0.5)
+  })
+
+  return {
+    axis: {
+      title: { text: 'eqpch, tkin_time', font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 12 },
+      type: 'linear',
+      tickmode: 'array',
+      tickangle: -45,
+      range: [-0.7, Math.max(sorted.length - 0.3, 0.7)],
+      tickvals,
+      ticktext,
+    },
+    xByRow,
+    lineMin: -0.5,
+    lineMax: Math.max(sorted.length - 0.5, 0.5),
+    eqcOrder,
+    eqcColor,
+    boundaries,
+  }
+}
+
+function sortHighlightFirst(keys, hasHighlight) {
+  return [...keys].sort((a, b) => {
+    const aRisk = hasHighlight(a)
+    const bRisk = hasHighlight(b)
+    if (aRisk === bRisk) return 0
+    return aRisk ? -1 : 1
+  })
+}
+
+function getBinNameAxisTitle(subData) {
+  const binNames = [...new Set(subData.map(d => d.binName))].sort()
+  return binNames.length > 0 ? binNames.join(', ') : ''
+}
+
+function sampleRowsForPlot(rows, maxPoints = MAX_POINTS_PER_SUBPLOT) {
+  if (rows.length <= maxPoints) return rows
+  const anomalyRows = rows.filter(d => d.displayStatus === 'High Risk Chamber' || d.displayStatus === 'Warning')
+  const anomalySet = new Set(anomalyRows)
+  const remainingBudget = Math.max(maxPoints - anomalyRows.length, Math.floor(maxPoints * 0.35))
+  const normalRows = rows.filter(d => !anomalySet.has(d))
+  const sampledNormal = []
+  const step = normalRows.length / remainingBudget
+  for (let i = 0; i < remainingBudget; i += 1) {
+    const idx = Math.min(Math.floor(i * step), normalRows.length - 1)
+    if (normalRows[idx]) sampledNormal.push(normalRows[idx])
+  }
+  return [...anomalyRows, ...sampledNormal]
+}
+
+function getWaferLassoKey(row) {
+  return `${row.rootLotId}${LASSO_KEY_SEPARATOR}${row.waferId}`
+}
+
+function getLotLassoKey(row) {
+  return row.lotId
+}
+
+function escapeHoverText(value) {
+  if (!value) return ''
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function isLassoHighlighted(row, selection) {
+  if (!selection) return false
+  if (selection.mode === 'wafer') return selection.keys.has(getWaferLassoKey(row))
+  return selection.keys.has(getLotLassoKey(row))
+}
+
+function getSelectedPointKeys(points, mode) {
+  const keys = new Set()
+  points.forEach(point => {
+    const customdata = point.customdata
+    if (!Array.isArray(customdata)) return
+    const [rootLotId, lotId, waferId] = customdata
+    if (mode === 'wafer' && rootLotId !== undefined && waferId !== undefined) {
+      keys.add(`${rootLotId}${LASSO_KEY_SEPARATOR}${waferId}`)
+    }
+    if (mode === 'lot' && lotId !== undefined) keys.add(String(lotId))
+  })
+  return keys
+}
+
+function makeHighlightTrace(rows, xAxis, xRef, yRef, customdata, hovertemplate, layer) {
+  const common = {
+    type: 'scatter',
+    mode: 'markers',
+    x: rows.map(d => xAxis.xByRow.get(d) ?? 0),
+    y: rows.map(d => d.binValue),
+    customdata,
+    xaxis: xRef,
+    yaxis: yRef,
+    showlegend: false,
+    hovertemplate,
+  }
+
+  if (layer === 'glow') {
+    return {
+      ...common,
+      marker: {
+        color: HIGHLIGHT_GLOW,
+        size: CHART_MARKER_SIZE + 12,
+        symbol: 'circle',
+        opacity: 0.9,
+        line: { color: 'transparent', width: 0 },
+      },
+      hoverinfo: 'skip',
+    }
+  }
+
+  if (layer === 'shine') {
+    return {
+      ...common,
+      marker: {
+        color: HIGHLIGHT_SHINE,
+        size: Math.max(CHART_MARKER_SIZE - 2, 5),
+        symbol: 'circle',
+        opacity: 0.92,
+        line: { color: 'transparent', width: 0 },
+      },
+      hoverinfo: 'skip',
+    }
+  }
+
+  return {
+    ...common,
+    marker: {
+      color: HIGHLIGHT_COLOR,
+      size: CHART_MARKER_SIZE + 7,
+      symbol: 'circle',
+      opacity: 1,
+      line: { color: 'transparent', width: 0 },
+    },
+    name: 'selected highlight',
+  }
+}
+
+function makePointCustomData(rows, includeEqc = false) {
+  return rows.map(d => [
+    d.rootLotId,
+    d.lotId,
+    d.waferId,
+    d.tkinTime,
+    escapeHoverText(d.comment),
+    ...(includeEqc ? [d.eqc] : []),
+  ])
+}
+
+function getStepPpidTitle(rows) {
+  const stepSeqs = [...new Set(rows.map(d => d.stepSeq))].sort()
+  const ppids = [...new Set(rows.map(d => d.ppid))].sort()
+  return `${stepSeqs.length > 0 ? stepSeqs.join(', ') : '-'} / ${ppids.length > 0 ? ppids.join(', ') : '-'}`
+}
+
+function getUniqueText(values) {
+  const unique = [...new Set(values)].sort()
+  return unique.length > 0 ? unique.join(', ') : '-'
+}
+
+function getSharedYRange(rows) {
+  if (!rows.length) return null
+  const vals = rows.map(d => d.binValue)
+  const limits = rows
+    .map(d => d.propOver50 < 0.5 ? d.usl : d.lsl)
+    .filter(v => v !== null && v !== undefined)
+  const allY = [...vals, ...limits]
+  const yMin = Math.min(...allY)
+  const yMax = Math.max(...allY)
+  const pad = Math.max((yMax - yMin) * 0.1, 1)
+  return [yMin - pad, yMax + pad]
+}
+
+function getLimitInfoFromRows(rows) {
+  if (!rows.length) return { value: null, label: '', color: '' }
+  const r = rows[0]
+  const isMso = r.propOver50 < 0.5
+  const val = isMso ? r.usl : r.lsl
+  return { value: val ?? null, label: isMso ? 'USL' : 'LSL', color: 'var(--destructive)' }
+}
+
+function getBaseXAxis() {
+  return {
+    color: 'var(--muted-foreground)',
+    showgrid: false,
+    zeroline: false,
+    linecolor: 'var(--foreground)',
+    linewidth: 1,
+    mirror: true,
+    tickfont: { size: AXIS_FONT_SIZE, color: 'var(--muted-foreground)' },
+    ticks: 'outside',
+    ticklen: 5,
+    tickwidth: 1,
+    tickcolor: 'var(--foreground)',
+    showticklabels: true,
+    automargin: true,
+    showline: true,
+  }
+}
+
+function getBaseYAxis() {
+  return {
+    color: 'var(--muted-foreground)',
+    showgrid: true,
+    gridcolor: 'var(--border)',
+    griddash: 'dot',
+    zeroline: false,
+    linecolor: 'var(--foreground)',
+    linewidth: 1,
+    mirror: true,
+    tickfont: { size: AXIS_FONT_SIZE, color: 'var(--muted-foreground)' },
+    ticks: 'outside',
+    ticklen: 5,
+    tickwidth: 1,
+    tickcolor: 'var(--foreground)',
+    title: { font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 8 },
+    showticklabels: true,
+    nticks: 12,
+    automargin: true,
+    showline: true,
+  }
+}
+
+function buildSingleEqcTimeChart(key, subData, lassoSelection) {
+  const plotData = []
+  const shapes = []
+  const annotations = []
+  const xAxis = buildEqcTimeXAxis(subData)
+  const plotRows = sampleRowsForPlot(
+    subData,
+    Math.max(MAX_POINTS_PER_SUBPLOT * xAxis.eqcOrder.length, MAX_POINTS_PER_SUBPLOT),
+  )
+  const title = getStepPpidTitle(subData)
+  const yRange = getSharedYRange(subData)
+
+  xAxis.boundaries.forEach(x => {
+    shapes.push({
+      type: 'line', xref: 'x', yref: 'y',
+      x0: x, x1: x,
+      y0: yRange?.[0] ?? 0,
+      y1: yRange?.[1] ?? 1,
+      line: { color: 'var(--border)', dash: 'dot', width: 1 },
+    })
+  })
+
+  STATUS_ORDER.forEach(status => {
+    xAxis.eqcOrder.forEach(eqc => {
+      const pts = plotRows.filter(d => d.displayStatus === status && d.eqc === eqc)
+      if (pts.length === 0) return
+
+      const highlightedPts = lassoSelection
+        ? subData.filter(d => d.displayStatus === status && d.eqc === eqc && isLassoHighlighted(d, lassoSelection))
+        : []
+      const markerStyle = EQC_TIME_STATUS_MARKER[status]
+      const eqcColor = xAxis.eqcColor.get(eqc) ?? 'var(--primary)'
+      const hovertemplate =
+        `<b>${title}</b><br>` +
+        `eqc: %{customdata[5]}<br>` +
+        `Time: %{customdata[3]}<br>` +
+        `Value: %{y:.4f}<br>` +
+        `root_lot_id: %{customdata[0]}<br>` +
+        `lot_id: %{customdata[1]}<br>` +
+        `wafer_id: %{customdata[2]}<br>` +
+        `comment: %{customdata[4]}<br>` +
+        `${status}<extra></extra>`
+      const customdata = makePointCustomData(pts, true)
+
+      plotData.push({
+        type: 'scatter', mode: 'markers',
+        x: pts.map(d => xAxis.xByRow.get(d) ?? 0),
+        y: pts.map(d => d.binValue),
+        customdata,
+        marker: { color: eqcColor, size: CHART_MARKER_SIZE, symbol: markerStyle.symbol, opacity: 0.95, line: { color: eqcColor, width: 1.4 } },
+        name: markerStyle.label,
+        legendgroup: status,
+        showlegend: false,
+        hovertemplate,
+      })
+
+      if (highlightedPts.length > 0) {
+        const highlightCustomData = makePointCustomData(highlightedPts, true)
+        plotData.push(
+          makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'glow'),
+          makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'sphere'),
+          makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'shine'),
+        )
+      }
+    })
+  })
+
+  const limit = getLimitInfoFromRows(subData)
+  if (limit.value !== null) {
+    shapes.push({
+      type: 'line', xref: 'x', yref: 'y',
+      x0: xAxis.lineMin, x1: xAxis.lineMax,
+      y0: limit.value, y1: limit.value,
+      line: { color: limit.color, dash: 'dot', width: 1.5 },
+    })
+    annotations.push({
+      xref: 'x domain', yref: 'y',
+      x: 1, y: limit.value,
+      text: `<b>${limit.label}</b>`,
+      showarrow: false,
+      font: { size: 9, color: limit.color },
+      xanchor: 'right', yanchor: 'bottom',
+    })
+  }
+
+  annotations.push({
+    xref: 'x domain', yref: 'y domain',
+    x: 0.5, y: 1.065,
+    text: `<b>${title}</b>`,
+    showarrow: false,
+    font: { size: SUBPLOT_TITLE_FONT_SIZE, color: 'var(--foreground)' },
+    xanchor: 'center', yanchor: 'bottom',
+  })
+
+  return {
+    key,
+    plotData,
+    plotLayout: {
+      xaxis: { ...getBaseXAxis(), ...xAxis.axis },
+      yaxis: {
+        ...getBaseYAxis(),
+        title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 8 },
+        ...(yRange !== null ? { range: yRange, autorange: false } : { autorange: true }),
+      },
+      height: SUBPLOT_H_WAFER,
+      autosize: true,
+      paper_bgcolor: 'var(--card)',
+      plot_bgcolor: 'transparent',
+      font: { color: 'var(--muted-foreground)', size: AXIS_FONT_SIZE },
+      margin: { l: 62, r: 20, t: 55, b: 115 },
+      shapes, annotations,
+      hoverlabel: HOVER_LABEL,
+      showlegend: false,
+    },
+  }
+}
+
+function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxisMode, lassoSelection) {
+  const plotData = []
+  const shapes = []
+  const annotations = []
+  const hasRisk = subData.some(d => d.displayStatus === 'High Risk Chamber')
+  const xAxis = buildXAxis(subData, xAxisMode)
+  const plotRows = sampleRowsForPlot(subData)
+
+  STATUS_ORDER.forEach(status => {
+    const pts = plotRows.filter(d => d.displayStatus === status)
+    if (pts.length === 0) return
+
+    const highlightedPts = lassoSelection
+      ? subData.filter(d => d.displayStatus === status && isLassoHighlighted(d, lassoSelection))
+      : []
+    const markerStyle = STATUS_MARKER[status]
+    const hovertemplate =
+      `<b>${title}</b><br>` +
+      `Time: %{customdata[3]}<br>` +
+      `Value: %{y:.4f}<br>` +
+      `root_lot_id: %{customdata[0]}<br>` +
+      `lot_id: %{customdata[1]}<br>` +
+      `wafer_id: %{customdata[2]}<br>` +
+      `comment: %{customdata[4]}<br>` +
+      `${status}<extra></extra>`
+    const customdata = makePointCustomData(pts)
+
+    plotData.push({
+      type: 'scatter', mode: 'markers',
+      x: pts.map(d => xAxis.xByRow.get(d) ?? 0),
+      y: pts.map(d => d.binValue),
+      customdata,
+      marker: { color: markerStyle.color, size: CHART_MARKER_SIZE, symbol: markerStyle.symbol, opacity: 0.95, line: { color: markerStyle.color, width: 1.2 } },
+      name: markerStyle.label,
+      legendgroup: status,
+      showlegend: false,
+      hovertemplate,
+    })
+
+    if (highlightedPts.length > 0) {
+      const highlightCustomData = makePointCustomData(highlightedPts)
+      plotData.push(
+        makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'glow'),
+        makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'sphere'),
+        makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'shine'),
+      )
+    }
+  })
+
+  if (limit.value !== null) {
+    shapes.push({
+      type: 'line', xref: 'x', yref: 'y',
+      x0: xAxis.lineMin, x1: xAxis.lineMax,
+      y0: limit.value, y1: limit.value,
+      line: { color: limit.color, dash: 'dot', width: 1.5 },
+    })
+    annotations.push({
+      xref: 'x domain', yref: 'y',
+      x: 1, y: limit.value,
+      text: `<b>${limit.label}</b>`,
+      showarrow: false,
+      font: { size: 9, color: limit.color },
+      xanchor: 'right', yanchor: 'bottom',
+    })
+  }
+
+  if (hasRisk) {
+    annotations.push({
+      xref: 'paper', yref: 'paper',
+      x: 0, y: 1.065,
+      text: `${RISK_TITLE_MARKER} <b>High Risk</b>`,
+      showarrow: false,
+      font: { size: SUBPLOT_TITLE_FONT_SIZE, color: 'var(--destructive)' },
+      xshift: RISK_BADGE_XSHIFT,
+      xanchor: 'left', yanchor: 'bottom',
+    })
+  }
+
+  annotations.push({
+    xref: 'x domain', yref: 'y domain',
+    x: hasRisk ? RISK_TITLE_START_X : 0.5,
+    y: 1.065,
+    text: `<b>${title}</b>`,
+    showarrow: false,
+    font: { size: SUBPLOT_TITLE_FONT_SIZE, color: 'var(--foreground)' },
+    xanchor: hasRisk ? 'left' : 'center', yanchor: 'bottom',
+  })
+
+  return {
+    key,
+    plotData,
+    plotLayout: {
+      xaxis: { ...getBaseXAxis(), ...xAxis.axis },
+      yaxis: {
+        ...getBaseYAxis(),
+        title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 8 },
+        ...(sharedYRange !== null ? { range: sharedYRange, autorange: false } : { autorange: true }),
+      },
+      height: xAxisMode === 'tkin_time_wafer_id' ? SUBPLOT_H_WAFER : SUBPLOT_H,
+      autosize: true,
+      paper_bgcolor: 'var(--card)',
+      plot_bgcolor: 'transparent',
+      font: { color: 'var(--muted-foreground)', size: AXIS_FONT_SIZE },
+      margin: { l: 70, r: 20, t: 50, b: xAxisMode === 'tkin_time_wafer_id' ? 130 : 75 },
+      shapes, annotations,
+      hoverlabel: HOVER_LABEL,
+      showlegend: false,
+    },
+  }
+}
+
+function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRequest, onLassoRequest, onModebarNeutralRequest }) {
+  const plotRef = useRef(null)
+  const initializedRef = useRef(false)
+  const selectedHandlerRef = useRef(null)
+  const activeModebarTitle = getActiveModebarTitle(dragMode, lassoMode, lassoShape)
+
+  useEffect(() => {
+    const plotEl = plotRef.current
+    if (!plotEl) return
+
+    let disposed = false
+    const syncActiveModebar = () => {
+      if (!disposed) syncModebarActiveButtons(plotEl, activeModebarTitle)
+    }
+    const scheduleActiveModebarSync = () => {
+      window.requestAnimationFrame(syncActiveModebar)
+      window.setTimeout(syncActiveModebar, 0)
+      window.setTimeout(syncActiveModebar, 80)
+    }
+    const modebarClickHandler = (event) => {
+      if (!(event.target instanceof Element)) return
+      const button = event.target.closest('.modebar-btn[data-title]')
+      if (!button || !plotEl.contains(button)) return
+      const title = button.getAttribute('data-title')
+      if (title && ACTIVE_MODEBAR_TITLES.has(title)) return
+      if (!title || !PRESERVE_ACTIVE_MODEBAR_TITLES.has(title)) {
+        onModebarNeutralRequest()
+        syncModebarActiveButtons(plotEl, null)
+        return
+      }
+      scheduleActiveModebarSync()
+    }
+
+    const plotConfig = {
+      responsive: true,
+      displayModeBar: true,
+      modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d'],
+      modeBarButtonsToAdd: [
+        {
+          name: 'pan-hand',
+          title: 'Pan',
+          icon: HAND_PAN_ICON,
+          click: (gd) => {
+            onPanRequest()
+            Plotly.relayout(gd, { dragmode: 'pan' })
+            syncModebarActiveButtons(gd, 'Pan')
+          },
+        },
+        {
+          name: 'lasso-wafer',
+          title: 'Box select wafer',
+          icon: LASSO_WAFER_ICON,
+          click: (gd) => {
+            onLassoRequest('wafer')
+            Plotly.relayout(gd, { dragmode: 'select' })
+            syncModebarActiveButtons(gd, 'Box select wafer')
+          },
+        },
+        {
+          name: 'lasso-lot',
+          title: 'Box select lot',
+          icon: LASSO_LOT_ICON,
+          click: (gd) => {
+            onLassoRequest('lot')
+            Plotly.relayout(gd, { dragmode: 'select' })
+            syncModebarActiveButtons(gd, 'Box select lot')
+          },
+        },
+      ],
+      displaylogo: false,
+    }
+
+    const layout = {
+      ...chart.plotLayout,
+      dragmode: dragMode,
+      ...(dragMode === 'select' ? { selectdirection: 'd' } : {}),
+    }
+
+    plotEl.addEventListener('click', modebarClickHandler, true)
+    const plotPromise = initializedRef.current
+      ? Plotly.react(plotEl, chart.plotData, layout, plotConfig)
+      : Plotly.newPlot(plotEl, chart.plotData, layout, plotConfig)
+
+    initializedRef.current = true
+    plotPromise.finally(() => {
+      if (disposed) return
+      syncActiveModebar()
+      if (selectedHandlerRef.current) {
+        plotEl.removeListener?.('plotly_selected', selectedHandlerRef.current)
+        selectedHandlerRef.current = null
+      }
+      if (lassoMode === 'off') return
+      const selectedHandler = (event) => {
+        onSelected(Array.isArray(event?.points) ? event.points : [])
+      }
+      selectedHandlerRef.current = selectedHandler
+      plotEl.on?.('plotly_selected', selectedHandler)
+    })
+
+    return () => {
+      disposed = true
+      plotEl.removeEventListener('click', modebarClickHandler, true)
+      if (selectedHandlerRef.current) {
+        plotEl.removeListener?.('plotly_selected', selectedHandlerRef.current)
+        selectedHandlerRef.current = null
+      }
+    }
+  }, [chart.plotData, chart.plotLayout, lassoMode, lassoShape, dragMode, activeModebarTitle, onSelected, onPanRequest, onLassoRequest, onModebarNeutralRequest])
+
+  useEffect(() => () => {
+    const plotEl = plotRef.current
+    if (plotEl && initializedRef.current) Plotly.purge(plotEl)
+  }, [])
+
+  return <div ref={plotRef} className="tc-plot" />
+}
+
+export default function TrellisChart({
+  data,
+  trellisBy,
+  xAxisMode,
+  highlightFirst = false,
+  lassoMode = 'off',
+  lassoShape = 'box',
+  eqcTimeTrellisMode = 'step',
+  onLassoModeChange,
+  onLassoShapeChange,
+}) {
+  const scrollerRef = useRef(null)
+  const spacerRef = useRef(null)
+  const virtualWindowRef = useRef(null)
+  const plotGridRef = useRef(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(DEFAULT_VIEWPORT_H)
+  const [lassoSelection, setLassoSelection] = useState(null)
+  const [plotDragMode, setPlotDragMode] = useState('zoom')
+
+  const rowHeight = xAxisMode === 'tkin_time_wafer_id' || xAxisMode === 'eqc_tkin_time'
+    ? SUBPLOT_H_WAFER
+    : SUBPLOT_H
+  const chartColumns = xAxisMode === 'eqc_tkin_time' ? EQC_TIME_NCOLS : NCOLS
+
+  const chartPlan = useMemo(() => {
+    if (data.length === 0) {
+      return { keys: [], subtitle: '', sharedYRange: null, groupedData: new Map() }
+    }
+
+    if (xAxisMode === 'eqc_tkin_time') {
+      const groupedData = new Map()
+      data.forEach(row => {
+        const key = eqcTimeTrellisMode === 'step_ppid'
+          ? `${row.stepSeq}|||${row.ppid}`
+          : row.stepSeq
+        const rows = groupedData.get(key)
+        if (rows) rows.push(row)
+        else groupedData.set(key, [row])
+      })
+      const keys = [...groupedData.keys()].sort()
+      const subtitleMode = eqcTimeTrellisMode === 'step_ppid' ? 'step_seq + ppid' : 'step_seq'
+      return {
+        keys,
+        subtitle: `${new Set(data.map(d => d.eqc)).size} EQPCH · ${subtitleMode} trellis`,
+        sharedYRange: getSharedYRange(data),
+        groupedData,
+      }
+    }
+
+    if (trellisBy === 'eqc') {
+      const groupedData = new Map()
+      data.forEach(row => {
+        const rows = groupedData.get(row.eqc)
+        if (rows) rows.push(row)
+        else groupedData.set(row.eqc, [row])
+      })
+      const baseKeys = [...groupedData.keys()].sort()
+      const riskEqpchs = new Set(data.filter(d => d.displayStatus === 'High Risk Chamber').map(d => d.eqc))
+      const keys = highlightFirst
+        ? sortHighlightFirst(baseKeys, eqc => riskEqpchs.has(eqc))
+        : baseKeys
+      const vals = data.map(d => d.binValue)
+      const limits = data
+        .map(d => d.propOver50 < 0.5 ? d.usl : d.lsl)
+        .filter(v => v !== null && v !== undefined)
+      const allY = [...vals, ...limits]
+      const yMin = Math.min(...allY)
+      const yMax = Math.max(...allY)
+      const pad = Math.max((yMax - yMin) * 0.1, 1)
+      return { keys, subtitle: `${keys.length} EQPCH · 공통 Y축`, sharedYRange: [yMin - pad, yMax + pad], groupedData }
+    }
+
+    if (trellisBy === 'bin') {
+      const groupedData = new Map()
+      data.forEach(row => {
+        const rows = groupedData.get(row.binName)
+        if (rows) rows.push(row)
+        else groupedData.set(row.binName, [row])
+      })
+      const baseKeys = [...groupedData.keys()].sort()
+      const riskBins = new Set(data.filter(d => d.displayStatus === 'High Risk Chamber').map(d => d.binName))
+      const keys = highlightFirst
+        ? sortHighlightFirst(baseKeys, key => riskBins.has(key))
+        : baseKeys
+      return { keys, subtitle: `${keys.length} bin_name · 독립 Y축`, sharedYRange: null, groupedData }
+    }
+
+    const groupedData = new Map()
+    data.forEach(row => {
+      const key = `${row.stepSeq}|||${row.binName}`
+      const rows = groupedData.get(key)
+      if (rows) rows.push(row)
+      else groupedData.set(key, [row])
+    })
+    const baseKeys = [...groupedData.keys()].sort()
+    const riskStepBins = new Set(
+      data.filter(d => d.displayStatus === 'High Risk Chamber').map(d => `${d.stepSeq}|||${d.binName}`),
+    )
+    const keys = highlightFirst
+      ? sortHighlightFirst(baseKeys, key => riskStepBins.has(key))
+      : baseKeys
+    return { keys, subtitle: `${keys.length} step·bin · 독립 Y축`, sharedYRange: null, groupedData }
+  }, [data, trellisBy, highlightFirst, xAxisMode, eqcTimeTrellisMode])
+
+  const keySignature = useMemo(() => chartPlan.keys.join('\u0001'), [chartPlan.keys])
+  const totalRows = Math.ceil(chartPlan.keys.length / chartColumns)
+  const totalHeight = Math.max(totalRows * rowHeight, 300)
+  const visibleRowStart = Math.max(Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS, 0)
+  const visibleRowCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN_ROWS * 2
+  const visibleRowEnd = Math.min(visibleRowStart + visibleRowCount, totalRows)
+  const virtualOffset = visibleRowStart * rowHeight
+
+  useLayoutEffect(() => {
+    spacerRef.current?.style.setProperty('--tc-total-height', `${totalHeight}px`)
+    virtualWindowRef.current?.style.setProperty('--tc-virtual-offset', `${virtualOffset}px`)
+    plotGridRef.current?.style.setProperty('--tc-chart-columns', String(chartColumns))
+    plotGridRef.current?.style.setProperty('--tc-row-height', `${rowHeight}px`)
+  }, [chartColumns, rowHeight, totalHeight, virtualOffset])
+
+  const visibleKeys = useMemo(() => {
+    const start = visibleRowStart * chartColumns
+    const end = Math.min(visibleRowEnd * chartColumns, chartPlan.keys.length)
+    return chartPlan.keys.slice(start, end)
+  }, [chartPlan.keys, chartColumns, visibleRowStart, visibleRowEnd])
+
+  const getGroupedRows = useCallback(
+    (key) => chartPlan.groupedData.get(key) ?? [],
+    [chartPlan.groupedData],
+  )
+
+  const visibleCharts = useMemo(() => {
+    if (data.length === 0 || visibleKeys.length === 0) return []
+
+    return visibleKeys.map(key => {
+      const subData = getGroupedRows(key)
+      if (xAxisMode === 'eqc_tkin_time') {
+        return buildSingleEqcTimeChart(key, subData, lassoSelection)
+      }
+      if (trellisBy === 'eqc') {
+        return buildSingleStandardChart(
+          key, subData,
+          `${key} / ${getStepPpidTitle(subData)}`,
+          getLimitInfoFromRows(subData),
+          chartPlan.sharedYRange,
+          xAxisMode,
+          lassoSelection,
+        )
+      }
+      if (trellisBy === 'bin') {
+        return buildSingleStandardChart(
+          key, subData,
+          `${key} / ${getUniqueText(subData.map(d => d.eqc))}`,
+          getLimitInfoFromRows(subData),
+          null,
+          xAxisMode,
+          lassoSelection,
+        )
+      }
+      const [stepSeq, binName] = key.split('|||')
+      return buildSingleStandardChart(
+        key, subData,
+        `${stepSeq} / ${getUniqueText(subData.map(d => d.ppid))} / ${binName}`,
+        getLimitInfoFromRows(subData),
+        null,
+        xAxisMode,
+        lassoSelection,
+      )
+    })
+  }, [data.length, visibleKeys, xAxisMode, trellisBy, getGroupedRows, lassoSelection, chartPlan.sharedYRange])
+
+  const handleSelectedPoints = useCallback((points) => {
+    if (lassoMode === 'off') return
+    const keys = getSelectedPointKeys(points, lassoMode)
+    if (keys.size === 0) return
+    setLassoSelection(prev => {
+      if (!prev || prev.mode !== lassoMode) return { mode: lassoMode, keys }
+      const nextKeys = new Set(prev.keys)
+      keys.forEach(key => {
+        if (nextKeys.has(key)) nextKeys.delete(key)
+        else nextKeys.add(key)
+      })
+      return nextKeys.size > 0 ? { mode: lassoMode, keys: nextKeys } : null
+    })
+  }, [lassoMode])
+
+  const handleModebarPan = useCallback(() => {
+    setPlotDragMode('pan')
+    onLassoModeChange?.('off')
+  }, [onLassoModeChange])
+
+  const handleModebarLasso = useCallback((mode) => {
+    setPlotDragMode('select')
+    onLassoShapeChange?.('box')
+    onLassoModeChange?.(mode)
+  }, [onLassoModeChange, onLassoShapeChange])
+
+  const handleModebarNeutral = useCallback(() => {
+    setPlotDragMode('zoom')
+    onLassoModeChange?.('off')
+  }, [onLassoModeChange])
+
+  useEffect(() => {
+    setScrollTop(0)
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0
+    setLassoSelection(null)
+  }, [data, keySignature, chartPlan.keys.length])
+
+  useEffect(() => {
+    setLassoSelection(null)
+  }, [lassoMode])
+
+  useEffect(() => {
+    if (lassoMode === 'off') {
+      setPlotDragMode(prev => prev === 'lasso' || prev === 'select' ? 'zoom' : prev)
+      return
+    }
+    setPlotDragMode(lassoShape === 'freeform' ? 'lasso' : 'select')
+  }, [lassoMode, lassoShape])
+
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current
+    if (!scroller) return
+    const updateViewport = () => setViewportHeight(scroller.clientHeight || DEFAULT_VIEWPORT_H)
+    updateViewport()
+    const observer = new ResizeObserver(updateViewport)
+    observer.observe(scroller)
+    return () => observer.disconnect()
+  }, [])
+
+  if (data.length === 0) {
+    return (
+      <div className="tc-empty">
+        <div className="tc-empty-icon">📊</div>
+        <div className="tc-empty-text">테이블에서 EQPCH 또는 bin_name을 클릭하세요</div>
+      </div>
+    )
+  }
+
+  const visibleStart = Math.min(visibleRowStart * chartColumns + 1, chartPlan.keys.length)
+  const visibleEnd = Math.min(visibleRowEnd * chartColumns, chartPlan.keys.length)
+  const selectedCount = lassoSelection?.keys.size ?? 0
+
+  return (
+    <div className="tc-wrap">
+      <div className="tc-info">
+        <span className="tc-info-count">
+          {data.length.toLocaleString()}개 데이터 포인트 &nbsp;|&nbsp; {chartPlan.subtitle}
+        </span>
+        <span className="tc-info-progress">
+          {`표시 중 ${visibleStart.toLocaleString()}-${visibleEnd.toLocaleString()} / ${chartPlan.keys.length.toLocaleString()}`}
+        </span>
+        {selectedCount > 0 && (
+          <button type="button" className="tc-clear-selection" onClick={() => setLassoSelection(null)}>
+            선택 해제 ({selectedCount.toLocaleString()})
+          </button>
+        )}
+      </div>
+      {visibleKeys.length === 0 && (
+        <div className="tc-progress-placeholder">차트 준비 중…</div>
+      )}
+      <div
+        ref={scrollerRef}
+        className="tc-scroll"
+        onScroll={event => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        <div ref={spacerRef} className="tc-spacer">
+          <div ref={virtualWindowRef} className="tc-virtual-window">
+            <div
+              ref={plotGridRef}
+              className="tc-plot-grid"
+            >
+              {visibleCharts.map(chart => (
+                <div className="tc-plot-cell" key={chart.key}>
+                  <FacetPlot
+                    chart={chart}
+                    lassoMode={lassoMode}
+                    lassoShape={lassoShape}
+                    dragMode={plotDragMode}
+                    onSelected={handleSelectedPoints}
+                    onPanRequest={handleModebarPan}
+                    onLassoRequest={handleModebarLasso}
+                    onModebarNeutralRequest={handleModebarNeutral}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

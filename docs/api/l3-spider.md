@@ -12,6 +12,22 @@ L3 Spider API는 read-only mount된 `daily_anomaly` Parquet 파일을 조회해 
 | Request/Response | camelCase |
 | Side effect | 없음. 파일 read-only 조회만 수행 |
 
+## Data Layout
+
+`L3_SPIDER_DATA_ROOT` 아래 파일은 아래 구조로 조회합니다.
+
+```text
+{date}/{lineId}/{processId}/{edsStep}/{filename}
+```
+
+파일명은 확장자 없는 `step_seq#ppid#index` 형식을 기본으로 지원합니다.
+
+```text
+2025-01-15/L1/P1/EDS_M/S1#PPID_A#0
+```
+
+호환을 위해 `S1#PPID_A#0.parquet`도 같은 방식으로 파싱합니다. `data.parquet`처럼 파싱할 수 없는 파일명은 Parquet 내부의 `step_seq`, `ppid` 컬럼을 사용합니다.
+
 ## Endpoints
 
 | Method | Path | 설명 |

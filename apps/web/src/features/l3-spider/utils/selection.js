@@ -20,7 +20,13 @@ export const EMPTY_STATS = {
 
 export const EMPTY_SUMMARY = {
   stats: EMPTY_STATS,
+  edsStepSeqs: {},
+  edsStepPpids: {},
   stepPpids: {},
+  ppidEqcs: {},
+  ppidBins: {},
+  eqcBins: {},
+  eqcAnomalyBins: {},
   bins: [],
   anomalies: [],
 }
@@ -92,14 +98,15 @@ export function buildSelectionKey(selection) {
   return JSON.stringify(buildSelectionPayload(selection))
 }
 
-export function buildFilterKey(filter, checkedPpids, checkedBins) {
+export function buildFilterKey(checkedEdsStep, checkedStep, checkedPpid, checkedEqc, checkedBin, resolvedEqcs, resolvedBins) {
   return JSON.stringify({
-    selectedEqcs: setToPayload(filter.selectedEqcs),
-    selectedStepBins: setToPayload(filter.selectedStepBins),
-    selectedPpidBins: setToPayload(filter.selectedPpidBins),
-    selectedSteps: setToPayload(filter.selectedSteps),
-    checkedPpids: setToPayload(checkedPpids),
-    checkedBins: setToPayload(checkedBins),
+    checkedEdsStep: checkedEdsStep ?? null,
+    checkedStep: checkedStep ?? null,
+    checkedPpid: checkedPpid ?? null,
+    checkedEqc: checkedEqc ?? null,
+    checkedBin: checkedBin ?? null,
+    resolvedEqcs: resolvedEqcs ?? [],
+    resolvedBins: resolvedBins ?? [],
   })
 }
 

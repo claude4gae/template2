@@ -1,5 +1,4 @@
 // 파일 경로: src/features/l3-spider/hooks/useL3SpiderQueries.js
-// L3 Spider 서버 데이터 조회 훅입니다.
 import { useQuery } from "@tanstack/react-query"
 
 import {
@@ -12,9 +11,7 @@ import {
   buildFilterKey,
   buildSelectionKey,
   buildSelectionPayload,
-  hasChartFilter,
   hasCompleteSelection,
-  setToPayload,
 } from "../utils/selection"
 
 export function useL3SpiderMeta() {
@@ -33,22 +30,25 @@ export function useL3SpiderSummary(selection) {
   })
 }
 
-export function useL3SpiderData(selection, filter, checkedPpids, checkedBins) {
+// resolvedEqcs: bin 선택 시 [] (전체 EQPCH), 아니면 [checkedEqc]
+// resolvedBins: bin 선택 시 [checkedBin], 아니면 이상 감지 bins 목록
+export function useL3SpiderData(selection, checkedEdsStep, checkedStep, checkedPpid, checkedEqc, checkedBin, resolvedEqcs, resolvedBins) {
   const selectionKey = buildSelectionKey(selection)
-  const filterKey = buildFilterKey(filter, checkedPpids, checkedBins)
+  const filterKey = buildFilterKey(checkedEdsStep, checkedStep, checkedPpid, checkedEqc, checkedBin, resolvedEqcs, resolvedBins)
   return useQuery({
     queryKey: l3SpiderQueryKeys.data(selectionKey, filterKey),
     queryFn: () =>
       fetchL3SpiderData(
         buildSelectionPayload(selection, {
-          selectedEqcs: setToPayload(filter.selectedEqcs),
-          selectedStepBins: setToPayload(filter.selectedStepBins),
-          selectedPpidBins: setToPayload(filter.selectedPpidBins),
-          selectedSteps: setToPayload(filter.selectedSteps),
-          checkedPpids: setToPayload(checkedPpids),
-          checkedBins: setToPayload(checkedBins),
+          selectedEqcs: resolvedEqcs,
+          selectedSteps: checkedStep ? [checkedStep] : [],
+          checkedEdsSteps: checkedEdsStep ? [checkedEdsStep] : [],
+          checkedPpids: checkedPpid ? [checkedPpid] : [],
+          checkedBins: resolvedBins,
+          selectedStepBins: [],
+          selectedPpidBins: [],
         }),
       ),
-    enabled: hasCompleteSelection(selection) && hasChartFilter(filter),
+    enabled: hasCompleteSelection(selection) && (checkedEqc !== null || checkedBin !== null),
   })
 }

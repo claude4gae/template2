@@ -1,0 +1,152 @@
+.tc-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tc-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: color-mix(in oklab, var(--muted) 72%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+
+.tc-info-count {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.tc-info-progress {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.tc-clear-selection {
+  flex-shrink: 0;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tc-clear-selection:hover {
+  background: color-mix(in oklab, var(--chart-4) 18%, transparent);
+  border-color: var(--chart-4);
+  color: var(--foreground);
+}
+
+.tc-plot-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(var(--tc-chart-columns, 1), minmax(0, 1fr));
+  grid-auto-rows: var(--tc-row-height, 340px);
+}
+
+.tc-plot-cell {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.tc-plot {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+
+.tc-plot .modebar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 1px !important;
+}
+
+.tc-plot .modebar-group {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 1px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.tc-plot .modebar-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 22px !important;
+  height: 52px !important;
+  margin: 0 !important;
+  padding: 30px 1px 2px !important;
+}
+
+.tc-plot .modebar-btn svg {
+  display: block;
+  top: 0 !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.tc-plot [data-title]::before,
+.tc-plot [data-title]::after {
+  text-align: left !important;
+}
+
+.tc-scroll {
+  height: min(1200px, calc(100vh - 120px));
+  min-height: 600px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.tc-spacer {
+  position: relative;
+  height: var(--tc-total-height, 300px);
+  min-height: 300px;
+}
+
+.tc-virtual-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  transform: translateY(var(--tc-virtual-offset, 0px));
+  will-change: transform;
+}
+
+.tc-progress-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+
+.tc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 300px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted-foreground);
+}
+
+.tc-empty-icon { font-size: 40px; opacity: 0.4; }
+.tc-empty-text { font-size: 14px; }

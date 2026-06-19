@@ -61,6 +61,31 @@ class L3SpiderServiceTests(SimpleTestCase):
         )
         frame.to_parquet(target / "sample", engine="pyarrow")
 
+    def _write_filename_key_sample(self, root: Path) -> None:
+        """확장자 없는 파일명에서 step_seq와 ppid를 보강하는 샘플을 생성합니다."""
+
+        target = root / "2025-01-15" / "L1" / "P1" / "EDS_M"
+        target.mkdir(parents=True)
+        frame = pd.DataFrame(
+            [
+                {
+                    "tkin_time": pd.Timestamp("2025-01-15 00:00:00"),
+                    "root_lot_id": "ROOT",
+                    "lot_id": "LOT",
+                    "wafer_id": "W01",
+                    "eqc": "EQC_A",
+                    "bin_name": "BIN_A",
+                    "bin_value": 1.2,
+                    "prop_over_50": 0.7,
+                    "lsl": 0.0,
+                    "usl": 2.0,
+                    "display_status": "High Risk Chamber",
+                    "comment": "위험",
+                }
+            ]
+        )
+        frame.to_parquet(target / "S1#PPID_A#0", engine="pyarrow")
+
     def test_meta_summary_and_data_use_camel_case_contract(self) -> None:
         """메타/요약/데이터 응답이 camelCase 계약을 따르는지 확인합니다."""
 
@@ -93,3 +118,31 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(summary["anomalies"][0]["binName"], "BIN_A")
         self.assertEqual(data["rows"][0]["stepSeq"], "S1")
         self.assertIn("displayStatus", data["rows"][0])
+
+    def test_extensionless_filename_key_supplies_step_and_ppid(self) -> None:
+        """확장자 없는 STEP#PPID#N 파일명이 summary/data 필터에 반영되는지 확인합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_filename_key_sample(root)
+            selection = {
+                "dates": ["2025-01-15"],
+                "lineIds": ["L1"],
+                "processIds": ["P1"],
+                "edsSteps": ["EDS_M"],
+                "selectedEqcs": ["EQC_A"],
+                "selectedStepBins": [],
+                "selectedPpidBins": [],
+                "selectedSteps": ["S1"],
+                "checkedPpids": ["PPID_A"],
+                "checkedBins": ["BIN_A"],
+            }
+
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
+                summary = services.get_summary(selection)
+                data = services.get_data(selection)
+
+        self.assertEqual(summary["stepPpids"], {"S1": ["PPID_A"]})
+        self.assertEqual(summary["edsStepPpids"], {"EDS_M|||S1": ["PPID_A"]})
+        self.assertEqual(data["rows"][0]["stepSeq"], "S1")
+        self.assertEqual(data["rows"][0]["ppid"], "PPID_A")

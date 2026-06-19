@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
@@ -15,7 +16,10 @@ import pandas as pd
 
 from api.l3_spider import selectors
 
-SUMMARY_COLUMNS = ["step_seq", "ppid", "eqc", "bin_name", "display_status"]
+SUMMARY_COLUMNS = ["step_seq", "ppid", "eqp_id", "eqc", "bin_name", "display_status"]
+# 파일명에서 step_seq/ppid 파싱 성공 시 파일에서 읽을 컬럼 (절반으로 감소)
+_SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status"]
+_SUMMARY_DEDUP_KEYS = ["step_seq", "ppid", "eqc", "bin_name", "display_status"]
 CHART_COLUMNS = [
     "tkin_time",
     "tkout_time",
@@ -110,6 +114,49 @@ def _has_required_selection(selection: dict[str, object]) -> bool:
     return all(selection.get(key) for key in ("dates", "lineIds", "processIds", "edsSteps"))
 
 
+def _parse_filename_key(path: Path) -> tuple[str, str] | None:
+    """파일명에서 (step_seq, ppid)를 파싱합니다.
+
+    persistence.py 의 basename_template=f"{name_prefix}#{{i}}" 로 저장된
+    파일명 패턴을 지원합니다.
+    예: STEP_001#PPID_A#0 또는 STEP_001#PPID_A#0.parquet → ('STEP_001', 'PPID_A')
+    파싱 불가(data.parquet, 구형 포맷 등)이면 None을 반환합니다.
+    """
+    try:
+        name = path.name
+        if name.endswith(".parquet"):
+            name = name[: -len(".parquet")]
+        parts = name.split("#")
+        if len(parts) == 3 and parts[0] and parts[1]:
+            return parts[0], parts[1]
+    except Exception:
+        pass
+    return None
+
+
+def _add_path_context(frame: pd.DataFrame, path: Path, *, override_filename_keys: bool = False) -> pd.DataFrame:
+    """파일 경로에서 유도 가능한 컨텍스트 컬럼을 보강합니다."""
+
+    relative_parts = path.relative_to(selectors.get_data_root()).parts
+    if len(relative_parts) >= 4:
+        frame["eds_step"] = relative_parts[3]
+
+    parsed = _parse_filename_key(path)
+    if not parsed:
+        return frame
+
+    step_seq, ppid = parsed
+    if override_filename_keys or "step_seq" not in frame.columns:
+        frame["step_seq"] = step_seq
+    else:
+        frame["step_seq"] = frame["step_seq"].fillna(step_seq)
+    if override_filename_keys or "ppid" not in frame.columns:
+        frame["ppid"] = ppid
+    else:
+        frame["ppid"] = frame["ppid"].fillna(ppid)
+    return frame
+
+
 def _read_frames(selection: dict[str, object], columns: list[str]) -> list[pd.DataFrame]:
     """선택된 파일들을 DataFrame 목록으로 읽습니다."""
 
@@ -125,12 +172,41 @@ def _read_frames(selection: dict[str, object], columns: list[str]) -> list[pd.Da
         try:
             frame = selectors.read_parquet_columns(path, columns)
             frame = _normalize_display_status(frame)
-            relative_parts = path.relative_to(selectors.get_data_root()).parts
-            if len(relative_parts) >= 4:
-                frame["eds_step"] = relative_parts[3]
+            frame = _add_path_context(frame, path)
             frames.append(frame)
         except Exception as exc:
             print(f"[WARN] L3 Spider parquet read failed: {path}: {exc}")
+    return frames
+
+
+def _read_summary_frames(selection: dict[str, object]) -> list[pd.DataFrame]:
+    """summary 전용 최적화 읽기.
+
+    파일명이 STEP#PPID#N 또는 STEP#PPID#N.parquet 형식이면 step_seq·ppid를 파일명에서 가져오고
+    eqc·bin_name·display_status 3컬럼만 읽는다(6컬럼 → 3컬럼).
+    구형 포맷(data.parquet 등)은 SUMMARY_COLUMNS 전체를 읽는 fallback 사용.
+    두 경우 모두 파일당 즉시 drop_duplicates로 메모리를 줄인다.
+    """
+    frames: list[pd.DataFrame] = []
+    try:
+        files = list(selectors.iter_data_files(selection))
+    except FileNotFoundError as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+    except NotADirectoryError as exc:
+        raise L3SpiderServiceError(str(exc), status_code=400) from exc
+
+    for path in files:
+        try:
+            parsed = _parse_filename_key(path)
+            cols = _SUMMARY_COLUMNS_SLIM if parsed else SUMMARY_COLUMNS
+            frame = selectors.read_parquet_columns(path, cols)
+            frame = _normalize_display_status(frame)
+            frame = _add_path_context(frame, path, override_filename_keys=bool(parsed))
+            available_dedup = [c for c in _SUMMARY_DEDUP_KEYS if c in frame.columns]
+            frame = frame.drop_duplicates(subset=available_dedup)
+            frames.append(frame)
+        except Exception as exc:
+            print(f"[WARN] L3 Spider summary read failed: {path}: {exc}")
     return frames
 
 
@@ -222,11 +298,11 @@ def get_meta() -> dict[str, object]:
 def get_summary(selection: dict[str, object]) -> dict[str, object]:
     """선택 조건의 이상감지 요약 정보를 반환합니다."""
 
-    empty = {"stats": _empty_stats(), "stepPpids": {}, "bins": [], "anomalies": []}
+    empty = {"stats": _empty_stats(), "edsStepSeqs": {}, "edsStepPpids": {}, "stepPpids": {}, "ppidEqcs": {}, "ppidBins": {}, "eqcBins": {}, "eqcAnomalyBins": {}, "bins": [], "anomalies": []}
     if not _has_required_selection(selection):
         return empty
 
-    frames = _read_frames(selection, SUMMARY_COLUMNS)
+    frames = _read_summary_frames(selection)
     if not frames:
         return empty
 
@@ -251,6 +327,24 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
         else 0,
     }
 
+    eds_step_seqs: dict[str, list[str]] = {}
+    if {"eds_step", "step_seq"}.issubset(merged.columns):
+        pairs = merged[["eds_step", "step_seq"]].drop_duplicates().sort_values(["eds_step", "step_seq"])
+        eds_step_seqs = {
+            str(eds): sorted(group["step_seq"].dropna().astype(str).tolist())
+            for eds, group in pairs.groupby("eds_step", sort=True)
+        }
+
+    eds_step_ppids: dict[str, list[str]] = {}
+    if {"eds_step", "step_seq", "ppid"}.issubset(merged.columns):
+        pairs = merged[["eds_step", "step_seq", "ppid"]].drop_duplicates().sort_values(
+            ["eds_step", "step_seq", "ppid"]
+        )
+        eds_step_ppids = {
+            f"{str(eds)}|||{str(step)}": sorted(group["ppid"].dropna().astype(str).tolist())
+            for (eds, step), group in pairs.groupby(["eds_step", "step_seq"], sort=True)
+        }
+
     step_ppids: dict[str, list[str]] = {}
     if {"step_seq", "ppid"}.issubset(merged.columns):
         pairs = merged[["step_seq", "ppid"]].drop_duplicates().sort_values(["step_seq", "ppid"])
@@ -273,12 +367,59 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
             )
         ]
 
+    ppid_eqcs: dict[str, list[str]] = {}
+    if {"ppid", "eqc"}.issubset(merged.columns):
+        pairs = merged[["ppid", "eqc"]].drop_duplicates().sort_values(["ppid", "eqc"])
+        ppid_eqcs = {
+            str(ppid): sorted(group["eqc"].dropna().astype(str).tolist())
+            for ppid, group in pairs.groupby("ppid", sort=True)
+        }
+
+    ppid_bins: dict[str, list[str]] = {}
+    if {"ppid", "bin_name"}.issubset(merged.columns):
+        pairs = merged[["ppid", "bin_name"]].drop_duplicates().sort_values(["ppid", "bin_name"])
+        ppid_bins = {
+            str(ppid): sorted(group["bin_name"].dropna().astype(str).tolist())
+            for ppid, group in pairs.groupby("ppid", sort=True)
+        }
+
+    eqc_bins: dict[str, list[str]] = {}
+    if {"eqc", "bin_name"}.issubset(merged.columns):
+        pairs = merged[["eqc", "bin_name"]].drop_duplicates().sort_values(["eqc", "bin_name"])
+        eqc_bins = {
+            str(eqc): sorted(group["bin_name"].dropna().astype(str).tolist())
+            for eqc, group in pairs.groupby("eqc", sort=True)
+        }
+
+    eqc_anomaly_bins: dict[str, list[str]] = {}
+    if {"eqc", "bin_name", "display_status"}.issubset(merged.columns):
+        anomaly_pairs = (
+            merged.loc[merged["display_status"].isin(ANOMALY_STATUSES), ["eqc", "bin_name"]]
+            .drop_duplicates()
+            .sort_values(["eqc", "bin_name"])
+        )
+        eqc_anomaly_bins = {
+            str(eqc): sorted(group["bin_name"].dropna().astype(str).tolist())
+            for eqc, group in anomaly_pairs.groupby("eqc", sort=True)
+        }
+
     bins = (
         sorted(merged["bin_name"].dropna().astype(str).unique().tolist())
         if "bin_name" in merged.columns
         else []
     )
-    return {"stats": stats, "stepPpids": step_ppids, "bins": bins, "anomalies": anomalies}
+    return {
+        "stats": stats,
+        "edsStepSeqs": eds_step_seqs,
+        "edsStepPpids": eds_step_ppids,
+        "stepPpids": step_ppids,
+        "ppidEqcs": ppid_eqcs,
+        "ppidBins": ppid_bins,
+        "eqcBins": eqc_bins,
+        "eqcAnomalyBins": eqc_anomaly_bins,
+        "bins": bins,
+        "anomalies": anomalies,
+    }
 
 
 def get_data(selection: dict[str, object]) -> dict[str, object]:
@@ -291,6 +432,7 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
     selected_step_bins = set(selection.get("selectedStepBins") or [])
     selected_ppid_bins = set(selection.get("selectedPpidBins") or [])
     selected_steps = set(selection.get("selectedSteps") or [])
+    checked_eds_steps = set(selection.get("checkedEdsSteps") or [])
     checked_ppids = set(selection.get("checkedPpids") or [])
     checked_bins = set(selection.get("checkedBins") or [])
 
@@ -299,6 +441,8 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
 
     frames = []
     for frame in _read_frames(selection, CHART_COLUMNS):
+        if checked_eds_steps and "eds_step" in frame.columns:
+            frame = frame[frame["eds_step"].isin(checked_eds_steps)]
         if checked_ppids and "ppid" in frame.columns:
             frame = frame[frame["ppid"].isin(checked_ppids)]
         if checked_bins and "bin_name" in frame.columns:
@@ -328,7 +472,7 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
     merged = pd.concat(frames, ignore_index=True)
     if selected_eqcs:
         merged = _sample_chart_points(merged, ["step_seq", "bin_name"])
-    elif selected_step_bins or selected_ppid_bins:
+    elif checked_bins or selected_step_bins or selected_ppid_bins:
         merged = _sample_chart_points(merged, ["eqc"])
 
     merged = _normalize_display_status(merged)
