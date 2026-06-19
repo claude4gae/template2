@@ -95,3 +95,36 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Avoid unrelated refactors.
 - Do not output full file contents in responses; provide concise diffs or minimal relevant snippets only. Full-file output requires an explicit user request.
 - For detailed output format/path completeness rules, use `safe-file-edit-output` skill.
+
+## 5. Git Workflow
+- Do not automatically commit or push after file changes.
+- Commit only when the user explicitly requests a commit, push, PR, or release-ready Git finalization.
+- When committing, stage only changes made for the current requested task. Never stage unrelated user changes.
+- Before committing, run the relevant validation for the changed area when one exists. If validation cannot run, report why.
+- Push only when the user explicitly requests push or PR creation, or when the requested Git finalization clearly requires pushing.
+- If commit or push is blocked by validation failure, merge conflict, authentication, missing remote, or branch policy, stop and report the reason.
+
+### 5-1. Commit Message Rule
+- Commit messages must start with an app/area scope prefix.
+- Use the format `[scope] type: summary`.
+- Example: `[appstore] fix: 앱 등록 상태 표시 오류 수정`
+- When a change spans multiple apps/areas, combine prefixes in dependency order.
+- Example: `[api][web] feat: 앱 권한 동기화 추가`
+- Allowed `type` values: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`.
+- Keep `summary` short and describe the purpose of the change.
+
+### 5-2. Commit Scopes
+- `[web]`: `apps/web`
+- `[api]`: `apps/api`
+- `[appstore]`: appstore domain changes
+- `[account]`: account domain changes
+- `[assistant]`: assistant or RAG domain changes
+- `[emails]`: emails domain changes
+- `[drone]`: drone, inform, SOP, messenger, or Jira notification domain changes
+- `[timeline]`: timeline domain changes
+- `[line-dashboard]`: line dashboard domain changes
+- `[data-movement]`: data movement or Airflow data pipeline changes
+- `[infra]`: compose, env, Docker, deploy, CI, or operational scripts
+- `[docs]`: documentation-only changes
+- `[agent]`: `AGENTS.md`, `.codex/skills`, or agent support scripts
+- `[repo]`: repository-wide shared configuration that does not fit a narrower scope
