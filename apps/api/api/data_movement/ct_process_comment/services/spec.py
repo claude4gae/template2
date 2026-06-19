@@ -11,8 +11,13 @@ TEMP_TABLE_NAME = "tmp_ct_process_comment"
 WORKORDER_TABLE_NAME = "ctttm_workorder_list"
 FILE_PATTERN = "*_CT_PROCESS_COMMENT_*.csv.deflate"
 SOURCE_FILE_PATTERN = r"^\d+_CT_PROCESS_COMMENT_(?P<file_timestamp>\d{8}_\d{4})\.csv\.deflate$"
+FILE_SEPARATOR = "\x03"
 DEFAULT_TABLE_DIR = Path(settings.DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR)
 UPSERT_KEY = "workorder_id"
+UPDATE_FLAG_COLUMN = "update_flag"
+LLM_SUMMARY_COLUMN = "llm_summary"
+EQP_ID_FILTER_COLUMN = "eqp_id"
+EQP_ID_FILTER_PREFIXES = ("E",)
 
 FILE_COLUMNS = [
     "workorder_id",
@@ -35,9 +40,9 @@ FILE_COLUMNS = [
 ]
 
 DB_COLUMNS = FILE_COLUMNS
-
-CREATE_DATE_FILTER_COLUMN = "create_date"
-CREATE_DATE_LOOKBACK_DAYS = 180
 EXCLUDED_ROW_FILTERS = {
     "use_yn": {"N"},
+}
+PREFIX_ROW_FILTERS = {
+    EQP_ID_FILTER_COLUMN: EQP_ID_FILTER_PREFIXES,
 }

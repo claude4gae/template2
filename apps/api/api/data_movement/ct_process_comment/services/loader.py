@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from django.db import connection, transaction
@@ -107,12 +106,6 @@ def _quote_identifier(identifier: str) -> str:
     return connection.ops.quote_name(identifier)
 
 
-def _create_date_cutoff() -> datetime:
-    """CREATE_DATE 필터에 사용할 180일 전 기준 시각을 반환합니다."""
-
-    return timezone.localtime(timezone.now()).replace(tzinfo=None) - timedelta(days=spec.CREATE_DATE_LOOKBACK_DAYS)
-
-
 def _copy_selected_file_to_temp(*, cursor, selected_csv_path: Path) -> None:
     """선택 컬럼 CSV 파일을 temp table로 COPY 합니다."""
 
@@ -147,10 +140,16 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
     quoted_table = _quote_identifier(spec.TABLE_NAME)
     quoted_temp = _quote_identifier(spec.TEMP_TABLE_NAME)
     quoted_workorder_table = _quote_identifier(spec.WORKORDER_TABLE_NAME)
+    quoted_update_flag = _quote_identifier(spec.UPDATE_FLAG_COLUMN)
+    quoted_llm_summary = _quote_identifier(spec.LLM_SUMMARY_COLUMN)
     temp_columns_sql = ", ".join(f"{_quote_identifier(column)} text" for column in spec.DB_COLUMNS)
+    change_check_columns = [column for column in spec.DB_COLUMNS if column != spec.UPSERT_KEY]
+    target_change_values = ", ".join(f"target.{_quote_identifier(column)}" for column in change_check_columns)
+    excluded_change_values = ", ".join(f"EXCLUDED.{_quote_identifier(column)}" for column in change_check_columns)
 
     with transaction.atomic():
         with connection.cursor() as cursor:
+            cursor.execute(f"DROP TABLE IF EXISTS {quoted_temp}")
             cursor.execute(
                 f"""
                 CREATE TEMP TABLE {quoted_temp}
@@ -161,7 +160,7 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
             _copy_selected_file_to_temp(cursor=cursor, selected_csv_path=selected_csv_path)
             cursor.execute(
                 f"""
-                INSERT INTO {quoted_table}
+                INSERT INTO {quoted_table} AS target
                     (
                         workorder_id,
                         line_id,
@@ -179,7 +178,8 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
                         use_yn,
                         modify_user,
                         modify_date,
-                        pbu_part_key
+                        pbu_part_key,
+                        {quoted_update_flag}
                     )
                 SELECT
                     NULLIF(src.workorder_id, ''),
@@ -198,7 +198,8 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
                     NULLIF(src.use_yn, ''),
                     NULLIF(src.modify_user, ''),
                     NULLIF(src.modify_date, '')::timestamp,
-                    NULLIF(src.pbu_part_key, '')
+                    NULLIF(src.pbu_part_key, ''),
+                    'Y'
                 FROM {quoted_temp} src
                 WHERE NULLIF(src.workorder_id, '') IS NOT NULL
                   AND EXISTS (
@@ -224,7 +225,13 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
                     modify_user = EXCLUDED.modify_user,
                     modify_date = EXCLUDED.modify_date,
                     pbu_part_key = EXCLUDED.pbu_part_key,
+                    {quoted_update_flag} = 'Y',
+                    {quoted_llm_summary} = CASE
+                        WHEN target.contents_text IS DISTINCT FROM EXCLUDED.contents_text THEN NULL
+                        ELSE target.{quoted_llm_summary}
+                    END,
                     updated_at = NOW()
+                WHERE ({target_change_values}) IS DISTINCT FROM ({excluded_change_values})
                 """
             )
             cursor.execute(
@@ -257,10 +264,9 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path) -> tuple[Path, i
             output_path=selected_path,
             file_columns=spec.FILE_COLUMNS,
             db_columns=spec.DB_COLUMNS,
-            min_datetime_filters={
-                spec.CREATE_DATE_FILTER_COLUMN: _create_date_cutoff(),
-            },
             excluded_row_filters=spec.EXCLUDED_ROW_FILTERS,
+            prefix_row_filters=spec.PREFIX_ROW_FILTERS,
+            separator=spec.FILE_SEPARATOR,
         )
     except Exception:
         selected_path.unlink(missing_ok=True)

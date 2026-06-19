@@ -18,6 +18,7 @@ class CtProcessComment(models.Model):
     freeze_yn = models.TextField(null=True, blank=True)
     contents = models.TextField(null=True, blank=True)
     contents_text = models.TextField(null=True, blank=True)
+    llm_summary = models.TextField(null=True, blank=True)
     create_date = models.DateTimeField(null=True, blank=True)
     create_user = models.TextField(null=True, blank=True)
     update_date = models.DateTimeField(null=True, blank=True)
@@ -26,6 +27,7 @@ class CtProcessComment(models.Model):
     modify_user = models.TextField(null=True, blank=True)
     modify_date = models.DateTimeField(null=True, blank=True)
     pbu_part_key = models.TextField(null=True, blank=True)
+    update_flag = models.CharField(max_length=1, default="N")
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 

@@ -105,6 +105,25 @@ def _build_excluded_filter_indexes(
     return filter_indexes
 
 
+def _build_prefix_filter_indexes(
+    *,
+    file_columns: Sequence[str],
+    prefix_row_filters: Mapping[str, Sequence[str]],
+) -> dict[int, tuple[str, ...]]:
+    """원본 파일 컬럼명 기반 prefix filter를 index 기반 dict로 변환합니다."""
+
+    file_index = {column: index for index, column in enumerate(file_columns)}
+    filter_indexes: dict[int, tuple[str, ...]] = {}
+    for file_column, prefixes in prefix_row_filters.items():
+        if file_column not in file_index:
+            raise ValueError(f"prefix 필터 파일 컬럼을 찾을 수 없습니다: {file_column}")
+        normalized_prefixes = tuple(prefix.lower() for prefix in prefixes if prefix)
+        if not normalized_prefixes:
+            raise ValueError(f"prefix 필터 값이 없습니다: {file_column}")
+        filter_indexes[file_index[file_column]] = normalized_prefixes
+    return filter_indexes
+
+
 def _matches_filters(*, row: Sequence[str], filter_indexes: Mapping[int, str]) -> bool:
     """row가 모든 filter 조건을 만족하는지 확인합니다."""
 
@@ -123,6 +142,17 @@ def _matches_excluded_filters(*, row: Sequence[str], filter_indexes: Mapping[int
         if index < len(row) and row[index].strip() in excluded_values:
             return True
     return False
+
+
+def _matches_prefix_filters(*, row: Sequence[str], filter_indexes: Mapping[int, tuple[str, ...]]) -> bool:
+    """row가 모든 대소문자 무시 prefix filter 조건을 만족하는지 확인합니다."""
+
+    for index, prefixes in filter_indexes.items():
+        if index >= len(row):
+            return False
+        if not row[index].strip().lower().startswith(prefixes):
+            return False
+    return True
 
 
 def _build_min_datetime_filter_indexes(
@@ -198,6 +228,7 @@ def write_selected_deflate_csv(
     column_sources: Mapping[str, str] | None = None,
     row_filters: Mapping[str, str] | None = None,
     excluded_row_filters: Mapping[str, set[str]] | None = None,
+    prefix_row_filters: Mapping[str, Sequence[str]] | None = None,
     min_datetime_filters: Mapping[str, datetime] | None = None,
     separator: str = ",",
     has_header: bool = False,
@@ -219,6 +250,10 @@ def write_selected_deflate_csv(
     excluded_filter_indexes = _build_excluded_filter_indexes(
         file_columns=file_columns,
         excluded_row_filters=excluded_row_filters or {},
+    )
+    prefix_filter_indexes = _build_prefix_filter_indexes(
+        file_columns=file_columns,
+        prefix_row_filters=prefix_row_filters or {},
     )
     min_datetime_filter_indexes = _build_min_datetime_filter_indexes(
         file_columns=file_columns,
@@ -243,6 +278,8 @@ def write_selected_deflate_csv(
             if filter_indexes and not _matches_filters(row=row, filter_indexes=filter_indexes):
                 continue
             if excluded_filter_indexes and _matches_excluded_filters(row=row, filter_indexes=excluded_filter_indexes):
+                continue
+            if prefix_filter_indexes and not _matches_prefix_filters(row=row, filter_indexes=prefix_filter_indexes):
                 continue
             if min_datetime_filter_indexes and not _matches_min_datetime_filters(
                 row=row,
