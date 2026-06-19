@@ -1,5 +1,5 @@
 // 파일 경로: src/routes/router.jsx
-import { createBrowserRouter, Outlet } from "react-router-dom"
+import { createBrowserRouter, Outlet, useLocation } from "react-router-dom"
 
 import { PortalGlobalShell } from "@/components/layout"
 import { AuthAutoLoginGate, useAuth } from "@/lib/auth"
@@ -35,15 +35,17 @@ const protectedFeatureRoutes = [
 
 function AssistantWidgetOutlet() {
   const { user } = useAuth()
+  const location = useLocation()
   const { data: mailboxesData } = useEmailMailboxes({ enabled: Boolean(user) })
   const availableMailboxes = Array.isArray(mailboxesData?.results)
     ? mailboxesData.results
     : []
+  const hideChatWidget = location.pathname === "/l3_spider"
 
   return (
     <>
       <Outlet context={{ availableMailboxes }} />
-      {user ? <ChatWidget availableMailboxes={availableMailboxes} /> : null}
+      {user && !hideChatWidget ? <ChatWidget availableMailboxes={availableMailboxes} /> : null}
     </>
   )
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import { Database, RefreshCw } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowDown, ArrowUp, Database, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
@@ -20,6 +20,9 @@ import {
 } from "../utils/selection"
 
 export function L3SpiderPage() {
+  const pageRef = useRef(null)
+  const [pageScrollTop, setPageScrollTop] = useState(0)
+  const [pageViewportHeight, setPageViewportHeight] = useState(0)
   const [selection, setSelection] = useState(EMPTY_SELECTION)
   // 모든 선택: 단일값 (string | null)
   const [checkedEdsStep, setCheckedEdsStep] = useState(null)
@@ -52,6 +55,20 @@ export function L3SpiderPage() {
     if (!summaryQuery.isSuccess) return
     resetLeafSelections()
   }, [summary, summaryQuery.isSuccess])
+  useEffect(() => {
+    const page = pageRef.current
+    if (!page) return undefined
+
+    const updateViewport = () => setPageViewportHeight(page.clientHeight || window.innerHeight)
+    updateViewport()
+    const observer = new ResizeObserver(updateViewport)
+    observer.observe(page)
+    window.addEventListener("resize", updateViewport)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", updateViewport)
+    }
+  }, [])
 
   // trellis 기준: EQPCH 선택 → bin별 subplots / Bin 선택 → eqc별 subplots
   const groupBy = analysisMode === "eqpch" ? "bin" : "eqc"
@@ -74,9 +91,24 @@ export function L3SpiderPage() {
     resolvedEqcs, resolvedBins,
   )
   const rows = dataQuery.data?.rows ?? []
+  const handlePageScroll = (event) => {
+    setPageScrollTop(event.currentTarget.scrollTop)
+  }
+  const handleScrollToTop = () => {
+    pageRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+  }
+  const handleScrollToBottom = () => {
+    const page = pageRef.current
+    if (!page) return
+    page.scrollTo({ top: page.scrollHeight, behavior: "smooth" })
+  }
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-y-auto">
+    <div
+      ref={pageRef}
+      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-y-auto"
+      onScroll={handlePageScroll}
+    >
       <header className="shrink-0 border-b bg-card px-6 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
@@ -150,9 +182,34 @@ export function L3SpiderPage() {
             groupBy={groupBy}
             xAxisMode={xAxisMode}
             onXAxisModeChange={setXAxisMode}
+            scrollContainerRef={pageRef}
+            outerScrollTop={pageScrollTop}
+            outerViewportHeight={pageViewportHeight}
           />
         </main>
       )}
+      <div className="fixed bottom-6 right-6 z-40 grid gap-2">
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="rounded-full bg-background shadow-lg"
+          aria-label="화면 맨 위로 이동"
+          onClick={handleScrollToTop}
+        >
+          <ArrowUp className="size-4" aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="rounded-full bg-background shadow-lg"
+          aria-label="화면 맨 아래로 이동"
+          onClick={handleScrollToBottom}
+        >
+          <ArrowDown className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
     </div>
   )
 }

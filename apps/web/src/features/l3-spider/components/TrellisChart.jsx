@@ -740,13 +740,15 @@ export default function TrellisChart({
   eqcTimeTrellisMode = 'step',
   onLassoModeChange,
   onLassoShapeChange,
+  scrollContainerRef,
+  outerScrollTop = 0,
+  outerViewportHeight = DEFAULT_VIEWPORT_H,
 }) {
   const scrollerRef = useRef(null)
   const spacerRef = useRef(null)
   const virtualWindowRef = useRef(null)
   const plotGridRef = useRef(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [viewportHeight, setViewportHeight] = useState(DEFAULT_VIEWPORT_H)
+  const [chartAreaTop, setChartAreaTop] = useState(0)
   const [lassoSelection, setLassoSelection] = useState(null)
   const [plotDragMode, setPlotDragMode] = useState('zoom')
 
@@ -838,7 +840,10 @@ export default function TrellisChart({
   const keySignature = useMemo(() => chartPlan.keys.join('\u0001'), [chartPlan.keys])
   const totalRows = Math.ceil(chartPlan.keys.length / chartColumns)
   const totalHeight = Math.max(totalRows * rowHeight, 300)
-  const visibleRowStart = Math.max(Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS, 0)
+  const viewportHeight = outerViewportHeight || DEFAULT_VIEWPORT_H
+  const maxChartScrollTop = Math.max(totalHeight - viewportHeight, 0)
+  const chartScrollTop = Math.min(Math.max(outerScrollTop - chartAreaTop, 0), maxChartScrollTop)
+  const visibleRowStart = Math.max(Math.floor(chartScrollTop / rowHeight) - OVERSCAN_ROWS, 0)
   const visibleRowCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN_ROWS * 2
   const visibleRowEnd = Math.min(visibleRowStart + visibleRowCount, totalRows)
   const virtualOffset = visibleRowStart * rowHeight
@@ -933,8 +938,6 @@ export default function TrellisChart({
   }, [onLassoModeChange])
 
   useEffect(() => {
-    setScrollTop(0)
-    if (scrollerRef.current) scrollerRef.current.scrollTop = 0
     setLassoSelection(null)
   }, [data, keySignature, chartPlan.keys.length])
 
@@ -951,14 +954,26 @@ export default function TrellisChart({
   }, [lassoMode, lassoShape])
 
   useLayoutEffect(() => {
-    const scroller = scrollerRef.current
-    if (!scroller) return
-    const updateViewport = () => setViewportHeight(scroller.clientHeight || DEFAULT_VIEWPORT_H)
-    updateViewport()
-    const observer = new ResizeObserver(updateViewport)
-    observer.observe(scroller)
-    return () => observer.disconnect()
-  }, [])
+    const chartArea = scrollerRef.current
+    const scrollContainer = scrollContainerRef?.current
+    if (!chartArea || !scrollContainer) return undefined
+
+    const updateChartAreaTop = () => {
+      const chartRect = chartArea.getBoundingClientRect()
+      const scrollRect = scrollContainer.getBoundingClientRect()
+      setChartAreaTop(scrollContainer.scrollTop + chartRect.top - scrollRect.top)
+    }
+
+    updateChartAreaTop()
+    const observer = new ResizeObserver(updateChartAreaTop)
+    observer.observe(chartArea)
+    observer.observe(scrollContainer)
+    window.addEventListener('resize', updateChartAreaTop)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateChartAreaTop)
+    }
+  }, [scrollContainerRef, data.length, keySignature, rowHeight, totalHeight])
 
   if (data.length === 0) {
     return (
@@ -994,7 +1009,6 @@ export default function TrellisChart({
       <div
         ref={scrollerRef}
         className="tc-scroll"
-        onScroll={event => setScrollTop(event.currentTarget.scrollTop)}
       >
         <div ref={spacerRef} className="tc-spacer">
           <div ref={virtualWindowRef} className="tc-virtual-window">

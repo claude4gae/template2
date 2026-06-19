@@ -14,6 +14,9 @@ export function L3SpiderChart({
   groupBy,
   xAxisMode,
   onXAxisModeChange,
+  scrollContainerRef,
+  outerScrollTop,
+  outerViewportHeight,
 }) {
   const [lassoMode, setLassoMode] = useState('off')
   const [lassoShape, setLassoShape] = useState('box')
@@ -23,7 +26,7 @@ export function L3SpiderChart({
   const trellisLabel = groupBy === 'bin' ? 'Bin' : 'EQPCH'
 
   return (
-    <Card className="grid min-h-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0">
+    <Card className="grid min-w-0 gap-0 overflow-hidden rounded-lg py-0">
       <CardHeader className="border-b bg-muted/50 px-4 py-2.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -112,7 +115,7 @@ export function L3SpiderChart({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="min-h-0 p-0">
+      <CardContent className="p-0">
         {isLoading ? (
           <div className="flex h-full min-h-64 items-center justify-center text-sm text-muted-foreground">
             차트 데이터를 불러오는 중입니다.
@@ -137,6 +140,9 @@ export function L3SpiderChart({
             eqcTimeTrellisMode={eqcTimeTrellisMode}
             onLassoModeChange={setLassoMode}
             onLassoShapeChange={setLassoShape}
+            scrollContainerRef={scrollContainerRef}
+            outerScrollTop={outerScrollTop}
+            outerViewportHeight={outerViewportHeight}
           />
         )}
       </CardContent>

@@ -104,11 +104,8 @@
 }
 
 .tc-scroll {
-  height: min(1200px, calc(100vh - 120px));
-  min-height: 600px;
-  overflow-y: auto;
-  overflow-x: hidden;
   position: relative;
+  overflow: visible;
 }
 
 .tc-spacer {
