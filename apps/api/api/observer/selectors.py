@@ -1,7 +1,7 @@
 # =============================================================================
-# 모듈 설명: timeline DB 데이터 셀렉터를 제공합니다.
+# 모듈 설명: observer DB 데이터 셀렉터를 제공합니다.
 # - 주요 함수: list_lines, list_sdwt_for_line, get_merged_logs 등
-# - 불변 조건: timeline 전용 DB에서 조회하며, 드론 로그는 기본 DB를 사용합니다.
+# - 불변 조건: observer 전용 DB에서 조회하며, 드론 로그는 기본 DB를 사용합니다.
 # =============================================================================
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.db import connections
 
-TIMELINE_DB_ALIAS = "timeline"
+OBSERVER_DB_ALIAS = "observer"
 DEFAULT_LOG_QUERY_DAYS = 60
 MAX_LOG_LIMIT = 5000
 
@@ -42,21 +42,21 @@ def _period_date(days: int | None = None) -> str:
     query_days = (
         days
         if days is not None
-        else getattr(settings, "TIMELINE_QUERY_DAYS", DEFAULT_LOG_QUERY_DAYS)
+        else getattr(settings, "OBSERVER_QUERY_DAYS", DEFAULT_LOG_QUERY_DAYS)
     )
     return datetime.strftime(datetime.now() - timedelta(days=query_days), "%Y-%m-%d")
 
 
-def _get_timeline_connection():
-    """타임라인 DB 연결 객체를 반환합니다."""
+def _get_observer_connection():
+    """Observer DB 연결 객체를 반환합니다."""
 
-    return connections[TIMELINE_DB_ALIAS]
+    return connections[OBSERVER_DB_ALIAS]
 
 
 def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Row]:
-    """타임라인 DB에서 조회 결과를 dict 리스트로 반환합니다."""
+    """Observer DB에서 조회 결과를 dict 리스트로 반환합니다."""
 
-    with _get_timeline_connection().cursor() as cursor:
+    with _get_observer_connection().cursor() as cursor:
         cursor.execute(query, params or [])
         columns = [col[0] for col in (cursor.description or [])]
         rows = cursor.fetchall()
@@ -146,7 +146,7 @@ def normalize_id(value: str | None) -> str:
 
 
 # =============================================================================
-# timeline DB 기준 정보 조회
+# observer DB 기준 정보 조회
 # =============================================================================
 
 
@@ -379,7 +379,7 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
 
 
 # =============================================================================
-# timeline DB 로그 조회
+# observer DB 로그 조회
 # =============================================================================
 
 
@@ -838,7 +838,7 @@ def _fetch_esop_logs(
     ]
 
 
-TIMELINE_LOG_FETCHERS: Dict[str, LogFetcher] = {
+OBSERVER_LOG_FETCHERS: Dict[str, LogFetcher] = {
     "eqp": lambda eqp_key, start_at, end_at, limit: _fetch_eqp_logs(
         eqp_id=eqp_key,
         start_at=start_at,
@@ -870,7 +870,7 @@ TIMELINE_LOG_FETCHERS: Dict[str, LogFetcher] = {
         limit=limit,
     ),
 }
-TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "esop")
+OBSERVER_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "esop")
 
 
 def _fetch_logs_by_type_normalized(
@@ -883,7 +883,7 @@ def _fetch_logs_by_type_normalized(
 ) -> LogRows:
     """정규화가 끝난 설비 ID로 타입별 로그를 조회합니다."""
 
-    fetcher = TIMELINE_LOG_FETCHERS.get(type_key)
+    fetcher = OBSERVER_LOG_FETCHERS.get(type_key)
     if fetcher is None:
         return []
     return fetcher(eqp_key, start_at, end_at, limit)
@@ -925,7 +925,7 @@ def get_logs_for_equipment(
             end_at=end_at,
             limit=limit,
         )
-        for key in TIMELINE_LOG_KEYS
+        for key in OBSERVER_LOG_KEYS
     }
 
 
@@ -988,7 +988,7 @@ def get_merged_logs(
 
     eqp_key = normalize_id(eqp_id)
     merged: List[Dict[str, object]] = []
-    for key in TIMELINE_LOG_KEYS:
+    for key in OBSERVER_LOG_KEYS:
         merged.extend(
             _fetch_logs_by_type_normalized(
                 eqp_key=eqp_key,

@@ -1,10 +1,10 @@
 # =============================================================================
-# 모듈 설명: timeline API 엔드포인트를 제공합니다.
-# - 주요 클래스: TimelineLinesView, TimelineEquipmentInfoView, TimelineLogsView 등
+# 모듈 설명: observer API 엔드포인트를 제공합니다.
+# - 주요 클래스: ObserverLinesView, ObserverEquipmentInfoView, ObserverLogsView 등
 # - 불변 조건: HTTP 계층은 selectors를 통해서만 조회합니다.
 # =============================================================================
 
-"""타임라인 API 뷰."""
+"""Observer API 뷰."""
 from __future__ import annotations
 
 from datetime import datetime, time, timezone as datetime_timezone
@@ -120,7 +120,7 @@ def _log_query_options(
     return {"start_at": start_at, "end_at": end_at, "limit": limit}, None
 
 
-class TimelineLinesView(APIView):
+class ObserverLinesView(APIView):
     """라인 목록을 반환합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
@@ -140,7 +140,7 @@ class TimelineLinesView(APIView):
         - 없음
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/lines
+        - 예시 요청: GET /api/v1/observer/lines
 
         snake/camel 호환:
         - 해당 없음(쿼리/바디 없음)
@@ -148,7 +148,7 @@ class TimelineLinesView(APIView):
         return JsonResponse(selectors.list_lines(), safe=False)
 
 
-class TimelineSdwtView(APIView):
+class ObserverSdwtView(APIView):
     """라인 기준 SDWT 목록을 반환합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
@@ -168,7 +168,7 @@ class TimelineSdwtView(APIView):
         - 400: lineId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/sdwts?lineId=LINE-A
+        - 예시 요청: GET /api/v1/observer/sdwts?lineId=LINE-A
 
         snake/camel 호환:
         - lineId만 지원(snake_case 미지원)
@@ -184,7 +184,7 @@ class TimelineSdwtView(APIView):
         return JsonResponse(selectors.list_sdwt_for_line(line_id=line_id), safe=False)
 
 
-class TimelinePrcGroupView(APIView):
+class ObserverPrcGroupView(APIView):
     """라인/SDWT 조합 기준 PRC 그룹 목록을 반환합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
@@ -204,7 +204,7 @@ class TimelinePrcGroupView(APIView):
         - 400: lineId 또는 sdwtId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/prc-groups?lineId=LINE-A&sdwtId=SD-10
+        - 예시 요청: GET /api/v1/observer/prc-groups?lineId=LINE-A&sdwtId=SD-10
 
         snake/camel 호환:
         - lineId/sdwtId만 지원(snake_case 미지원)
@@ -221,7 +221,7 @@ class TimelinePrcGroupView(APIView):
         )
 
 
-class TimelineEquipmentsView(APIView):
+class ObserverEquipmentsView(APIView):
     """라인/SDWT/PRC 그룹 조합 기준 설비 목록을 반환합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
@@ -241,9 +241,9 @@ class TimelineEquipmentsView(APIView):
         - 400: lineId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/equipments?lineId=LINE-A
-        - 예시 요청: GET /api/v1/timeline/equipments?lineId=LINE-A&sdwtId=SD-10
-        - 예시 요청: GET /api/v1/timeline/equipments?lineId=LINE-A&sdwtId=SD-10&prcGroup=ETCH
+        - 예시 요청: GET /api/v1/observer/equipments?lineId=LINE-A
+        - 예시 요청: GET /api/v1/observer/equipments?lineId=LINE-A&sdwtId=SD-10
+        - 예시 요청: GET /api/v1/observer/equipments?lineId=LINE-A&sdwtId=SD-10&prcGroup=ETCH
 
         snake/camel 호환:
         - lineId/sdwtId/prcGroup만 지원(snake_case 미지원)
@@ -268,7 +268,7 @@ class TimelineEquipmentsView(APIView):
         )
 
 
-class TimelineEquipmentInfoView(APIView):
+class ObserverEquipmentInfoView(APIView):
     """eqpId 기준 설비 메타데이터를 반환합니다(선택적으로 line 범위 제한)."""
 
     def get(
@@ -298,8 +298,8 @@ class TimelineEquipmentInfoView(APIView):
         - 404: 설비 미존재 또는 라인 범위 불일치
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/equipment-info/EQP-ALPHA
-        - 예시 요청: GET /api/v1/timeline/equipment-info/LINE-A/EQP-ALPHA
+        - 예시 요청: GET /api/v1/observer/equipment-info/EQP-ALPHA
+        - 예시 요청: GET /api/v1/observer/equipment-info/LINE-A/EQP-ALPHA
 
         snake/camel 호환:
         - 해당 없음(경로 파라미터만 사용)
@@ -330,7 +330,7 @@ class TimelineEquipmentInfoView(APIView):
         return JsonResponse(info)
 
 
-class _TimelineLogsByTypeView(APIView):
+class _ObserverLogsByTypeView(APIView):
     """log_key에 해당하는 로그 배열을 반환하는 베이스 뷰입니다."""
 
     log_key: str = ""
@@ -352,7 +352,7 @@ class _TimelineLogsByTypeView(APIView):
         - 400: eqpId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/logs/eqp?eqpId=EQP-ALPHA
+        - 예시 요청: GET /api/v1/observer/logs/eqp?eqpId=EQP-ALPHA
 
         snake/camel 호환:
         - eqpId만 지원(snake_case 미지원)
@@ -375,7 +375,7 @@ class _TimelineLogsByTypeView(APIView):
         )
 
 
-class TimelineLogsView(_TimelineLogsByTypeView):
+class ObserverLogsView(_ObserverLogsByTypeView):
     """설비의 전체 로그를 타입별로 합쳐 반환합니다."""
 
     log_key = ""
@@ -397,7 +397,7 @@ class TimelineLogsView(_TimelineLogsByTypeView):
         - 400: eqpId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/timeline/logs?eqpId=EQP-ALPHA
+        - 예시 요청: GET /api/v1/observer/logs?eqpId=EQP-ALPHA
 
         snake/camel 호환:
         - eqpId만 지원(snake_case 미지원)
@@ -419,46 +419,46 @@ class TimelineLogsView(_TimelineLogsByTypeView):
         )
 
 
-class TimelineEqpLogsView(_TimelineLogsByTypeView):
+class ObserverEqpLogsView(_ObserverLogsByTypeView):
     """설비(EQP) 타입 로그만 반환합니다."""
 
     log_key = "eqp"
 
 
-class TimelineTipLogsView(_TimelineLogsByTypeView):
+class ObserverTipLogsView(_ObserverLogsByTypeView):
     """TIP 타입 로그만 반환합니다."""
 
     log_key = "tip"
 
 
-class TimelineCtttmLogsView(_TimelineLogsByTypeView):
+class ObserverCtttmLogsView(_ObserverLogsByTypeView):
     """CTTTM 타입 로그만 반환합니다."""
 
     log_key = "ctttm"
 
 
-class TimelineRacbLogsView(_TimelineLogsByTypeView):
+class ObserverRacbLogsView(_ObserverLogsByTypeView):
     """RACB 타입 로그만 반환합니다."""
 
     log_key = "racb"
 
 
-class TimelineEsopLogsView(_TimelineLogsByTypeView):
+class ObserverEsopLogsView(_ObserverLogsByTypeView):
     """ESOP 타입 로그만 반환합니다."""
 
     log_key = "esop"
 
 
 __all__ = [
-    "TimelineCtttmLogsView",
-    "TimelineEsopLogsView",
-    "TimelineEquipmentInfoView",
-    "TimelineEqpLogsView",
-    "TimelineEquipmentsView",
-    "TimelineLinesView",
-    "TimelineLogsView",
-    "TimelinePrcGroupView",
-    "TimelineRacbLogsView",
-    "TimelineSdwtView",
-    "TimelineTipLogsView",
+    "ObserverCtttmLogsView",
+    "ObserverEsopLogsView",
+    "ObserverEquipmentInfoView",
+    "ObserverEqpLogsView",
+    "ObserverEquipmentsView",
+    "ObserverLinesView",
+    "ObserverLogsView",
+    "ObserverPrcGroupView",
+    "ObserverRacbLogsView",
+    "ObserverSdwtView",
+    "ObserverTipLogsView",
 ]

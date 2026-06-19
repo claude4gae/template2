@@ -1,7 +1,7 @@
 # =============================================================================
-# 모듈 설명: timeline 엔드포인트 테스트를 제공합니다.
-# - 주요 클래스: TimelineEndpointTests
-# - 불변 조건: URL 네임(timeline-*)이 등록되어 있어야 합니다.
+# 모듈 설명: observer 엔드포인트 테스트를 제공합니다.
+# - 주요 클래스: ObserverEndpointTests
+# - 불변 조건: URL 네임(observer-*)이 등록되어 있어야 합니다.
 # =============================================================================
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ from django.urls import reverse
 
 from . import selectors
 
-TIMELINE_VIEW_SELECTORS = "api.timeline.views.selectors"
-TIMELINE_SELECTORS = "api.timeline.selectors"
+OBSERVER_VIEW_SELECTORS = "api.observer.views.selectors"
+OBSERVER_SELECTORS = "api.observer.selectors"
 
 
-class TimelineEndpointTests(TestCase):
+class ObserverEndpointTests(TestCase):
     def assert_log_selector_called(
         self,
         selector,
@@ -36,25 +36,25 @@ class TimelineEndpointTests(TestCase):
             limit=limit,
         )
 
-    def test_timeline_lines_returns_list(self) -> None:
-        with patch(f"{TIMELINE_VIEW_SELECTORS}.list_lines", return_value=[]) as selector:
-            response = self.client.get(reverse("timeline-lines"))
+    def test_observer_lines_returns_list(self) -> None:
+        with patch(f"{OBSERVER_VIEW_SELECTORS}.list_lines", return_value=[]) as selector:
+            response = self.client.get(reverse("observer-lines"))
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with()
 
-    def test_timeline_sdwts_requires_line(self) -> None:
-        response = self.client.get(reverse("timeline-sdwts"))
+    def test_observer_sdwts_requires_line(self) -> None:
+        response = self.client.get(reverse("observer-sdwts"))
         self.assertEqual(response.status_code, 400)
 
-    def test_timeline_sdwts_returns_results(self) -> None:
+    def test_observer_sdwts_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.list_sdwt_for_line",
+            f"{OBSERVER_VIEW_SELECTORS}.list_sdwt_for_line",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-sdwts"),
+                reverse("observer-sdwts"),
                 {"lineId": "LINE-A"},
             )
 
@@ -62,8 +62,8 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A")
 
-    def test_timeline_sdwt_selector_uses_case_insensitive_line_filter(self) -> None:
-        with patch(f"{TIMELINE_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
+    def test_observer_sdwt_selector_uses_case_insensitive_line_filter(self) -> None:
+        with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
             sdwts = selectors.list_sdwt_for_line(line_id="line-a")
 
         query, params = fetch_all.call_args.args
@@ -71,13 +71,13 @@ class TimelineEndpointTests(TestCase):
         self.assertIn("upper(line_id) = %s", query)
         self.assertEqual(params, ["LINE-A"])
 
-    def test_timeline_prc_groups_returns_results(self) -> None:
+    def test_observer_prc_groups_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.list_prc_groups",
+            f"{OBSERVER_VIEW_SELECTORS}.list_prc_groups",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-prc-groups"),
+                reverse("observer-prc-groups"),
                 {"lineId": "LINE-A", "sdwtId": "SD-10"},
             )
 
@@ -85,13 +85,13 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A", sdwt_id="SD-10")
 
-    def test_timeline_prc_groups_is_case_insensitive(self) -> None:
+    def test_observer_prc_groups_is_case_insensitive(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.list_prc_groups",
+            f"{OBSERVER_VIEW_SELECTORS}.list_prc_groups",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-prc-groups"),
+                reverse("observer-prc-groups"),
                 {"lineId": "line-a", "sdwtId": "sd-10"},
             )
 
@@ -99,13 +99,13 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A", sdwt_id="SD-10")
 
-    def test_timeline_equipments_returns_results(self) -> None:
+    def test_observer_equipments_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.list_equipments",
+            f"{OBSERVER_VIEW_SELECTORS}.list_equipments",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-equipments"),
+                reverse("observer-equipments"),
                 {"lineId": "LINE-A", "sdwtId": "SD-10", "prcGroup": "ETCH"},
             )
 
@@ -117,13 +117,13 @@ class TimelineEndpointTests(TestCase):
             prc_group="ETCH",
         )
 
-    def test_timeline_equipments_is_case_insensitive(self) -> None:
+    def test_observer_equipments_is_case_insensitive(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.list_equipments",
+            f"{OBSERVER_VIEW_SELECTORS}.list_equipments",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-equipments"),
+                reverse("observer-equipments"),
                 {"lineId": "line-a", "sdwtId": "sd-10", "prcGroup": "etch"},
             )
 
@@ -135,7 +135,7 @@ class TimelineEndpointTests(TestCase):
             prc_group="ETCH",
         )
 
-    def test_timeline_equipment_info_returns_result(self) -> None:
+    def test_observer_equipment_info_returns_result(self) -> None:
         payload = {
             "id": "EQP-ALPHA",
             "lineId": "LINE-A",
@@ -143,17 +143,17 @@ class TimelineEndpointTests(TestCase):
             "prcGroup": "ETCH",
         }
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_equipment_info",
+            f"{OBSERVER_VIEW_SELECTORS}.get_equipment_info",
             return_value=payload,
         ):
             response = self.client.get(
-                reverse("timeline-equipment-info", kwargs={"eqp_id": "EQP-ALPHA"})
+                reverse("observer-equipment-info", kwargs={"eqp_id": "EQP-ALPHA"})
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["id"], "EQP-ALPHA")
 
-    def test_timeline_equipment_info_with_line_scope(self) -> None:
+    def test_observer_equipment_info_with_line_scope(self) -> None:
         payload = {
             "id": "EQP-ALPHA",
             "lineId": "LINE-A",
@@ -161,21 +161,21 @@ class TimelineEndpointTests(TestCase):
             "prcGroup": "ETCH",
         }
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_equipment_info",
+            f"{OBSERVER_VIEW_SELECTORS}.get_equipment_info",
             return_value=payload,
         ):
             response = self.client.get(
                 reverse(
-                    "timeline-equipment-info-line",
+                    "observer-equipment-info-line",
                     kwargs={"line_id": "LINE-A", "eqp_id": "EQP-ALPHA"},
                 )
             )
 
         self.assertEqual(response.status_code, 200)
 
-    def test_timeline_equipment_info_selector_uses_case_insensitive_eqp_filter(self) -> None:
+    def test_observer_equipment_info_selector_uses_case_insensitive_eqp_filter(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._fetch_one",
+            f"{OBSERVER_SELECTORS}._fetch_one",
             return_value={
                 "id": "EQP-ALPHA",
                 "line_id": "LINE-A",
@@ -190,17 +190,17 @@ class TimelineEndpointTests(TestCase):
         self.assertIn("upper(eqp_cb) = %s", query)
         self.assertEqual(params, ["EQP-ALPHA"])
 
-    def test_timeline_logs_requires_eqp_id(self) -> None:
-        response = self.client.get(reverse("timeline-logs"))
+    def test_observer_logs_requires_eqp_id(self) -> None:
+        response = self.client.get(reverse("observer-logs"))
         self.assertEqual(response.status_code, 400)
 
-    def test_timeline_eqp_logs_returns_results(self) -> None:
+    def test_observer_eqp_logs_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-eqp"),
+                reverse("observer-logs-eqp"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
@@ -208,13 +208,13 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="eqp")
 
-    def test_timeline_logs_passes_range_and_clamped_limit(self) -> None:
+    def test_observer_logs_passes_range_and_clamped_limit(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-eqp"),
+                reverse("observer-logs-eqp"),
                 {
                     "eqpId": "EQP-ALPHA",
                     "from": "2026-01-01",
@@ -232,12 +232,12 @@ class TimelineEndpointTests(TestCase):
             limit=selectors.MAX_LOG_LIMIT,
         )
 
-    def test_timeline_logs_default_uses_no_row_limit(self) -> None:
+    def test_observer_logs_default_uses_no_row_limit(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._period_date",
+            f"{OBSERVER_SELECTORS}._period_date",
             return_value="2026-01-01",
         ) as period_date:
-            with patch(f"{TIMELINE_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
+            with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
                 logs = selectors.get_logs_by_type(
                     eqp_id="EQP-ALPHA",
                     log_key="eqp",
@@ -250,9 +250,9 @@ class TimelineEndpointTests(TestCase):
         self.assertNotIn("limit %s", query.lower())
         self.assertEqual(params, ["2026-01-01", "EQP-ALPHA"])
 
-    def test_timeline_eqp_selector_uses_stable_id_expression(self) -> None:
+    def test_observer_eqp_selector_uses_stable_id_expression(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._fetch_all",
+            f"{OBSERVER_SELECTORS}._fetch_all",
             return_value=[
                 {
                     "id": "EQP-EQP-ALPHA-20260101000000000000-STATE-USER-abc",
@@ -279,9 +279,9 @@ class TimelineEndpointTests(TestCase):
         self.assertNotIn("row_number()", query)
         self.assertEqual(params, ["2026-01-01T00:00:00", "EQP-ALPHA", 20])
 
-    def test_timeline_tip_selector_uses_stable_id_expression(self) -> None:
+    def test_observer_tip_selector_uses_stable_id_expression(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._fetch_all",
+            f"{OBSERVER_SELECTORS}._fetch_all",
             return_value=[
                 {
                     "id": "TIP-EQP-ALPHA-20260101000000000000-CREATE-P-S-PPID-abc",
@@ -312,26 +312,26 @@ class TimelineEndpointTests(TestCase):
         self.assertNotIn("row_number()", query)
         self.assertEqual(params, ["2026-01-01T00:00:00", "EQP-ALPHA", 20])
 
-    def test_timeline_logs_rejects_invalid_limit(self) -> None:
+    def test_observer_logs_rejects_invalid_limit(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-eqp"),
+                reverse("observer-logs-eqp"),
                 {"eqpId": "EQP-ALPHA", "limit": "bad"},
             )
 
         self.assertEqual(response.status_code, 400)
         selector.assert_not_called()
 
-    def test_timeline_logs_rejects_reversed_range(self) -> None:
+    def test_observer_logs_rejects_reversed_range(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-eqp"),
+                reverse("observer-logs-eqp"),
                 {
                     "eqpId": "EQP-ALPHA",
                     "from": "2026-01-03",
@@ -342,13 +342,13 @@ class TimelineEndpointTests(TestCase):
         self.assertEqual(response.status_code, 400)
         selector.assert_not_called()
 
-    def test_timeline_tip_logs_returns_results(self) -> None:
+    def test_observer_tip_logs_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-tip"),
+                reverse("observer-logs-tip"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
@@ -356,13 +356,13 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="tip")
 
-    def test_timeline_ctttm_logs_returns_results(self) -> None:
+    def test_observer_ctttm_logs_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-ctttm"),
+                reverse("observer-logs-ctttm"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
@@ -370,13 +370,13 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="ctttm")
 
-    def test_timeline_racb_logs_returns_results(self) -> None:
+    def test_observer_racb_logs_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-racb"),
+                reverse("observer-logs-racb"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
@@ -384,9 +384,9 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="racb")
 
-    def test_timeline_racb_selector_maps_eqp_id(self) -> None:
+    def test_observer_racb_selector_maps_eqp_id(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._fetch_all",
+            f"{OBSERVER_SELECTORS}._fetch_all",
             return_value=[
                 {
                     "id": "LINE-A-EQP-ALPHA-2026-01-01-ALARM",
@@ -420,13 +420,13 @@ class TimelineEndpointTests(TestCase):
         )
         self.assertIn("upper(eqp_cb) = %s", fetch_all.call_args.args[0])
 
-    def test_timeline_esop_logs_returns_results(self) -> None:
+    def test_observer_esop_logs_returns_results(self) -> None:
         with patch(
-            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-esop"),
+                reverse("observer-logs-esop"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
@@ -434,9 +434,9 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="esop")
 
-    def test_timeline_esop_selector_uses_case_insensitive_eqp_filter(self) -> None:
+    def test_observer_esop_selector_uses_case_insensitive_eqp_filter(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._fetch_all_on_default",
+            f"{OBSERVER_SELECTORS}._fetch_all_on_default",
             return_value=[],
         ) as fetch_all:
             logs = selectors.get_logs_by_type(
@@ -451,9 +451,9 @@ class TimelineEndpointTests(TestCase):
         self.assertIn("upper(sop.eqp_id) = %s", query)
         self.assertEqual(params, ["2026-01-01T00:00:00", "EQPALPHA", 20])
 
-    def test_timeline_esop_selector_maps_log_type_to_esop(self) -> None:
+    def test_observer_esop_selector_maps_log_type_to_esop(self) -> None:
         with patch(
-            f"{TIMELINE_SELECTORS}._fetch_all_on_default",
+            f"{OBSERVER_SELECTORS}._fetch_all_on_default",
             return_value=[
                 {
                     "id": 1,

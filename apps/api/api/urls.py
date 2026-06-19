@@ -17,7 +17,7 @@ urlpatterns = [
     path("api/v1/l3_spider/", include("api.l3_spider.urls")),
     path("api/v1/pm-comparison/", include("api.pm_comparison.urls")),
     path("api/v1/assistant/", include("api.assistant.urls")),
-    path("api/v1/timeline/", include("api.timeline.urls")),
+    path("api/v1/observer/", include("api.observer.urls")),
     path("api/v1/emails/", include("api.emails.urls")),
     path("api/v1/fdc-trend/", include("api.fdc_trend.urls")),
     path("api/v1/data-movement/", include("api.data_movement.urls")),

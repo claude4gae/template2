@@ -122,7 +122,7 @@ INSTALLED_APPS = [
     "api.management",
     "api.pm_comparison",
     "api.rag",
-    "api.timeline",
+    "api.observer",
     "api.voc",
 ]
 
@@ -192,20 +192,20 @@ DATABASES = {
         # 요청 종료 시 기본 DB 연결을 닫아 idle session 누적을 방지합니다.
         "CONN_MAX_AGE": env_int("DJANGO_DB_CONN_MAX_AGE", 0) or 0
     },
-    # 타임라인 전용 DB (별도 PostgreSQL)
-    "timeline": {
-        "ENGINE": env("TIMELINE_DB_ENGINE") or "django.db.backends.postgresql",
-        "NAME": env("TIMELINE_DB_NAME", "timeline"),
-        "USER": env("TIMELINE_DB_USER", "airflow"),
-        "PASSWORD": env("TIMELINE_DB_PASSWORD", "airflow"),
-        "HOST": env("TIMELINE_DB_HOST", "10.172.117.91"),
-        "PORT": env("TIMELINE_DB_PORT", "8010"),
-        # 요청 종료 시 타임라인 DB 연결을 닫아 idle session 누적을 방지합니다.
-        "CONN_MAX_AGE": env_int("TIMELINE_DB_CONN_MAX_AGE", 0) or 0
+    # Observer 전용 DB (별도 PostgreSQL)
+    "observer": {
+        "ENGINE": env("OBSERVER_DB_ENGINE") or "django.db.backends.postgresql",
+        "NAME": env("OBSERVER_DB_NAME", "observer"),
+        "USER": env("OBSERVER_DB_USER", "airflow"),
+        "PASSWORD": env("OBSERVER_DB_PASSWORD", "airflow"),
+        "HOST": env("OBSERVER_DB_HOST", "10.172.117.91"),
+        "PORT": env("OBSERVER_DB_PORT", "8010"),
+        # 요청 종료 시 Observer DB 연결을 닫아 idle session 누적을 방지합니다.
+        "CONN_MAX_AGE": env_int("OBSERVER_DB_CONN_MAX_AGE", 0) or 0
     },
 }
 
-TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 60) or 60
+OBSERVER_QUERY_DAYS = env_int("OBSERVER_QUERY_DAYS", 60) or 60
 
 # L3 Spider Parquet 데이터 경로.
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.
