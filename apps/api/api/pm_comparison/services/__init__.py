@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
@@ -343,10 +344,67 @@ def _bin_edges(min_value: float, max_value: float, bins: int) -> list[float]:
     return [min_value + step * index for index in range(bins + 1)]
 
 
+def _value_edges(values: list[float]) -> list[float]:
+    """실제 측정값을 중심으로 하는 bin edge를 생성합니다."""
+
+    if not values:
+        return []
+    if len(values) == 1:
+        value = values[0]
+        margin = max(abs(value) * 1e-9, 0.5)
+        return [value - margin, value + margin]
+    edges = [values[0] - (values[1] - values[0]) / 2]
+    edges.extend((values[index] + values[index + 1]) / 2 for index in range(len(values) - 1))
+    edges.append(values[-1] + (values[-1] - values[-2]) / 2)
+    return edges
+
+
 def _bin_centers(edges: list[float]) -> list[float]:
     """bin edge에서 center 값을 생성합니다."""
 
     return [round((edges[index] + edges[index + 1]) / 2, 6) for index in range(len(edges) - 1)]
+
+
+def _nearest_value(values: list[float], target: float) -> float | None:
+    """정렬된 실제 값 목록에서 target에 가장 가까운 값을 반환합니다."""
+
+    if not values:
+        return None
+    right = bisect_right(values, target)
+    if right <= 0:
+        return values[0]
+    if right >= len(values):
+        return values[-1]
+    left_value = values[right - 1]
+    right_value = values[right]
+    return left_value if abs(target - left_value) <= abs(right_value - target) else right_value
+
+
+def _representative_values_for_edges(values: list[float], edges: list[float]) -> list[float]:
+    """각 bin을 대표하는 실제 측정값을 반환합니다."""
+
+    labels: list[float] = []
+    cursor = 0
+    last_index = len(edges) - 2
+    for edge_index in range(max(0, len(edges) - 1)):
+        start = edges[edge_index]
+        end = edges[edge_index + 1]
+        while cursor < len(values) and values[cursor] < start:
+            cursor += 1
+        next_cursor = cursor
+        while next_cursor < len(values) and (
+            values[next_cursor] < end or (edge_index == last_index and values[next_cursor] <= end)
+        ):
+            next_cursor += 1
+        bucket = values[cursor:next_cursor]
+        if bucket:
+            labels.append(bucket[len(bucket) // 2])
+        else:
+            center = (start + end) / 2
+            nearest = _nearest_value(values, center)
+            labels.append(nearest if nearest is not None else center)
+        cursor = max(cursor, next_cursor)
+    return [round(value, 6) for value in labels]
 
 
 def _bin_index(value: float, edges: list[float]) -> int | None:
@@ -358,10 +416,7 @@ def _bin_index(value: float, edges: list[float]) -> int | None:
         return None
     if value == edges[-1]:
         return len(edges) - 2
-    step = (edges[-1] - edges[0]) / (len(edges) - 1)
-    if step <= 0:
-        return None
-    return max(0, min(len(edges) - 2, int((value - edges[0]) / step)))
+    return max(0, min(len(edges) - 2, bisect_right(edges, value) - 1))
 
 
 def _flat_average_grid(
@@ -406,7 +461,13 @@ def _oes_heatmap_payload(frame: pd.DataFrame, selection: dict[str, object]) -> d
     if work.empty:
         return empty
     x_bins, y_bins = _heatmap_bins(selection)
-    x_edges = _bin_edges(float(work["chart_x"].min()), float(work["chart_x"].max()), min(x_bins, int(work["chart_x"].nunique()) or x_bins))
+    x_values = sorted(float(value) for value in work["chart_x"].dropna().unique().tolist())
+    if len(x_values) <= x_bins:
+        x_edges = _value_edges(x_values)
+        wavelength_labels = [round(value, 6) for value in x_values]
+    else:
+        x_edges = _bin_edges(float(work["chart_x"].min()), float(work["chart_x"].max()), x_bins)
+        wavelength_labels = _representative_values_for_edges(x_values, x_edges)
     y_edges = _bin_edges(float(work["chart_y"].min()), float(work["chart_y"].max()), min(y_bins, max(1, int(work["chart_y"].nunique()) or y_bins)))
     if len(x_edges) < 2 or len(y_edges) < 2:
         return empty
@@ -426,7 +487,7 @@ def _oes_heatmap_payload(frame: pd.DataFrame, selection: dict[str, object]) -> d
     return {
         "width": width,
         "height": height,
-        "wavelengths": _bin_centers(x_edges),
+        "wavelengths": wavelength_labels,
         "phases": _bin_centers(y_edges),
         "ref": ref_values,
         "comp": comp_values,

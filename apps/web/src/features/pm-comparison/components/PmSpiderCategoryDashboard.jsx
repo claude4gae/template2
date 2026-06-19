@@ -51,6 +51,62 @@ function ChartCloseButton({ onClick, label = "차트 닫기" }) {
   )
 }
 
+function formatWavelengthValue(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return ""
+  if (Number.isInteger(numeric)) return String(numeric)
+  return numeric.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
+}
+
+function nearestWavelength(value, wavelengths) {
+  const numeric = Number(value)
+  const candidates = Array.isArray(wavelengths)
+    ? wavelengths.map(Number).filter(Number.isFinite)
+    : []
+  if (!Number.isFinite(numeric) || !candidates.length) return null
+  return candidates.reduce((nearest, candidate) => (
+    Math.abs(candidate - numeric) < Math.abs(nearest - numeric) ? candidate : nearest
+  ), candidates[0])
+}
+
+function WavelengthInput({ value, wavelengths, onSelect, className }) {
+  const [draft, setDraft] = useState(formatWavelengthValue(value))
+
+  useEffect(() => {
+    setDraft(formatWavelengthValue(value))
+  }, [value])
+
+  const commit = () => {
+    const snapped = nearestWavelength(draft, wavelengths)
+    if (snapped == null) {
+      setDraft(formatWavelengthValue(value))
+      return
+    }
+    onSelect?.(snapped)
+    setDraft(formatWavelengthValue(snapped))
+  }
+
+  return (
+    <label className={cn("flex items-center gap-1 text-[10px] text-muted-foreground", className)}>
+      <span className="shrink-0">wavelength</span>
+      <Input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur()
+          }
+        }}
+        inputMode="decimal"
+        className="h-7 w-20 px-2 text-right text-[11px]"
+        aria-label="OES wavelength 직접 입력"
+      />
+      <span className="shrink-0">nm</span>
+    </label>
+  )
+}
+
 function formatMetaValues(values) {
   const normalized = Array.isArray(values) ? values.filter(Boolean) : []
   return normalized.length ? normalized.join(", ") : "-"
@@ -820,7 +876,16 @@ function TraceDetailWithLegend({ category, selectedKey, refPmDates, onClose }) {
 }
 
 // ── OES: wavelength 선택 시 시계열 + 스펙트럼 탭 ──────────────
-function OesWavelengthLineChart({ category, selectedStep, selectedWl, refPmDates, spectrumChart, onClose }) {
+function OesWavelengthLineChart({
+  category,
+  selectedStep,
+  selectedWl,
+  wavelengths,
+  refPmDates,
+  spectrumChart,
+  onWavelengthChange,
+  onClose,
+}) {
   const [activeTab, setActiveTab] = useState("시계열")
   const detailQuery = usePmSpiderDetailResult(
     category,
@@ -839,8 +904,13 @@ function OesWavelengthLineChart({ category, selectedStep, selectedWl, refPmDates
         <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <p className="text-xs font-semibold">
-              OES · <span className="text-primary">{selectedWl != null ? `${selectedWl} nm` : "전체"}</span>
+              OES · <span className="text-primary">{selectedWl != null ? `${formatWavelengthValue(selectedWl)} nm` : "전체"}</span>
             </p>
+            <WavelengthInput
+              value={selectedWl}
+              wavelengths={wavelengths}
+              onSelect={onWavelengthChange}
+            />
             <div className="flex gap-1">
               {TABS.map((tab) => (
                 <button
@@ -889,6 +959,7 @@ function OesWavelengthLineChart({ category, selectedStep, selectedWl, refPmDates
 // ── OES intensity 히트맵 (REF / COMP / OOB) ─────────────────
 function OesIntensityHeatmaps({ category, heatmap, spectrumChart, selectedStep, refPmDates, isLoading, onClose }) {
   const [selectedWl, setSelectedWl] = useState(null)
+  const wavelengths = Array.isArray(heatmap?.wavelengths) ? heatmap.wavelengths : []
 
   if (!selectedStep) {
     return (
@@ -926,13 +997,18 @@ function OesIntensityHeatmaps({ category, heatmap, spectrumChart, selectedStep, 
     <div className="flex flex-col gap-3">
       <Card className="rounded-lg py-0">
         <CardContent className="p-3">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold">
               OES Intensity Heatmap · step <span className="text-primary">{selectedStep}</span>
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <WavelengthInput
+                value={selectedWl}
+                wavelengths={wavelengths}
+                onSelect={setSelectedWl}
+              />
               <p className="text-[10px] text-muted-foreground">
-                클릭 → wavelength 선택 · x = wavelength · y = time(0→1)
+                클릭/입력 → wavelength 선택 · x = wavelength · y = time(0→1)
               </p>
               <ChartCloseButton onClick={onClose} label={`OES step ${selectedStep} 차트 닫기`} />
             </div>
@@ -950,8 +1026,10 @@ function OesIntensityHeatmaps({ category, heatmap, spectrumChart, selectedStep, 
           category={category}
           selectedStep={selectedStep}
           selectedWl={selectedWl}
+          wavelengths={wavelengths}
           refPmDates={refPmDates}
           spectrumChart={spectrumChart}
+          onWavelengthChange={setSelectedWl}
           onClose={() => setSelectedWl(null)}
         />
       )}

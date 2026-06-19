@@ -286,6 +286,7 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertGreaterEqual(len(result["oes"]["detailRows"]), 2)
         self.assertGreaterEqual(result["oes"]["heatmap"]["width"], 1)
         self.assertGreaterEqual(result["oes"]["heatmap"]["height"], 1)
+        self.assertEqual(result["oes"]["heatmap"]["wavelengths"], [200.0, 201.0])
         self.assertGreaterEqual(len(result["oes"]["spectrumChart"]["series"]), 1)
 
         self.assertGreaterEqual(len(wavelength_result["oes"]["lineChart"]["series"]), 1)
