@@ -10,7 +10,7 @@ const SUBPLOT_H_WAFER = 420
 const AXIS_FONT_SIZE = 12
 const SUBPLOT_TITLE_FONT_SIZE = 13
 const AXIS_TITLE_FONT_SIZE = 12
-const RISK_TITLE_MARKER = '▌'
+const RISK_TITLE_MARKER = '<span style="color:#be123c;font-size:19px">▌</span>'
 const RISK_BADGE_XSHIFT = -62
 const RISK_TITLE_START_X = 0.16
 const X_JITTER_OFFSET = 0.28
@@ -19,13 +19,14 @@ const MAX_POINTS_PER_SUBPLOT = 900
 const OVERSCAN_ROWS = 1
 const DEFAULT_VIEWPORT_H = 1200
 const LASSO_KEY_SEPARATOR = '\u0000'
-const HIGHLIGHT_COLOR = 'var(--chart-2)'
-const HIGHLIGHT_GLOW = 'hsl(var(--chart-2) / 0.28)'
-const HIGHLIGHT_SHINE = 'var(--chart-1)'
+const HIGHLIGHT_COLOR = '#14DBFF'
+const HIGHLIGHT_GLOW = 'rgba(20, 219, 255, 0.28)'
+const HIGHLIGHT_SHINE = '#89FCFF'
 const HOVER_LABEL = { align: 'left' }
 const EQC_COLOR_PALETTE = [
-  'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)',
-  'var(--primary)', 'var(--destructive)', 'var(--muted-foreground)',
+  '#2563eb', '#16a34a', '#f97316', '#7c3aed', '#0891b2',
+  '#db2777', '#65a30d', '#9333ea', '#0f766e', '#ca8a04',
+  '#1d4ed8', '#be123c',
 ]
 
 const ACTIVE_MODEBAR_TITLES = new Set(['Pan', 'Box select wafer', 'Box select lot'])
@@ -97,7 +98,7 @@ function buildTimeXAxis(subData) {
   const lineMax = times.reduce((a, b) => a > b ? a : b)
   return {
     axis: {
-      title: { text: 'eqp_tkin_time', font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 10 },
+      title: { text: 'eqp_tkin_time', font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 10 },
       type: 'date',
       tickformat: '%m-%d',
       nticks: MAX_X_TICKS_PER_SUBPLOT,
@@ -119,7 +120,7 @@ function buildWaferXAxis(subData) {
   const sampled = sorted.filter((_, idx) => idx % step === 0)
   return {
     axis: {
-      title: { text: 'eqp_tkin_time, wafer_id', font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 12 },
+      title: { text: 'eqp_tkin_time, wafer_id', font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 12 },
       type: 'linear',
       tickmode: 'array',
       tickangle: -90,
@@ -166,7 +167,7 @@ function buildEqcTimeXAxis(subData) {
 
   return {
     axis: {
-      title: { text: 'eqpch, tkin_time', font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 12 },
+      title: { text: 'eqpch, tkin_time', font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 12 },
       type: 'linear',
       tickmode: 'array',
       tickangle: -45,
@@ -266,7 +267,7 @@ function makeHighlightTrace(rows, xAxis, xRef, yRef, customdata, hovertemplate, 
         size: CHART_MARKER_SIZE + 12,
         symbol: 'circle',
         opacity: 0.9,
-        line: { color: 'transparent', width: 0 },
+        line: { color: 'rgba(20, 219, 255, 0)', width: 0 },
       },
       hoverinfo: 'skip',
     }
@@ -280,7 +281,7 @@ function makeHighlightTrace(rows, xAxis, xRef, yRef, customdata, hovertemplate, 
         size: Math.max(CHART_MARKER_SIZE - 2, 5),
         symbol: 'circle',
         opacity: 0.92,
-        line: { color: 'transparent', width: 0 },
+        line: { color: 'rgba(137, 252, 255, 0)', width: 0 },
       },
       hoverinfo: 'skip',
     }
@@ -293,7 +294,7 @@ function makeHighlightTrace(rows, xAxis, xRef, yRef, customdata, hovertemplate, 
       size: CHART_MARKER_SIZE + 7,
       symbol: 'circle',
       opacity: 1,
-      line: { color: 'transparent', width: 0 },
+      line: { color: 'rgba(20, 219, 255, 0)', width: 0 },
     },
     name: 'selected highlight',
   }
@@ -339,22 +340,22 @@ function getLimitInfoFromRows(rows) {
   const r = rows[0]
   const isMso = r.propOver50 < 0.5
   const val = isMso ? r.usl : r.lsl
-  return { value: val ?? null, label: isMso ? 'USL' : 'LSL', color: 'var(--destructive)' }
+  return { value: val ?? null, label: isMso ? 'USL' : 'LSL', color: '#dc2626' }
 }
 
 function getBaseXAxis() {
   return {
-    color: 'var(--muted-foreground)',
+    color: '#6b7394',
     showgrid: false,
     zeroline: false,
-    linecolor: 'var(--foreground)',
+    linecolor: '#000000',
     linewidth: 1,
     mirror: true,
-    tickfont: { size: AXIS_FONT_SIZE, color: 'var(--muted-foreground)' },
+    tickfont: { size: AXIS_FONT_SIZE, color: '#6b7394' },
     ticks: 'outside',
     ticklen: 5,
     tickwidth: 1,
-    tickcolor: 'var(--foreground)',
+    tickcolor: '#000000',
     showticklabels: true,
     automargin: true,
     showline: true,
@@ -363,20 +364,20 @@ function getBaseXAxis() {
 
 function getBaseYAxis() {
   return {
-    color: 'var(--muted-foreground)',
+    color: '#6b7394',
     showgrid: true,
-    gridcolor: 'var(--border)',
+    gridcolor: '#c7c7c7',
     griddash: 'dot',
     zeroline: false,
-    linecolor: 'var(--foreground)',
+    linecolor: '#000000',
     linewidth: 1,
     mirror: true,
-    tickfont: { size: AXIS_FONT_SIZE, color: 'var(--muted-foreground)' },
+    tickfont: { size: AXIS_FONT_SIZE, color: '#6b7394' },
     ticks: 'outside',
     ticklen: 5,
     tickwidth: 1,
-    tickcolor: 'var(--foreground)',
-    title: { font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 8 },
+    tickcolor: '#000000',
+    title: { font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 8 },
     showticklabels: true,
     nticks: 12,
     automargin: true,
@@ -402,7 +403,7 @@ function buildSingleEqcTimeChart(key, subData, lassoSelection) {
       x0: x, x1: x,
       y0: yRange?.[0] ?? 0,
       y1: yRange?.[1] ?? 1,
-      line: { color: 'var(--border)', dash: 'dot', width: 1 },
+      line: { color: '#94a3b8', dash: 'dot', width: 1 },
     })
   })
 
@@ -415,7 +416,7 @@ function buildSingleEqcTimeChart(key, subData, lassoSelection) {
         ? subData.filter(d => d.displayStatus === status && d.eqc === eqc && isLassoHighlighted(d, lassoSelection))
         : []
       const markerStyle = EQC_TIME_STATUS_MARKER[status]
-      const eqcColor = xAxis.eqcColor.get(eqc) ?? 'var(--primary)'
+      const eqcColor = xAxis.eqcColor.get(eqc) ?? '#2563eb'
       const hovertemplate =
         `<b>${title}</b><br>` +
         `eqc: %{customdata[5]}<br>` +
@@ -474,7 +475,7 @@ function buildSingleEqcTimeChart(key, subData, lassoSelection) {
     x: 0.5, y: 1.065,
     text: `<b>${title}</b>`,
     showarrow: false,
-    font: { size: SUBPLOT_TITLE_FONT_SIZE, color: 'var(--foreground)' },
+    font: { size: SUBPLOT_TITLE_FONT_SIZE, color: '#1a2044' },
     xanchor: 'center', yanchor: 'bottom',
   })
 
@@ -485,14 +486,14 @@ function buildSingleEqcTimeChart(key, subData, lassoSelection) {
       xaxis: { ...getBaseXAxis(), ...xAxis.axis },
       yaxis: {
         ...getBaseYAxis(),
-        title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 8 },
+        title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 8 },
         ...(yRange !== null ? { range: yRange, autorange: false } : { autorange: true }),
       },
       height: SUBPLOT_H_WAFER,
       autosize: true,
-      paper_bgcolor: 'var(--card)',
-      plot_bgcolor: 'transparent',
-      font: { color: 'var(--muted-foreground)', size: AXIS_FONT_SIZE },
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#6b7394', size: AXIS_FONT_SIZE },
       margin: { l: 62, r: 20, t: 55, b: 115 },
       shapes, annotations,
       hoverlabel: HOVER_LABEL,
@@ -571,9 +572,9 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
     annotations.push({
       xref: 'paper', yref: 'paper',
       x: 0, y: 1.065,
-      text: `${RISK_TITLE_MARKER} <b>High Risk</b>`,
+      text: `${RISK_TITLE_MARKER} <b><span style="color:#be123c">High Risk</span></b>`,
       showarrow: false,
-      font: { size: SUBPLOT_TITLE_FONT_SIZE, color: 'var(--destructive)' },
+      font: { size: SUBPLOT_TITLE_FONT_SIZE, color: '#be123c' },
       xshift: RISK_BADGE_XSHIFT,
       xanchor: 'left', yanchor: 'bottom',
     })
@@ -585,7 +586,7 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
     y: 1.065,
     text: `<b>${title}</b>`,
     showarrow: false,
-    font: { size: SUBPLOT_TITLE_FONT_SIZE, color: 'var(--foreground)' },
+    font: { size: SUBPLOT_TITLE_FONT_SIZE, color: '#1a2044' },
     xanchor: hasRisk ? 'left' : 'center', yanchor: 'bottom',
   })
 
@@ -596,14 +597,14 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
       xaxis: { ...getBaseXAxis(), ...xAxis.axis },
       yaxis: {
         ...getBaseYAxis(),
-        title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: 'var(--muted-foreground)' }, standoff: 8 },
+        title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 8 },
         ...(sharedYRange !== null ? { range: sharedYRange, autorange: false } : { autorange: true }),
       },
       height: xAxisMode === 'tkin_time_wafer_id' ? SUBPLOT_H_WAFER : SUBPLOT_H,
       autosize: true,
-      paper_bgcolor: 'var(--card)',
-      plot_bgcolor: 'transparent',
-      font: { color: 'var(--muted-foreground)', size: AXIS_FONT_SIZE },
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#6b7394', size: AXIS_FONT_SIZE },
       margin: { l: 70, r: 20, t: 50, b: xAxisMode === 'tkin_time_wafer_id' ? 130 : 75 },
       shapes, annotations,
       hoverlabel: HOVER_LABEL,

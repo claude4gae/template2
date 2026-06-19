@@ -1,6 +1,6 @@
 .tc-wrap {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: #ffffff;
+  border: 1px solid #e0e4f0;
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -13,39 +13,39 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 16px;
-  background: color-mix(in oklab, var(--muted) 72%, transparent);
-  border-bottom: 1px solid var(--border);
+  background: #f5f7fc;
+  border-bottom: 1px solid #e0e4f0;
 }
 
 .tc-info-count {
   font-size: 12px;
-  color: var(--muted-foreground);
+  color: #6b7394;
 }
 
 .tc-info-progress {
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--primary);
+  color: #2563eb;
 }
 
 .tc-clear-selection {
   flex-shrink: 0;
   min-height: 26px;
   padding: 4px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid #d7ddea;
   border-radius: 6px;
-  background: var(--card);
-  color: var(--muted-foreground);
+  background: #ffffff;
+  color: #4b5578;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .tc-clear-selection:hover {
-  background: color-mix(in oklab, var(--chart-4) 18%, transparent);
-  border-color: var(--chart-4);
-  color: var(--foreground);
+  background: #fff7d6;
+  border-color: #facc15;
+  color: #854d0e;
 }
 
 .tc-plot-grid {
@@ -131,7 +131,7 @@
   align-items: center;
   justify-content: center;
   min-height: 300px;
-  color: var(--muted-foreground);
+  color: #9ba3bc;
   font-size: 14px;
 }
 
@@ -142,10 +142,10 @@
   justify-content: center;
   gap: 12px;
   min-height: 300px;
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: #ffffff;
+  border: 1px solid #e0e4f0;
   border-radius: 8px;
-  color: var(--muted-foreground);
+  color: #9ba3bc;
 }
 
 .tc-empty-icon { font-size: 40px; opacity: 0.4; }
