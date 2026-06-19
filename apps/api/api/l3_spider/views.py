@@ -5,6 +5,22 @@
 # =============================================================================
 from __future__ import annotations
 
+try:
+    import orjson
+
+    def _fast_response(data, status: int = 200):
+        from django.http import HttpResponse
+        return HttpResponse(
+            orjson.dumps(data),
+            content_type="application/json; charset=utf-8",
+            status=status,
+        )
+except ImportError:
+    from rest_framework.response import Response as _DRFResponse
+
+    def _fast_response(data, status: int = 200):
+        return _DRFResponse(data, status=status)
+
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,20 +30,14 @@ from .serializers import L3SpiderDataRequestSerializer, L3SpiderFilterCandidates
 
 
 def _error_response(error: Exception) -> Response:
-    """서비스 오류를 일관된 JSON 응답으로 변환합니다."""
-
     status_code = getattr(error, "status_code", 400)
     return Response({"error": str(error)}, status=status_code)
 
 
 class L3SpiderMetaView(APIView):
-    """L3 Spider 선택 메타데이터를 반환합니다."""
-
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs) -> Response:
-        """사용 가능한 날짜/라인/프로세스/EDS step 목록을 반환합니다."""
-
         try:
             return Response(services.get_meta())
         except services.L3SpiderServiceError as error:
@@ -35,13 +45,9 @@ class L3SpiderMetaView(APIView):
 
 
 class L3SpiderSummaryView(APIView):
-    """L3 Spider 요약 데이터를 반환합니다."""
-
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs) -> Response:
-        """선택 조건 기준 통계와 이상 목록을 반환합니다."""
-
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -51,24 +57,20 @@ class L3SpiderSummaryView(APIView):
 
 
 class L3SpiderDataView(APIView):
-    """L3 Spider 차트 행 데이터를 반환합니다."""
+    """차트 행 데이터: orjson + 컬럼 포맷으로 빠르게 반환합니다."""
 
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, *args, **kwargs) -> Response:
-        """선택 조건과 화면 필터 기준 차트 행을 반환합니다."""
-
+    def post(self, request, *args, **kwargs):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_data(serializer.validated_data))
+            return _fast_response(services.get_data(serializer.validated_data))
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
 
 class L3SpiderFilterCandidatesView(APIView):
-    """PPID 선택 경로 기준 EQPCH·Bin High Risk 후보를 반환합니다."""
-
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs) -> Response:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Plotly from 'plotly.js-dist-min'
 import { CHART_MARKER_SIZE, EQC_TIME_STATUS_MARKER, STATUS_MARKER, STATUS_ORDER } from '../utils/chartStatus'
 import './TrellisChart.css'
@@ -730,7 +730,7 @@ function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRe
   return <div ref={plotRef} className="tc-plot" />
 }
 
-export default function TrellisChart({
+const TrellisChart = forwardRef(function TrellisChart({
   data,
   trellisBy,
   xAxisMode,
@@ -743,7 +743,7 @@ export default function TrellisChart({
   scrollContainerRef,
   outerScrollTop = 0,
   outerViewportHeight = DEFAULT_VIEWPORT_H,
-}) {
+}, ref) {
   const scrollerRef = useRef(null)
   const spacerRef = useRef(null)
   const virtualWindowRef = useRef(null)
@@ -975,6 +975,106 @@ export default function TrellisChart({
     }
   }, [scrollContainerRef, data.length, keySignature, rowHeight, totalHeight])
 
+  // ── captureAll: 전체 차트를 PNG 한 장으로 합성 다운로드 ──────────────────
+  useImperativeHandle(ref, () => ({
+    async captureAll(onProgress) {
+      const { keys, groupedData, sharedYRange } = chartPlan
+      if (!keys.length) return
+
+      const CAPTURE_W = 900
+      const captureH = rowHeight
+
+      // 모든 키에 대해 차트 객체 빌드 (가상화 무시)
+      const allCharts = keys.map(key => {
+        const subData = groupedData.get(key) ?? []
+        if (xAxisMode === 'eqc_tkin_time') {
+          return buildSingleEqcTimeChart(key, subData, null)
+        }
+        if (trellisBy === 'eqc') {
+          return buildSingleStandardChart(
+            key, subData,
+            `${key} / ${getStepPpidTitle(subData)}`,
+            getLimitInfoFromRows(subData), sharedYRange, xAxisMode, null,
+          )
+        }
+        if (trellisBy === 'bin') {
+          return buildSingleStandardChart(
+            key, subData,
+            `${key} / ${getUniqueText(subData.map(d => d.eqc))}`,
+            getLimitInfoFromRows(subData), null, xAxisMode, null,
+          )
+        }
+        const [stepSeq, binName] = key.split('|||')
+        return buildSingleStandardChart(
+          key, subData,
+          `${stepSeq} / ${getUniqueText(subData.map(d => d.ppid))} / ${binName}`,
+          getLimitInfoFromRows(subData), null, xAxisMode, null,
+        )
+      })
+
+      // 차트별 Plotly → PNG (순차 처리로 메모리 안전)
+      const imgUrls = []
+      for (let i = 0; i < allCharts.length; i++) {
+        onProgress?.(i, allCharts.length)
+        const chart = allCharts[i]
+        const el = document.createElement('div')
+        el.style.cssText = `position:fixed;left:-9999px;top:0;width:${CAPTURE_W}px;height:${captureH}px;visibility:hidden;`
+        document.body.appendChild(el)
+        try {
+          await Plotly.newPlot(
+            el,
+            chart.plotData,
+            { ...chart.plotLayout, width: CAPTURE_W, height: captureH },
+            { staticPlot: true, displayModeBar: false },
+          )
+          imgUrls.push(await Plotly.toImage(el, { format: 'png', width: CAPTURE_W, height: captureH }))
+        } catch {
+          imgUrls.push(null)
+        } finally {
+          Plotly.purge(el)
+          document.body.removeChild(el)
+        }
+      }
+      onProgress?.(allCharts.length, allCharts.length)
+
+      // 그리드로 합성
+      const cols = chartColumns
+      const rowCount = Math.ceil(allCharts.length / cols)
+      const canvas = document.createElement('canvas')
+      canvas.width = CAPTURE_W * cols
+      canvas.height = captureH * rowCount
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+      await Promise.all(imgUrls.map((url, i) => {
+        if (!url) return Promise.resolve()
+        return new Promise(resolve => {
+          const img = new Image()
+          img.onload = () => {
+            ctx.drawImage(img, (i % cols) * CAPTURE_W, Math.floor(i / cols) * captureH)
+            resolve()
+          }
+          img.onerror = resolve
+          img.src = url
+        })
+      }))
+
+      await new Promise(resolve => {
+        canvas.toBlob(blob => {
+          if (!blob) { resolve(); return }
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `l3_spider_charts_${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`
+          a.click()
+          URL.revokeObjectURL(url)
+          resolve()
+        }, 'image/png')
+      })
+    },
+  }), [chartPlan, xAxisMode, trellisBy, chartColumns, rowHeight])
+
   if (data.length === 0) {
     return (
       <div className="tc-empty">
@@ -984,25 +1084,15 @@ export default function TrellisChart({
     )
   }
 
-  const visibleStart = Math.min(visibleRowStart * chartColumns + 1, chartPlan.keys.length)
-  const visibleEnd = Math.min(visibleRowEnd * chartColumns, chartPlan.keys.length)
   const selectedCount = lassoSelection?.keys.size ?? 0
 
   return (
     <div className="tc-wrap">
-      <div className="tc-info">
-        <span className="tc-info-count">
-          {data.length.toLocaleString()}개 데이터 포인트 &nbsp;|&nbsp; {chartPlan.subtitle}
-        </span>
-        <span className="tc-info-progress">
-          {`표시 중 ${visibleStart.toLocaleString()}-${visibleEnd.toLocaleString()} / ${chartPlan.keys.length.toLocaleString()}`}
-        </span>
-        {selectedCount > 0 && (
-          <button type="button" className="tc-clear-selection" onClick={() => setLassoSelection(null)}>
-            선택 해제 ({selectedCount.toLocaleString()})
-          </button>
-        )}
-      </div>
+      {selectedCount > 0 && (
+        <button type="button" className="tc-clear-selection-float" onClick={() => setLassoSelection(null)}>
+          선택 해제 ({selectedCount.toLocaleString()})
+        </button>
+      )}
       {visibleKeys.length === 0 && (
         <div className="tc-progress-placeholder">차트 준비 중…</div>
       )}
@@ -1036,4 +1126,6 @@ export default function TrellisChart({
       </div>
     </div>
   )
-}
+})
+
+export default TrellisChart

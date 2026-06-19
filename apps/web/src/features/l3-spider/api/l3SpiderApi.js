@@ -42,7 +42,17 @@ export function fetchL3SpiderSummary(selection) {
 }
 
 export function fetchL3SpiderData(selection) {
-  return postJson("/data", selection)
+  return postJson("/data", selection).then(({ cols, colData }) => {
+    if (!cols?.length || !colData?.length) return { rows: [] }
+    const n = colData[0].length
+    const rows = new Array(n)
+    for (let i = 0; i < n; i++) {
+      const obj = {}
+      for (let j = 0; j < cols.length; j++) obj[cols[j]] = colData[j][i]
+      rows[i] = obj
+    }
+    return { rows }
+  })
 }
 
 export function fetchL3SpiderFilterCandidates(params) {

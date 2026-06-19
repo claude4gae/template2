@@ -254,6 +254,14 @@ class PmComparisonServiceTests(SimpleTestCase):
                 )
                 meta = services.get_meta()
                 selected_meta = services.get_meta({"lineId": "L1", "eqpId": "EQP1"})
+                wavelength_result = services.compare_pm_window(
+                    {
+                        **selection,
+                        "selectedStep": "STEP_A",
+                        "selectedWavelength": "200",
+                        "maxPoints": 200,
+                    }
+                )
 
         self.assertEqual(meta["lineIds"], ["L1"])
         self.assertEqual(meta["eqpIds"], [])
@@ -263,6 +271,8 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(result["trace"]["trendRows"][0]["cycleIndex"], -2)
         self.assertEqual(result["trace"]["trendRows"][1]["cycleIndex"], -1)
         self.assertEqual(result["trace"]["trendRows"][2]["cycleIndex"], 0)
+        self.assertGreaterEqual(result["trace"]["lineChart"]["sourcePointCount"], 3)
+        self.assertGreaterEqual(len(result["trace"]["lineChart"]["series"]), 1)
         self.assertEqual(
             [row["cycleIndex"] for row in selected_result["trace"]["trendRows"]],
             [-2, 0],
@@ -274,6 +284,11 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(result["oes"]["worstStep"], "STEP_A")
         self.assertEqual(result["oes"]["worstWavelength"]["score"], 0.08)
         self.assertGreaterEqual(len(result["oes"]["detailRows"]), 2)
+        self.assertGreaterEqual(result["oes"]["heatmap"]["width"], 1)
+        self.assertGreaterEqual(result["oes"]["heatmap"]["height"], 1)
+        self.assertGreaterEqual(len(result["oes"]["spectrumChart"]["series"]), 1)
+
+        self.assertGreaterEqual(len(wavelength_result["oes"]["lineChart"]["series"]), 1)
 
     def test_single_mount_uses_data_and_result_dir_names(self) -> None:
         """단일 mount 아래 data/result 폴더명을 사용하는지 확인합니다."""
@@ -794,6 +809,11 @@ class PmComparisonServiceTests(SimpleTestCase):
                 "eqpId": "EQP1",
                 "pmTimestamp": "2026-06-03 14:23:23",
                 "dtValues": ["2026-06-03 14:23:23"],
+                "maxPoints": 2000,
+                "xStart": 0,
+                "xEnd": 100,
+                "heatmapXBins": 1200,
+                "heatmapYBins": 100,
             }
         )
 
