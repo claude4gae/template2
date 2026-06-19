@@ -653,6 +653,48 @@ class PmComparisonServiceTests(SimpleTestCase):
 
         self.assertEqual(timestamp_meta["ppids"], ["PPID1"])
 
+    def test_fdc_meta_prefers_raw_datetime_pm_dates(self) -> None:
+        """raw dt가 시각 포함 폴더명이면 PM 시점 옵션도 해당 값을 반환합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw_target = (
+                root
+                / selectors.RAW_DIR_NAME
+                / "line_id"
+                / "eqp_id"
+                / "A"
+                / "2026-06-16 09:28:00"
+                / "trace"
+                / "type=ag"
+                / "ppid=abc"
+                / "recipe_id=abc"
+                / "priority=B"
+                / "trace_param_name=abc"
+            )
+            raw_target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                meta = services.get_meta(
+                    {
+                        "lineId": "line_id",
+                        "eqpId": "eqp_id",
+                        "fdcBin": "A",
+                    }
+                )
+                selected_meta = services.get_meta(
+                    {
+                        "lineId": "line_id",
+                        "eqpId": "eqp_id",
+                        "fdcBin": "A",
+                        "pmTimestamp": "2026-06-16 09:28:00",
+                    }
+                )
+
+        self.assertEqual(meta["pmDates"], ["2026-06-16 09:28:00"])
+        self.assertEqual(selected_meta["ppids"], ["abc"])
+        self.assertEqual(selected_meta["recipeIds"], ["abc"])
+
     def test_compare_without_dt_values_limits_raw_lookup_to_pm_timestamp(self) -> None:
         """dtValues가 없어도 raw 조회는 선택 PM 시점 partition으로 제한됩니다."""
 

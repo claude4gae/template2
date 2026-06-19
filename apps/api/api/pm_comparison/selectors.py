@@ -643,17 +643,30 @@ def _candidate_plain_dirs(parent: Path, key: str, filters: dict[str, set[str]]) 
             seen.add(direct)
         if key != "dt" or not (len(expected) == 10 and expected[4] == "-" and expected[7] == "-"):
             continue
-        try:
-            children = parent.iterdir()
-        except OSError:
-            continue
-        for child in children:
+        for child in _cached_dt_prefix_dirs(str(parent), _raw_records_signature(parent), expected):
             if child in seen or not child.is_dir() or _is_ignored_path(child):
                 continue
-            if child.name.startswith(f"{expected} ") or child.name.startswith(f"{expected}T"):
-                candidates.append(child)
-                seen.add(child)
+            candidates.append(child)
+            seen.add(child)
     return candidates
+
+
+@lru_cache(maxsize=512)
+def _cached_dt_prefix_dirs(parent_text: str, signature: int, date_prefix: str) -> tuple[Path, ...]:
+    """날짜만 선택된 경우 매칭되는 dt 폴더 후보를 캐시합니다."""
+
+    parent = Path(parent_text)
+    try:
+        children = parent.iterdir()
+    except OSError:
+        return tuple()
+    return tuple(
+        child
+        for child in children
+        if child.is_dir()
+        and not _is_ignored_path(child)
+        and (child.name.startswith(f"{date_prefix} ") or child.name.startswith(f"{date_prefix}T"))
+    )
 
 
 def _partition_dir_value(path: Path, key: str) -> str | None:

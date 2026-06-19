@@ -752,6 +752,27 @@ def _collect_pm_dates(warnings: list[str], selection: dict[str, object] | None =
     return sorted(dates)
 
 
+def _has_time_part(value: str) -> bool:
+    """raw dt 값에 시각 정보가 포함되어 있는지 확인합니다."""
+
+    text = str(value)
+    return (len(text) > 10 and text[10:11] in {" ", "T"}) or ":" in text
+
+
+def _meta_pm_dates(
+    selection: dict[str, object] | None,
+    options: dict[str, list[str]],
+    warnings: list[str],
+) -> list[str]:
+    """PM 시점 dropdown에 노출할 날짜 후보를 결정합니다."""
+
+    raw_dt_values = options.get("dt", [])
+    if selection and selection.get("fdcBin") and any(_has_time_part(value) for value in raw_dt_values):
+        return raw_dt_values
+    pm_dates = _collect_pm_dates(warnings, selection)
+    return pm_dates or raw_dt_values
+
+
 def get_meta(selection: dict[str, object] | None = None) -> dict[str, object]:
     """PM SPIDER 데이터 선택 메타데이터를 반환합니다."""
 
@@ -763,7 +784,7 @@ def get_meta(selection: dict[str, object] | None = None) -> dict[str, object]:
     except NotADirectoryError as exc:
         raise PmComparisonServiceError(str(exc), status_code=400) from exc
 
-    pm_dates = _collect_pm_dates(warnings, selection)
+    pm_dates = _meta_pm_dates(selection, options, warnings)
 
     return {
         "lineIds": options.get("line_id", []),
