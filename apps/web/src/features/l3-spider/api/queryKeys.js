@@ -6,4 +6,5 @@ export const l3SpiderQueryKeys = {
   meta: () => ["l3-spider", "meta"],
   summary: (selectionKey) => ["l3-spider", "summary", selectionKey],
   data: (selectionKey, filterKey) => ["l3-spider", "data", selectionKey, filterKey],
+  filterCandidates: (key) => ["l3-spider", "filter-candidates", key],
 }

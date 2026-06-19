@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button"
 import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
 import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
-import { L3SpiderSummaryCards } from "../components/L3SpiderSummaryCards"
 import {
   useL3SpiderData,
+  useL3SpiderFilterCandidates,
   useL3SpiderMeta,
   useL3SpiderSummary,
 } from "../hooks/useL3SpiderQueries"
@@ -24,8 +24,6 @@ export function L3SpiderPage() {
   const [pageScrollTop, setPageScrollTop] = useState(0)
   const [pageViewportHeight, setPageViewportHeight] = useState(0)
   const [selection, setSelection] = useState(EMPTY_SELECTION)
-  // 모든 선택: 단일값 (string | null)
-  const [checkedEdsStep, setCheckedEdsStep] = useState(null)
   const [checkedStep, setCheckedStep] = useState(null)
   const [checkedPpid, setCheckedPpid] = useState(null)
   const [checkedEqc, setCheckedEqc] = useState(null)   // EQPCH 모드
@@ -43,7 +41,6 @@ export function L3SpiderPage() {
   const isSelectionReady = hasCompleteSelection(selection)
 
   const resetLeafSelections = () => {
-    setCheckedEdsStep(null)
     setCheckedStep(null)
     setCheckedPpid(null)
     setCheckedEqc(null)
@@ -70,6 +67,18 @@ export function L3SpiderPage() {
     }
   }, [])
 
+  // checkedStep은 "eds_step|||step_seq" 복합키
+  const checkedEdsStepFromKey = checkedStep ? checkedStep.split("|||")[0] : null
+  const checkedStepSeq = checkedStep ? checkedStep.split("|||")[1] : null
+
+  // ppid 선택 시 해당 경로 파일에서만 EQPCH·Bin 후보 조회
+  const filterCandidatesQuery = useL3SpiderFilterCandidates(
+    selection, checkedEdsStepFromKey, checkedStepSeq, checkedPpid,
+  )
+  const candidateEqcHighRiskBins = filterCandidatesQuery.isSuccess
+    ? (filterCandidatesQuery.data?.eqcHighRiskBins ?? {})
+    : null
+
   // trellis 기준: EQPCH 선택 → bin별 subplots / Bin 선택 → eqc별 subplots
   const groupBy = analysisMode === "eqpch" ? "bin" : "eqc"
 
@@ -82,12 +91,12 @@ export function L3SpiderPage() {
   const resolvedBins = useMemo(
     () => checkedBin
       ? [checkedBin]
-      : (checkedEqc ? (summary.eqcAnomalyBins?.[checkedEqc] ?? []) : []),
-    [checkedBin, checkedEqc, summary.eqcAnomalyBins],
+      : (checkedEqc && candidateEqcHighRiskBins ? (candidateEqcHighRiskBins[checkedEqc] ?? []) : []),
+    [checkedBin, checkedEqc, candidateEqcHighRiskBins],
   )
 
   const dataQuery = useL3SpiderData(
-    selection, checkedEdsStep, checkedStep, checkedPpid, checkedEqc, checkedBin,
+    selection, checkedEdsStepFromKey, checkedStepSeq, checkedPpid, checkedEqc, checkedBin,
     resolvedEqcs, resolvedBins,
   )
   const rows = dataQuery.data?.rows ?? []
@@ -136,6 +145,26 @@ export function L3SpiderPage() {
         onSelectionChange={setSelection}
         isLoading={metaQuery.isFetching}
         onRefresh={() => metaQuery.refetch()}
+        stats={summary.stats}
+        showStats={isSelectionReady}
+        rightContent={
+          <L3SpiderFilterPanel
+            edsStepSeqs={summary.edsStepSeqs ?? {}}
+            edsStepPpids={summary.edsStepPpids ?? {}}
+            selectedEdsSteps={selection.edsSteps}
+            eqcHighRiskBins={candidateEqcHighRiskBins}
+            isCandidatesLoading={filterCandidatesQuery.isFetching && !!checkedPpid}
+            checkedStep={checkedStep}
+            checkedPpid={checkedPpid}
+            checkedEqc={checkedEqc}
+            checkedBin={checkedBin}
+            onCheckedStepChange={setCheckedStep}
+            onCheckedPpidChange={setCheckedPpid}
+            onCheckedEqcChange={setCheckedEqc}
+            onCheckedBinChange={setCheckedBin}
+            onAnalysisModeChange={setAnalysisMode}
+          />
+        }
       />
 
       {metaQuery.error ? (
@@ -143,8 +172,6 @@ export function L3SpiderPage() {
           {metaQuery.error.message || "L3 Spider 메타데이터를 불러오지 못했습니다."}
         </div>
       ) : null}
-
-      {isSelectionReady ? <L3SpiderSummaryCards stats={summary.stats} /> : null}
 
       {!isSelectionReady ? (
         <div className="m-6 flex flex-1 items-center justify-center rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
@@ -155,26 +182,6 @@ export function L3SpiderPage() {
         </div>
       ) : (
         <main className="grid gap-5 px-6 pb-6 pt-4">
-          <L3SpiderFilterPanel
-            edsStepSeqs={summary.edsStepSeqs ?? {}}
-            edsStepPpids={summary.edsStepPpids ?? {}}
-            ppidHighRiskEqcs={summary.ppidHighRiskEqcs ?? {}}
-            ppidBins={summary.ppidBins ?? {}}
-            eqcAnomalyBins={summary.eqcAnomalyBins ?? {}}
-            eqcHighRiskBins={summary.eqcHighRiskBins ?? {}}
-            checkedEdsStep={checkedEdsStep}
-            checkedStep={checkedStep}
-            checkedPpid={checkedPpid}
-            checkedEqc={checkedEqc}
-            checkedBin={checkedBin}
-            analysisMode={analysisMode}
-            onCheckedEdsStepChange={setCheckedEdsStep}
-            onCheckedStepChange={setCheckedStep}
-            onCheckedPpidChange={setCheckedPpid}
-            onCheckedEqcChange={setCheckedEqc}
-            onCheckedBinChange={setCheckedBin}
-            onAnalysisModeChange={setAnalysisMode}
-          />
           <L3SpiderChart
             rows={rows}
             isLoading={summaryQuery.isFetching || dataQuery.isFetching}

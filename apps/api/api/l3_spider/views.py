@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import services
-from .serializers import L3SpiderDataRequestSerializer
+from .serializers import L3SpiderDataRequestSerializer, L3SpiderFilterCandidatesSerializer
 
 
 def _error_response(error: Exception) -> Response:
@@ -62,5 +62,19 @@ class L3SpiderDataView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             return Response(services.get_data(serializer.validated_data))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
+class L3SpiderFilterCandidatesView(APIView):
+    """PPID 선택 경로 기준 EQPCH·Bin High Risk 후보를 반환합니다."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderFilterCandidatesSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return Response(services.get_filter_candidates(serializer.validated_data))
         except services.L3SpiderServiceError as error:
             return _error_response(error)

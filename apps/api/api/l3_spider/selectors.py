@@ -51,6 +51,35 @@ def iter_data_files(selection: dict[str, object]) -> Iterable[Path]:
                             yield path
 
 
+def iter_filter_candidate_files(
+    dates: list[str],
+    line_ids: list[str],
+    process_ids: list[str],
+    eds_step: str,
+    step_seq: str,
+    ppid: str,
+) -> Iterable[Path]:
+    """step_seq#ppid#* 패턴에 해당하는 파일만 순회합니다."""
+
+    root = ensure_data_root()
+    root_resolved = root.resolve()
+    prefix = f"{step_seq}#{ppid}#"
+
+    for date in dates:
+        for line_id in line_ids:
+            for process_id in process_ids:
+                dir_path = root / date / line_id / process_id / eds_step
+                try:
+                    dir_path.resolve().relative_to(root_resolved)
+                except ValueError:
+                    continue
+                if not dir_path.exists() or not dir_path.is_dir():
+                    continue
+                for path in dir_path.iterdir():
+                    if path.is_file() and path.name.startswith(prefix):
+                        yield path
+
+
 def iter_all_data_files() -> Iterable[Path]:
     """데이터 루트 아래의 모든 일반 파일을 순회합니다."""
 

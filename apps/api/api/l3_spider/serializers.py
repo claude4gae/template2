@@ -78,3 +78,32 @@ class L3SpiderDataRequestSerializer(serializers.Serializer):
                     {"detail": f"유효하지 않은 선택값입니다: {value!r}"}
                 )
         return attrs
+
+
+class L3SpiderFilterCandidatesSerializer(serializers.Serializer):
+    """PPID 선택 기준 EQPCH/Bin 후보 조회 요청을 검증합니다."""
+
+    dates = serializers.ListField(child=serializers.CharField(), min_length=1)
+    lineIds = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    processIds = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    edsStep = serializers.CharField()
+    stepSeq = serializers.CharField()
+    ppid = serializers.CharField()
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """파일 경로에 직접 반영되는 값을 검증합니다."""
+
+        path_values = [
+            *attrs.get("dates", []),
+            *attrs.get("lineIds", []),
+            *attrs.get("processIds", []),
+            attrs.get("edsStep", ""),
+            attrs.get("stepSeq", ""),
+            attrs.get("ppid", ""),
+        ]
+        for value in path_values:
+            if not _is_safe_segment(value):
+                raise serializers.ValidationError(
+                    {"detail": f"유효하지 않은 선택값입니다: {value!r}"}
+                )
+        return attrs
