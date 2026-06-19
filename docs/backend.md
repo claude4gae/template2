@@ -10,7 +10,7 @@
 | 기본 API prefix | `/api/v1/` |
 | Auth callback 예외 | `/auth/google/callback/` |
 | 기본 DB | `DJANGO_DB_*` PostgreSQL |
-| Timeline DB | `TIMELINE_DB_*` PostgreSQL |
+| Observer DB | `OBSERVER_DB_*` PostgreSQL |
 | 로컬 실행 | `make dev-app-up` |
 
 ## App 구조
@@ -24,7 +24,7 @@
 | `api.assistant` | RAG 검색, LLM 호출, 답변 조립 | `services/chat.py`, `services/rag.py`, `services/llm.py` |
 | `api.rag` | RAG 공통 client와 설정 | `services/client.py`, `services/config.py` |
 | `api.drone` | Drone SOP 수집, 알림 대상, dispatch/delivery, 라인 대시보드 | `models.py`, `selectors.py`, `services/*.py`, `management/commands/*.py` |
-| `api.timeline` | timeline 전용 DB 기준 정보/로그 조회 | `selectors.py`, `views.py` |
+| `api.observer` | observer 전용 DB 기준 정보/로그 조회 | `selectors.py`, `views.py` |
 | `api.appstore` | 내부 앱, 댓글, 좋아요, cover | `models.py`, `services/*.py`, `views.py` |
 | `api.voc` | VOC 게시글과 답변 | `models.py`, `services/posts.py`, `views.py` |
 | `api.activity` | 사용자 활동 로그 조회 | `models.py`, `selectors.py`, `services/activity_logs.py` |
@@ -54,7 +54,7 @@
 | `/api/v1/assistant/` | `api.assistant` | `docs/api/assistant.md` |
 | `/api/v1/line-dashboard/` | `api.drone` | `docs/api/line-dashboard.md` |
 | `/api/v1/l3_spider/` | `api.l3_spider` | `docs/api/l3-spider.md` |
-| `/api/v1/timeline/` | `api.timeline` | `docs/api/timeline.md` |
+| `/api/v1/observer/` | `api.observer` | `docs/api/observer.md` |
 | `/api/v1/appstore/` | `api.appstore` | `docs/api/appstore.md` |
 | `/api/v1/voc/` | `api.voc` | `docs/api/voc.md` |
 | `/api/v1/activity/` | `api.activity` | `docs/api/activity-health.md` |

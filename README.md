@@ -75,7 +75,7 @@ make makemigrations-check
 | `/api/v1/emails/` | 메일함, 메일 조회/이동/삭제, OCR, RAG Outbox |
 | `/api/v1/assistant/` | RAG 기반 채팅 |
 | `/api/v1/line-dashboard/` | Drone SOP, 라인 대시보드, 알림 |
-| `/api/v1/timeline/` | 라인/설비/로그 조회 |
+| `/api/v1/observer/` | 라인/설비/로그 조회 |
 | `/api/v1/appstore/` | 내부 앱 등록/댓글/좋아요 |
 | `/api/v1/activity/` | 활동 로그 조회 |
 | `/api/v1/voc/` | VOC 게시글/답변 |

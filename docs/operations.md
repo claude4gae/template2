@@ -76,9 +76,11 @@ make makemigrations-check
 | --- | --- |
 | `ensure_dev_database` | dev 환경에서 Django 기본 DB와 필수 PostgreSQL extension 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
+| `seed_dummy_emails` | 로컬 개발용 더미 Email 데이터 생성 |
 | `load_m_tkin_prevent` | `m_tkin_prevent` incoming 파일 적재 |
 | `load_ctttm_workorder_list` | `ctttm_workorder_list` incoming 파일 적재 |
 | `load_ct_process_comment` | `ct_process_comment` incoming 파일 적재 |
+| `seed_drone_dummy_data` | 로컬 개발용 Drone SOP 더미 데이터 생성 |
 | `seed_drone_targets_from_file` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
 | `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
 | `purge_drone_sop` | Drone SOP 데이터 전체 삭제 또는 dry-run 확인 |
@@ -88,9 +90,11 @@ make makemigrations-check
 ```bash
 docker compose -f docker-compose.dev.yml exec -T api python manage.py ensure_dev_database
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy_emails
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_m_tkin_prevent
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ctttm_workorder_list
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ct_process_comment
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data --prefix DEMO --reset
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
 docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
@@ -283,5 +287,5 @@ npm run agent:audit:docs
 | Emails 수집 실패 | POP3 env, Airflow token, dummy mail endpoint 동작 |
 | RAG/Assistant 실패 | `ASSISTANT_*`, `RAG_*`, dummy RAG endpoint, permission group |
 | Drone 알림 실패 | SOP 수집 결과, target/channel/recipient 설정, Jira/Mail/Messenger env |
-| Timeline 조회 실패 | `TIMELINE_DB_*`, `TIMELINE_QUERY_DAYS`, 기준 정보 endpoint |
+| Observer 조회 실패 | `OBSERVER_DB_*`, `OBSERVER_QUERY_DAYS`, 기준 정보 endpoint |
 | 파일/이미지 실패 | MinIO env, bucket 접근, asset sequence |

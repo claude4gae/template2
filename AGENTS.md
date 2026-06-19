@@ -122,7 +122,7 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - `[assistant]`: assistant or RAG domain changes
 - `[emails]`: emails domain changes
 - `[drone]`: drone, inform, SOP, messenger, or Jira notification domain changes
-- `[timeline]`: timeline domain changes
+- `[observer]`: observer domain changes
 - `[line-dashboard]`: line dashboard domain changes
 - `[data-movement]`: data movement or Airflow data pipeline changes
 - `[pm-comparison]`: PM comparison domain changes

@@ -23,7 +23,7 @@
 | `docs/inventory.md` | 실제 backend API route, frontend route, model, command, env 색인 |
 | `docs/frontend.md` | React SPA 구조, route tree, feature facade, 상태 관리 원칙 |
 | `docs/backend.md` | Django app 구조, view/selector/service 책임, URL prefix, command |
-| `docs/data-model.md` | 주요 DB 모델, 저장소, 외부 timeline DB, 파일 저장소 |
+| `docs/data-model.md` | 주요 DB 모델, 저장소, 외부 observer DB, 파일 저장소 |
 | `docs/configuration.md` | env 파일, 설정 그룹, 로컬/운영 차이 |
 | `docs/api/README.md` | API 공통 호출 규칙, 인증 방식, 오류 규칙 |
 | `docs/api/*.md` | 모듈별 endpoint 계약 |
@@ -41,7 +41,7 @@
 | Emails | `docs/modules/emails.md` | `docs/api/emails.md` | `/emails/inbox`, `/emails/sent`, `/emails/members` |
 | Assistant/RAG | `docs/modules/assistant.md` | `docs/api/assistant.md` | `/assistant` |
 | Line Dashboard/Drone | `docs/modules/line-dashboard.md` | `docs/api/line-dashboard.md` | `/ESOP_Dashboard/**` |
-| Timeline | `docs/modules/timeline.md` | `docs/api/timeline.md` | `/timeline`, `/timeline/:eqpId` |
+| Observer | `docs/modules/observer.md` | `docs/api/observer.md` | `/observer`, `/observer/:eqpId` |
 | AppStore | `docs/modules/appstore.md` | `docs/api/appstore.md` | `/appstore` |
 | VOC | `docs/modules/voc.md` | `docs/api/voc.md` | `/voc` |
 | Activity/Health | `docs/modules/activity-health.md` | `docs/api/activity-health.md` | API only |

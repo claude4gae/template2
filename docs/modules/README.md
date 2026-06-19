@@ -11,7 +11,7 @@
 | Emails | `apps/web/src/features/emails` | `api.emails` | `docs/api/emails.md` | `Email`, `EmailAsset`, `EmailOutbox`, POP3, RAG, MinIO |
 | Assistant/RAG | `apps/web/src/features/assistant` | `api.assistant`, `api.rag` | `docs/api/assistant.md` | RAG, LLM, Account permission group |
 | Line Dashboard/Drone | `apps/web/src/features/line-dashboard` | `api.drone` | `docs/api/line-dashboard.md` | `DroneSOP`, target/channel/recipient/delivery, Jira/Mail/Messenger |
-| Timeline | `apps/web/src/features/timeline` | `api.timeline` | `docs/api/timeline.md` | Timeline DB, Drone log 일부 |
+| Observer | `apps/web/src/features/observer` | `api.observer` | `docs/api/observer.md` | Observer DB, Drone log 일부 |
 | AppStore | `apps/web/src/features/appstore` | `api.appstore` | `docs/api/appstore.md` | `AppStoreApp`, 댓글, 좋아요, cover image |
 | VOC | `apps/web/src/features/voc` | `api.voc` | `docs/api/voc.md` | `VocPost`, `VocReply`, ActivityLog |
 | Activity/Health | API only | `api.activity`, `api.health` | `docs/api/activity-health.md` | `ActivityLog`, runtime health |

@@ -36,7 +36,7 @@ Common은 여러 백엔드 모듈에서 공유하는 helper, middleware, 외부 
 | --- | --- |
 | request helper/token 검증 | Emails, Drone, Account |
 | ActivityLog helper/middleware | Account, Emails, Drone, VOC, Activity |
-| raw SQL/schema helper | Timeline, Drone table API |
+| raw SQL/schema helper | Observer, Drone table API |
 | storage helper | Emails |
 | Mail API/Messenger client | Drone, Emails |
 

@@ -19,7 +19,7 @@
 2. 화면은 feature-local hook/API client를 통해 `/api/v1/**` Django endpoint를 호출합니다.
 3. Django view는 인증, 요청 파싱, 응답 변환을 담당합니다.
 4. 읽기 로직은 selector, 쓰기/외부 호출/transaction은 service가 담당합니다.
-5. 데이터는 기본 PostgreSQL, timeline 전용 PostgreSQL, MinIO, 외부 시스템 또는 dummy 외부계에서 조회/저장됩니다.
+5. 데이터는 기본 PostgreSQL, observer 전용 PostgreSQL, MinIO, 외부 시스템 또는 dummy 외부계에서 조회/저장됩니다.
 
 ## 백엔드 모듈
 
@@ -31,7 +31,7 @@
 | `api.assistant` | RAG 기반 채팅 | RAG, LLM |
 | `api.rag` | 외부 RAG 서버 공통 client | RAG |
 | `api.drone` | Line Dashboard와 Drone SOP 알림 | 기본 DB, POP3, Jira, Mail API, Messenger |
-| `api.timeline` | 별도 timeline DB 조회 | timeline DB, 일부 Drone 데이터 |
+| `api.observer` | 별도 observer DB 조회 | observer DB, 일부 Drone 데이터 |
 | `api.appstore` | 내부 앱 등록/댓글/좋아요 | 기본 DB, cover image |
 | `api.voc` | VOC 게시판 | 기본 DB |
 | `api.activity` | ActivityLog 조회 | 기본 DB |
@@ -49,7 +49,7 @@
 | `emails` | 메일함과 메일 처리 | `/emails/inbox`, `/emails/sent`, `/emails/members` |
 | `assistant` | RAG 기반 채팅 | `/assistant` |
 | `line-dashboard` | Drone SOP/라인 대시보드 | `/ESOP_Dashboard/**` |
-| `timeline` | 설비/로그 타임라인 | `/timeline`, `/timeline/:eqpId` |
+| `observer` | 설비/로그 Observer | `/observer`, `/observer/:eqpId` |
 | `appstore` | 내부 앱 공유 | `/appstore` |
 | `voc` | VOC 게시판 | `/voc` |
 | `home` | 인증 후 홈 shell | `/` |
@@ -80,11 +80,11 @@
 3. Jira, Messenger, Mail 채널별 dispatch와 delivery 상태를 저장합니다.
 4. Line Dashboard 화면은 SOP 상태, 이력, 알림 설정을 조회/수정합니다.
 
-### Timeline 조회
+### Observer 조회
 
-1. Timeline 화면이 line, SDWT, 공정, 설비 조건을 선택합니다.
-2. API가 query를 정규화하고 timeline 전용 DB를 조회합니다.
-3. EQP, TIP, CTTTM, RACB, Drone 로그를 공통 timeline item 형태로 반환합니다.
+1. Observer 화면이 line, SDWT, 공정, 설비 조건을 선택합니다.
+2. API가 query를 정규화하고 observer 전용 DB를 조회합니다.
+3. EQP, TIP, CTTTM, RACB, Drone 로그를 공통 observer item 형태로 반환합니다.
 4. 프론트는 vis-timeline과 상세 패널에 변환된 로그를 표시합니다.
 
 ## 경계 규칙

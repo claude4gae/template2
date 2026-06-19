@@ -98,7 +98,7 @@ Content-Type: application/json
 | 분류 | 해당 모듈 |
 | --- | --- |
 | DB write | Account, Emails, Drone, AppStore, VOC |
-| 외부 read/search | Assistant, Timeline, Drone |
+| 외부 read/search | Assistant, Observer, Drone |
 | 외부 write/send | Emails RAG, Drone Jira/Mail/Messenger, Assistant LLM |
 | 파일/asset | Emails, AppStore |
 | ActivityLog | Account 일부 작업, Emails 이동/삭제, Drone table update, VOC |
@@ -111,7 +111,7 @@ Content-Type: application/json
 - `docs/api/assistant.md`
 - `docs/api/line-dashboard.md`
 - `docs/api/l3-spider.md`
-- `docs/api/timeline.md`
+- `docs/api/observer.md`
 - `docs/api/appstore.md`
 - `docs/api/voc.md`
 - `docs/api/activity-health.md`

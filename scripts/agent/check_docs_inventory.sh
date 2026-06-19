@@ -103,8 +103,8 @@ for route in \
   "/emails/members" \
   "/assistant" \
   "/ESOP_Dashboard" \
-  "/timeline" \
-  "/timeline/:eqpId" \
+  "/observer" \
+  "/observer/:eqpId" \
   "/appstore" \
   "/voc" \
   "/teamstaff"; do
@@ -137,7 +137,7 @@ echo "== Env group 색인 =="
 for env_group in \
   "DJANGO_*" \
   "DJANGO_DB_*" \
-  "TIMELINE_DB_*" \
+  "OBSERVER_DB_*" \
   "OIDC_*" \
   "ADFS_*" \
   "AIRFLOW_TRIGGER_TOKEN" \

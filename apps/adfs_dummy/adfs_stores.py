@@ -322,7 +322,7 @@ BASE_RAG_DOCS = [
         "index_name": PRIMARY_RAG_INDEX,
         "doc_id": "procedure-change",
         "title": "[더미] 공정 변경 보고 절차",
-        "content": "공정 변경 시 보고 대상, 타임라인, 승인 흐름을 정리한 더미 문서입니다.",
+        "content": "공정 변경 시 보고 대상, Observer, 승인 흐름을 정리한 더미 문서입니다.",
         "permission_groups": DEFAULT_PERMISSION_GROUPS,
         "metadata": {"department_code": "FAB-OPS", "source": "dummy-rag"},
     },
