@@ -728,6 +728,11 @@ def _collect_pm_dates(warnings: list[str], selection: dict[str, object] | None =
 
     if not selection or not selection.get("lineId") or not selection.get("eqpId"):
         return []
+    if selection.get("pmTimestamp"):
+        try:
+            return [_date_key(selection["pmTimestamp"])]
+        except (TypeError, ValueError):
+            return [str(selection["pmTimestamp"])]
 
     dates: set[str] = set()
     try:

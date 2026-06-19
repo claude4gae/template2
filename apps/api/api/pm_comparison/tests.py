@@ -459,6 +459,49 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(meta["recipeIds"], ["RCP1"])
         self.assertEqual(meta["traceParamNames"], [])
 
+    def test_selected_plain_meta_uses_direct_path_candidates(self) -> None:
+        """선택값이 있는 plain 메타는 sibling 전체 순회에 의존하지 않습니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for index in range(50):
+                (
+                    root
+                    / selectors.RAW_DIR_NAME
+                    / f"L_UNUSED_{index:02d}"
+                    / "EQP_UNUSED"
+                    / "BIN_UNUSED"
+                    / "2026-06-03 14:23:23"
+                ).mkdir(parents=True)
+            target = (
+                root
+                / selectors.RAW_DIR_NAME
+                / "L1"
+                / "EQP1"
+                / "BIN1"
+                / "2026-06-03 14:23:23"
+                / "trace"
+                / "type=ag"
+                / "ppid=PPID1"
+                / "recipe_id=RCP1"
+                / "priority=1"
+                / "trace_param_name=PRESSURE"
+            )
+            target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root), PM_COMPARISON_MAX_META_DIRS=8):
+                meta = services.get_meta(
+                    {
+                        "lineId": "L1",
+                        "eqpId": "EQP1",
+                        "fdcBin": "BIN1",
+                        "pmTimestamp": "2026-06-03",
+                    }
+                )
+
+        self.assertEqual(meta["ppids"], ["PPID1"])
+        self.assertEqual(meta["recipeIds"], ["RCP1"])
+
     def test_score_fallback_meta_options_are_scoped(self) -> None:
         """raw data가 없을 때 score fallback 메타도 선택값으로 좁혀야 합니다."""
 

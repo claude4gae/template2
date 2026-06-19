@@ -554,12 +554,8 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]
 
     options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
     visited = 0
-    try:
-        line_dirs = sorted(path for path in root.iterdir() if path.is_dir() and not _is_ignored_path(path))
-    except OSError:
-        return options
 
-    for line_dir in line_dirs:
+    for line_dir in _candidate_plain_dirs(root, "line_id", filters):
         if "=" in line_dir.name:
             continue
         options["line_id"].add(line_dir.name)
@@ -568,33 +564,21 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]
         visited += 1
         if visited >= max_dirs:
             break
-        try:
-            eqp_dirs = sorted(path for path in line_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
-        except OSError:
-            continue
-        for eqp_dir in eqp_dirs:
+        for eqp_dir in _candidate_plain_dirs(line_dir, "eqp_id", filters):
             options["eqp_id"].add(eqp_dir.name)
             if not _should_descend_for_key(filters, "eqp_id", eqp_dir.name):
                 continue
             visited += 1
             if visited >= max_dirs:
                 break
-            try:
-                chamber_dirs = sorted(path for path in eqp_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
-            except OSError:
-                continue
-            for chamber_dir in chamber_dirs:
+            for chamber_dir in _candidate_plain_dirs(eqp_dir, "fdc_bin", filters):
                 options["fdc_bin"].add(chamber_dir.name)
                 if not _should_descend_for_key(filters, "fdc_bin", chamber_dir.name):
                     continue
                 visited += 1
                 if visited >= max_dirs:
                     break
-                try:
-                    dt_dirs = sorted(path for path in chamber_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
-                except OSError:
-                    continue
-                for dt_dir in dt_dirs:
+                for dt_dir in _candidate_plain_dirs(chamber_dir, "dt", filters):
                     options["dt"].add(dt_dir.name)
                     if not _should_descend_for_key(filters, "dt", dt_dir.name):
                         continue
@@ -641,6 +625,35 @@ def _child_dirs(path: Path) -> list[Path]:
         return sorted(child for child in path.iterdir() if child.is_dir() and not _is_ignored_path(child))
     except OSError:
         return []
+
+
+def _candidate_plain_dirs(parent: Path, key: str, filters: dict[str, set[str]]) -> list[Path]:
+    """선택값이 있으면 해당 후보 디렉터리만 반환합니다."""
+
+    expected_values = filters.get(key)
+    if not expected_values:
+        return _child_dirs(parent)
+
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+    for expected in expected_values:
+        direct = parent / expected
+        if direct.is_dir() and not _is_ignored_path(direct):
+            candidates.append(direct)
+            seen.add(direct)
+        if key != "dt" or not (len(expected) == 10 and expected[4] == "-" and expected[7] == "-"):
+            continue
+        try:
+            children = parent.iterdir()
+        except OSError:
+            continue
+        for child in children:
+            if child in seen or not child.is_dir() or _is_ignored_path(child):
+                continue
+            if child.name.startswith(f"{expected} ") or child.name.startswith(f"{expected}T"):
+                candidates.append(child)
+                seen.add(child)
+    return candidates
 
 
 def _partition_dir_value(path: Path, key: str) -> str | None:
