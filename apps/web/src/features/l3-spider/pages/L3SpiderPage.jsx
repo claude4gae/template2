@@ -75,9 +75,12 @@ export function L3SpiderPage() {
   const filterCandidatesQuery = useL3SpiderFilterCandidates(
     selection, checkedEdsStepFromKey, checkedStepSeq, checkedPpid,
   )
-  const candidateEqcHighRiskBins = filterCandidatesQuery.isSuccess
-    ? (filterCandidatesQuery.data?.eqcHighRiskBins ?? {})
-    : null
+  const candidateEqcHighRiskBins = useMemo(
+    () => filterCandidatesQuery.isSuccess
+      ? (filterCandidatesQuery.data?.eqcHighRiskBins ?? {})
+      : null,
+    [filterCandidatesQuery.data?.eqcHighRiskBins, filterCandidatesQuery.isSuccess],
+  )
 
   // trellis 기준: EQPCH 선택 → bin별 subplots / Bin 선택 → eqc별 subplots
   const groupBy = analysisMode === "eqpch" ? "bin" : "eqc"

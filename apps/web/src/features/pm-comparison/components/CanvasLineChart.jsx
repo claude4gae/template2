@@ -74,7 +74,10 @@ export function CanvasLineChart({
   const [wrapRef, size] = useElementSize()
   const [hiddenKeys, setHiddenKeys] = useState(() => new Set())
   const heightClass = height <= 180 ? "h-[180px]" : "h-[240px]"
-  const series = Array.isArray(chart?.series) ? chart.series : []
+  const series = useMemo(
+    () => Array.isArray(chart?.series) ? chart.series : [],
+    [chart?.series],
+  )
   const visibleSeries = useMemo(
     () => series.filter((item) => !hiddenKeys.has(item.key)),
     [series, hiddenKeys],

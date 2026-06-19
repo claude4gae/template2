@@ -536,9 +536,18 @@ function TraceDetailWithLegend({ category, selectedKey, refPmDates, onClose }) {
   const queryRow    = paramName ? { itemName: paramName, traceSensor: paramName } : null
   const detailQuery = usePmSpiderDetailResult(category, queryRow, refPmDates)
   const traceLineChart = detailQuery.data?.trace?.lineChart
-  const shapeRows   = detailQuery.data?.trace?.shapeRows ?? []
-  const jitterRows  = detailQuery.data?.trace?.jitterRows ?? []
-  const trendRows   = detailQuery.data?.trace?.trendRows ?? []
+  const shapeRows = useMemo(
+    () => detailQuery.data?.trace?.shapeRows ?? [],
+    [detailQuery.data?.trace?.shapeRows],
+  )
+  const jitterRows = useMemo(
+    () => detailQuery.data?.trace?.jitterRows ?? [],
+    [detailQuery.data?.trace?.jitterRows],
+  )
+  const trendRows = useMemo(
+    () => detailQuery.data?.trace?.trendRows ?? [],
+    [detailQuery.data?.trace?.trendRows],
+  )
 
   const chSteps = useMemo(() => {
     const all = new Set([
