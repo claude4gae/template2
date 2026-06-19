@@ -614,25 +614,131 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]
                             "dt": dt_dir.name,
                             "data_source": "trace",
                         }
-                        try:
-                            trace_dirs = sorted(
-                                path for path in trace_root.rglob("*") if path.is_dir() and not _is_ignored_path(path)
-                            )
-                        except OSError:
-                            trace_dirs = []
-                        for trace_dir in trace_dirs:
-                            visited += 1
-                            partition = {**base_values, **parse_partition_values(trace_dir)}
-                            for key in ("type", "ppid", "recipe_id", "trace_param_name"):
-                                value = partition.get(key)
-                                if value and _matches_dependencies(partition, filters, RAW_OPTION_DEPENDENCIES, key):
-                                    options[key].add(value)
-                            if visited >= max_dirs:
-                                break
+                        visited = _scan_plain_trace_options(
+                            trace_root,
+                            max_dirs,
+                            visited,
+                            base_values,
+                            filters,
+                            options,
+                        )
+                        if visited >= max_dirs:
+                            break
+                if visited >= max_dirs:
+                    break
+            if visited >= max_dirs:
+                break
         if visited >= max_dirs:
             break
 
     return options
+
+
+def _child_dirs(path: Path) -> list[Path]:
+    """직계 하위 디렉터리만 정렬해서 반환합니다."""
+
+    try:
+        return sorted(child for child in path.iterdir() if child.is_dir() and not _is_ignored_path(child))
+    except OSError:
+        return []
+
+
+def _partition_dir_value(path: Path, key: str) -> str | None:
+    """partition 디렉터리명에서 값을 읽고 plain 이름도 보조로 허용합니다."""
+
+    value = parse_partition_values(path).get(key)
+    if value:
+        return value
+    if "=" not in path.name:
+        return path.name
+    return None
+
+
+def _add_plain_option(
+    options: dict[str, set[str]],
+    partition: dict[str, str],
+    filters: dict[str, set[str]],
+    key: str,
+) -> None:
+    """현재 partition이 dependency를 만족하면 옵션에 추가합니다."""
+
+    value = partition.get(key)
+    if value and _matches_dependencies(partition, filters, RAW_OPTION_DEPENDENCIES, key):
+        options[key].add(value)
+
+
+def _scan_plain_trace_options(
+    trace_root: Path,
+    max_dirs: int,
+    visited: int,
+    base_values: dict[str, str],
+    filters: dict[str, set[str]],
+    options: dict[str, set[str]],
+) -> int:
+    """plain trace layout을 필요한 계층까지만 순회합니다."""
+
+    for type_dir in _child_dirs(trace_root):
+        visited += 1
+        type_value = _partition_dir_value(type_dir, "type")
+        if not type_value:
+            continue
+        type_partition = {**base_values, "type": type_value}
+        _add_plain_option(options, type_partition, filters, "type")
+        if not _should_descend_for_key(filters, "type", type_value):
+            if visited >= max_dirs:
+                break
+            continue
+
+        for ppid_dir in _child_dirs(type_dir):
+            visited += 1
+            ppid_value = _partition_dir_value(ppid_dir, "ppid")
+            if not ppid_value:
+                continue
+            ppid_partition = {**type_partition, "ppid": ppid_value}
+            _add_plain_option(options, ppid_partition, filters, "ppid")
+            if not _should_descend_for_key(filters, "ppid", ppid_value):
+                if visited >= max_dirs:
+                    break
+                continue
+
+            for recipe_dir in _child_dirs(ppid_dir):
+                visited += 1
+                recipe_value = _partition_dir_value(recipe_dir, "recipe_id")
+                if not recipe_value:
+                    continue
+                recipe_partition = {**ppid_partition, "recipe_id": recipe_value}
+                _add_plain_option(options, recipe_partition, filters, "recipe_id")
+                if not _should_descend_for_key(filters, "recipe_id", recipe_value):
+                    if visited >= max_dirs:
+                        break
+                    continue
+                data_source_filters = filters.get("data_source")
+                if not data_source_filters or not _matches_filter_value("data_source", "trace", data_source_filters):
+                    continue
+
+                for priority_dir in _child_dirs(recipe_dir):
+                    visited += 1
+                    for trace_param_dir in _child_dirs(priority_dir):
+                        visited += 1
+                        trace_param_value = _partition_dir_value(trace_param_dir, "trace_param_name")
+                        if trace_param_value:
+                            trace_param_partition = {
+                                **recipe_partition,
+                                "data_source": "trace",
+                                "trace_param_name": trace_param_value,
+                            }
+                            _add_plain_option(options, trace_param_partition, filters, "trace_param_name")
+                            if visited >= max_dirs:
+                                break
+                    if visited >= max_dirs:
+                        break
+                if visited >= max_dirs:
+                    break
+            if visited >= max_dirs:
+                break
+        if visited >= max_dirs:
+            break
+    return visited
 
 
 def _scan_score_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]) -> dict[str, set[str]]:

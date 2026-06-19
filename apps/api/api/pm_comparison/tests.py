@@ -424,6 +424,41 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(meta["ppids"], [])
         self.assertEqual(meta["recipeIds"], [])
 
+    def test_ppid_recipe_meta_does_not_scan_trace_param_depth(self) -> None:
+        """PPID/Recipe 메타는 trace_param 하위 크기에 영향을 받지 않습니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            recipe_root = (
+                root
+                / selectors.RAW_DIR_NAME
+                / "L1"
+                / "EQP1"
+                / "BIN1"
+                / "2026-06-03 14:23:23"
+                / "trace"
+                / "type=ag"
+                / "ppid=PPID1"
+                / "recipe_id=RCP1"
+                / "priority=1"
+            )
+            for index in range(100):
+                (recipe_root / f"trace_param_name=PARAM_{index:03d}").mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root), PM_COMPARISON_MAX_META_DIRS=12):
+                meta = services.get_meta(
+                    {
+                        "lineId": "L1",
+                        "eqpId": "EQP1",
+                        "fdcBin": "BIN1",
+                        "pmTimestamp": "2026-06-03",
+                    }
+                )
+
+        self.assertEqual(meta["ppids"], ["PPID1"])
+        self.assertEqual(meta["recipeIds"], ["RCP1"])
+        self.assertEqual(meta["traceParamNames"], [])
+
     def test_score_fallback_meta_options_are_scoped(self) -> None:
         """raw data가 없을 때 score fallback 메타도 선택값으로 좁혀야 합니다."""
 
