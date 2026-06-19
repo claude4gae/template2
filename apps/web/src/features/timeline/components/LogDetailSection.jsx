@@ -3,7 +3,7 @@ import EqpDetail from "./EqpDetail";
 import TipDetail from "./TipDetail";
 import RacbDetail from "./RacbDetail";
 import CtttmDetail from "./CtttmDetail";
-import DroneDetail from "./DroneDetail";
+import EsopDetail from "./EsopDetail";
 
 /**
  * 선택된 로그 상세정보를 보여주는 컴포넌트
@@ -30,8 +30,8 @@ export default function LogDetailSection({ log }) {
         return <RacbDetail log={log} />;
       case "CTTTM":
         return <CtttmDetail log={log} />;
-      case "DRONE":
-        return <DroneDetail log={log} />;
+      case "ESOP":
+        return <EsopDetail log={log} />;
       default:
         return (
           <div className="col-span-2 text-muted-foreground py-2">

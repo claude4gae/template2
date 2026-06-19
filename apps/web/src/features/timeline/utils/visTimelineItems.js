@@ -3,6 +3,11 @@ import { getContinuousRangeEnd } from "./logs";
 
 const FALLBACK_CLASS = "timeline-color-fallback";
 
+function getItemLabel(logType, log) {
+  if (logType === "ESOP") return log.lotId || log.eventType;
+  return log.eventType;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -43,7 +48,7 @@ export function processData(logType, data, makeRangeContinuous = false) {
       FALLBACK_CLASS;
     const labelClass = `timeline-item-label ${typeClass}`;
     const content = `<span class="${labelClass}">${escapeHtml(
-      log.eventType
+      getItemLabel(logType, log)
     )}</span>`;
 
     return {

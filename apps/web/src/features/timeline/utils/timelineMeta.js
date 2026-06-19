@@ -34,8 +34,8 @@ export const groupConfig = {
       NSP: "timeline-color-ctttm-nsp",
     },
   },
-  DRONE: {
-    defaultClass: "timeline-color-drone",
+  ESOP: {
+    defaultClass: "timeline-color-esop",
     stateClasses: {},
   },
 };

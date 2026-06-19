@@ -3,7 +3,7 @@ export const DATA_TYPES = {
   TIP: "TIP",
   RACB: "RACB",
   CTTTM: "CTTTM",
-  DRONE: "DRONE",
+  ESOP: "ESOP",
 };
 
 export const DEFAULT_TYPE_FILTERS = {
@@ -11,7 +11,7 @@ export const DEFAULT_TYPE_FILTERS = {
   [DATA_TYPES.TIP]: true,
   [DATA_TYPES.RACB]: true,
   [DATA_TYPES.CTTTM]: true,
-  [DATA_TYPES.DRONE]: true,
+  [DATA_TYPES.ESOP]: true,
 };
 
 export const DEFAULT_LOG_QUERY_OPTIONS = {};

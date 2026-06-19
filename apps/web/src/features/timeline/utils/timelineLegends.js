@@ -18,8 +18,8 @@ export const timelineLegends = {
     { key: "ALARM", className: "timeline-color-racb-alarm", label: "ALARM" },
     { key: "WARN", className: "timeline-color-racb-warn", label: "WARN" },
   ],
-  DRONE: [
-    { key: "DRONE", className: "timeline-color-drone", label: "DRONE" },
+  ESOP: [
+    { key: "ESOP", className: "timeline-color-esop", label: "ESOP" },
   ],
 };
 

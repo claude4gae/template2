@@ -17,7 +17,7 @@
 | L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `summary`, `data` |
 | FDC Trend | `/api/v1/fdc-trend/` | `apps/api/api/fdc_trend/urls.py` | `hard-spec/meta`, `hard-spec/recommendations` |
 | PM SPIDER | `/api/v1/pm-comparison/` | `apps/api/api/pm_comparison/urls.py` | `meta`, `compare` |
-| Timeline | `/api/v1/timeline/` | `apps/api/api/timeline/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/drone` |
+| Timeline | `/api/v1/timeline/` | `apps/api/api/timeline/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/esop` |
 | AppStore | `/api/v1/appstore/` | `apps/api/api/appstore/urls.py` | `apps`, `apps/<app_id>`, `apps/<app_id>/cover`, `apps/<app_id>/like`, `apps/<app_id>/view`, `apps/<app_id>/comments`, `apps/<app_id>/comments/<comment_id>`, `apps/<app_id>/comments/<comment_id>/like` |
 | VOC | `/api/v1/voc/` | `apps/api/api/voc/urls.py` | `posts`, `posts/<post_id>`, `posts/<post_id>/replies` |
 | Activity | `/api/v1/activity/` | `apps/api/api/activity/urls.py` | `logs` |

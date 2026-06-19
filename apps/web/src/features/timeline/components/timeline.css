@@ -51,7 +51,7 @@
   --timeline-racb-warn: var(--timeline-palette-caution);
   --timeline-ctttm-cbm: var(--timeline-palette-info);
   --timeline-ctttm-nsp: var(--timeline-palette-violet);
-  --timeline-drone: var(--timeline-palette-teal);
+  --timeline-esop: var(--timeline-palette-teal);
   --timeline-foreground-strong: var(--primary-foreground);
 }
 
@@ -242,10 +242,10 @@ html.dark {
   color: var(--timeline-foreground-strong);
 }
 
-.timeline .vis-item.timeline-color-drone,
-.timeline-legend-dot.timeline-color-drone {
-  background-color: var(--timeline-drone) !important;
-  border-color: var(--timeline-drone) !important;
+.timeline .vis-item.timeline-color-esop,
+.timeline-legend-dot.timeline-color-esop {
+  background-color: var(--timeline-esop) !important;
+  border-color: var(--timeline-esop) !important;
   color: var(--timeline-text);
 }
 

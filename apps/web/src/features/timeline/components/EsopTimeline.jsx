@@ -7,38 +7,38 @@ import { processData } from "../utils/visTimelineItems";
 import { makeGroupLabel } from "../utils/groupLabel";
 import { timelineLegends } from "../utils/timelineLegends";
 
-const DRONE_GROUP = {
-  id: "DRONE",
-  content: makeGroupLabel("DRONE", "DRONE"),
+const ESOP_GROUP = {
+  id: "ESOP",
+  content: makeGroupLabel("ESOP", "ESOP"),
   className: "custom-group-label",
   order: 1,
 };
 
-export default function DroneTimeline({
+export default function EsopTimeline({
   range,
   showLegend,
   showTimeAxis = false,
-  droneLogs = [],
+  esopLogs = [],
 }) {
-  const items = processData("DRONE", droneLogs);
+  const items = processData("ESOP", esopLogs);
 
   const options = buildFixedHeightOptions(range, 76);
 
-  if (droneLogs.length === 0) {
+  if (esopLogs.length === 0) {
     return (
-      <TimelineEmptyState title="🚁 DRONE" message="DRONE 로그가 없습니다" />
+      <TimelineEmptyState title="🚁 ESOP" message="ESOP 로그가 없습니다" />
     );
   }
 
   return (
     <BaseTimeline
-      groups={[DRONE_GROUP]}
+      groups={[ESOP_GROUP]}
       items={items}
       options={options}
-      title="🚁 DRONE"
+      title="🚁 ESOP"
       showTimeAxis={showTimeAxis}
       headerExtra={
-        showLegend ? <TimelineLegend items={timelineLegends.DRONE} /> : null
+        showLegend ? <TimelineLegend items={timelineLegends.ESOP} /> : null
       }
     />
   );

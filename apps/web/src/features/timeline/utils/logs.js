@@ -94,7 +94,7 @@ export function mergeLogsByTime(logsByType = {}) {
     tipLogs = [],
     ctttmLogs = [],
     racbLogs = [],
-    droneLogs = [],
+    esopLogs = [],
   } = logsByType;
 
   return [
@@ -102,7 +102,7 @@ export function mergeLogsByTime(logsByType = {}) {
     ...tipLogs,
     ...ctttmLogs,
     ...racbLogs,
-    ...droneLogs,
+    ...esopLogs,
   ]
     .filter((log) => log && log.eventTime)
     .sort(

@@ -443,15 +443,15 @@ class TimelineRacbLogsView(_TimelineLogsByTypeView):
     log_key = "racb"
 
 
-class TimelineDroneLogsView(_TimelineLogsByTypeView):
-    """DRONE 타입 로그만 반환합니다."""
+class TimelineEsopLogsView(_TimelineLogsByTypeView):
+    """ESOP 타입 로그만 반환합니다."""
 
-    log_key = "drone"
+    log_key = "esop"
 
 
 __all__ = [
     "TimelineCtttmLogsView",
-    "TimelineDroneLogsView",
+    "TimelineEsopLogsView",
     "TimelineEquipmentInfoView",
     "TimelineEqpLogsView",
     "TimelineEquipmentsView",

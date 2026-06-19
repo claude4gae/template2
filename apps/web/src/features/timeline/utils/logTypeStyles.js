@@ -6,7 +6,7 @@ export const logTypeBadgeClasses = {
   TIP: "bg-accent/20 text-accent-foreground",
   RACB: "bg-destructive/10 text-destructive",
   CTTTM: "bg-secondary/20 text-foreground",
-  DRONE: "bg-muted text-foreground",
+  ESOP: "bg-muted text-foreground",
 };
 
 export const getLogTypeBadgeClass = (logType) =>

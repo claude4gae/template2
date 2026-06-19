@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
+import json
 import re
 from typing import Dict, List, Sequence
 
@@ -623,7 +624,7 @@ def _fetch_racb_logs(
 
 
 # =============================================================================
-# 기본 DB Drone 로그 조회
+# 기본 DB ESOP 로그 조회
 # =============================================================================
 
 
@@ -638,8 +639,45 @@ def _unique_sequence(values: Sequence[str]) -> List[str]:
     ]
 
 
-def _build_drone_chamber_filters(eqp_id: str) -> tuple[str, str, List[object]]:
-    """Drone 조회용 기본 설비 ID와 chamber 조건을 구성합니다."""
+def _normalize_esop_defect_maps(value: object) -> List[Dict[str, str]]:
+    """ESOP defect_url 저장값을 화면용 링크 목록으로 정규화합니다."""
+
+    if not value:
+        return []
+
+    entries: object
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        try:
+            entries = json.loads(raw)
+        except json.JSONDecodeError:
+            return [{"label": "Defect Map", "url": raw}] if raw.startswith("http") else []
+    else:
+        entries = value
+
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return []
+
+    maps: List[Dict[str, str]] = []
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get("map_url") or entry.get("url") or "").strip()
+        if not url:
+            continue
+        label = str(
+            entry.get("label") or entry.get("step_seq") or f"Defect Map {index}"
+        ).strip()
+        maps.append({"label": label or f"Defect Map {index}", "url": url})
+    return maps
+
+
+def _build_esop_chamber_filters(eqp_id: str) -> tuple[str, str, List[object]]:
+    """ESOP 조회용 기본 설비 ID와 chamber 조건을 구성합니다."""
 
     if "-" not in eqp_id:
         return eqp_id, "", []
@@ -658,14 +696,14 @@ def _build_drone_chamber_filters(eqp_id: str) -> tuple[str, str, List[object]]:
     )
 
 
-def _fetch_drone_logs(
+def _fetch_esop_logs(
     *,
     eqp_id: str,
     start_at: object | None = None,
     end_at: object | None = None,
     limit: int | None = None,
 ) -> List[Dict[str, object]]:
-    base_eqp, match_clause, match_params = _build_drone_chamber_filters(eqp_id)
+    base_eqp, match_clause, match_params = _build_esop_chamber_filters(eqp_id)
     time_clause, time_params = _build_time_clause(
         "sop.created_at",
         start_at=start_at,
@@ -679,11 +717,14 @@ def _fetch_drone_logs(
             sop.id as id,
             sop.sample_type as event_type,
             sop.created_at as event_time,
-            sop.user_sdwt_prod as operator,
+            sop.knox_id as operator,
             sop.status as status,
             sop.comment as comment,
             sop.line_id as line_id,
-            sop.eqp_id as eqp_id
+            sop.eqp_id as eqp_id,
+            sop.chamber_ids as chamber_ids,
+            sop.lot_id as lot_id,
+            sop.defect_url as defect_url
         from drone_sop as sop
         where {time_clause}
           and upper(sop.eqp_id) = %s
@@ -697,7 +738,7 @@ def _fetch_drone_logs(
     return [
         {
             "id": row.get("id"),
-            "logType": "DRONE",
+            "logType": "ESOP",
             "eventType": row.get("event_type"),
             "eventTime": row.get("event_time"),
             "operator": row.get("operator"),
@@ -705,6 +746,9 @@ def _fetch_drone_logs(
             "comment": row.get("comment"),
             "lineId": row.get("line_id"),
             "eqpId": row.get("eqp_id"),
+            "eqpCb": f"{row.get('eqp_id') or '-'}-{row.get('chamber_ids') or '-'}",
+            "lotId": row.get("lot_id"),
+            "defectMaps": _normalize_esop_defect_maps(row.get("defect_url")),
         }
         for row in rows
     ]
@@ -735,14 +779,14 @@ TIMELINE_LOG_FETCHERS: Dict[str, LogFetcher] = {
         end_at=end_at,
         limit=limit,
     ),
-    "drone": lambda eqp_key, start_at, end_at, limit: _fetch_drone_logs(
+    "esop": lambda eqp_key, start_at, end_at, limit: _fetch_esop_logs(
         eqp_id=eqp_key,
         start_at=start_at,
         end_at=end_at,
         limit=limit,
     ),
 }
-TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "drone")
+TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "esop")
 
 
 def _fetch_logs_by_type_normalized(

@@ -3,7 +3,7 @@ import { useEqpLogs } from "./useEqpLogs";
 import { useTipLogs } from "./useTipLogs";
 import { useCtttmLogs } from "./useCtttmLogs";
 import { useRacbLogs } from "./useRacbLogs";
-import { useDroneLogs } from "./useDroneLogs";
+import { useEsopLogs } from "./useEsopLogs";
 import {
   DEFAULT_LOG_QUERY_OPTIONS,
   DEFAULT_TYPE_FILTERS,
@@ -38,10 +38,10 @@ export function useTimelineLogs(
     logQueryOptions,
     { enabled: enabledTypes.RACB }
   );
-  const droneQuery = useDroneLogs(
+  const esopQuery = useEsopLogs(
     eqpId,
     logQueryOptions,
-    { enabled: enabledTypes.DRONE }
+    { enabled: enabledTypes.ESOP }
   );
 
   const logsLoading =
@@ -49,7 +49,7 @@ export function useTimelineLogs(
     (enabledTypes.TIP && tipQuery.isLoading) ||
     (enabledTypes.CTTTM && ctttmQuery.isLoading) ||
     (enabledTypes.RACB && racbQuery.isLoading) ||
-    (enabledTypes.DRONE && droneQuery.isLoading);
+    (enabledTypes.ESOP && esopQuery.isLoading);
 
   // 정렬과 duration 계산은 UI 토글마다 반복되지 않도록 memoized 상태로 유지합니다.
   const logsWithDuration = useMemo(
@@ -58,14 +58,14 @@ export function useTimelineLogs(
       const tipLogs = enabledTypes.TIP ? tipQuery.data ?? [] : [];
       const ctttmLogs = enabledTypes.CTTTM ? ctttmQuery.data ?? [] : [];
       const racbLogs = enabledTypes.RACB ? racbQuery.data ?? [] : [];
-      const droneLogs = enabledTypes.DRONE ? droneQuery.data ?? [] : [];
+      const esopLogs = enabledTypes.ESOP ? esopQuery.data ?? [] : [];
 
       return {
         eqpLogs: addDurationToLogs(eqpLogs, "EQP"),
         tipLogs: addDurationToLogs(tipLogs, "TIP"),
         ctttmLogs,
         racbLogs,
-        droneLogs,
+        esopLogs,
       };
     },
     [
@@ -73,12 +73,12 @@ export function useTimelineLogs(
       enabledTypes.TIP,
       enabledTypes.CTTTM,
       enabledTypes.RACB,
-      enabledTypes.DRONE,
+      enabledTypes.ESOP,
       eqpQuery.data,
       tipQuery.data,
       ctttmQuery.data,
       racbQuery.data,
-      droneQuery.data,
+      esopQuery.data,
     ]
   );
 
@@ -89,7 +89,7 @@ export function useTimelineLogs(
         { type: "TIP", enabled: enabledTypes.TIP, query: tipQuery },
         { type: "CTTTM", enabled: enabledTypes.CTTTM, query: ctttmQuery },
         { type: "RACB", enabled: enabledTypes.RACB, query: racbQuery },
-        { type: "DRONE", enabled: enabledTypes.DRONE, query: droneQuery },
+        { type: "ESOP", enabled: enabledTypes.ESOP, query: esopQuery },
       ]
         .filter(({ enabled, query }) => enabled && query.isError)
         .map(({ type, query }) => ({
@@ -105,12 +105,12 @@ export function useTimelineLogs(
       enabledTypes.TIP,
       enabledTypes.CTTTM,
       enabledTypes.RACB,
-      enabledTypes.DRONE,
+      enabledTypes.ESOP,
       eqpQuery,
       tipQuery,
       ctttmQuery,
       racbQuery,
-      droneQuery,
+      esopQuery,
     ]
   );
 

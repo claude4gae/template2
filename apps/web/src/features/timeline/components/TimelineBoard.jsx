@@ -3,7 +3,7 @@ import EqpTimeline from "./EqpTimeline";
 import TipTimeline from "./TipTimeline";
 import CtttmTimeline from "./CtttmTimeline";
 import RacbTimeline from "./RacbTimeline";
-import DroneTimeline from "./DroneTimeline";
+import EsopTimeline from "./EsopTimeline";
 import { useTimelineRange } from "../hooks/useTimelineRange";
 import { filterTipLogsByGroups } from "../utils/tipUtils";
 
@@ -14,7 +14,7 @@ export default function TimelineBoard({
   tipLogs = [],
   ctttmLogs = [],
   racbLogs = [],
-  droneLogs = [],
+  esopLogs = [],
   typeFilters,
 }) {
   const visibleTipLogs = filterTipLogsByGroups(tipLogs, selectedTipGroups);
@@ -24,7 +24,7 @@ export default function TimelineBoard({
     ...(typeFilters?.TIP ? visibleTipLogs : []),
     ...(typeFilters?.CTTTM ? ctttmLogs : []),
     ...(typeFilters?.RACB ? racbLogs : []),
-    ...(typeFilters?.DRONE ? droneLogs : []),
+    ...(typeFilters?.ESOP ? esopLogs : []),
   ];
 
   const range = useTimelineRange(visibleLogs);
@@ -84,13 +84,13 @@ export default function TimelineBoard({
           />
         )}
 
-        {/* DRONE 타임라인 */}
-        {typeFilters?.DRONE && (
-          <DroneTimeline
+        {/* ESOP 타임라인 */}
+        {typeFilters?.ESOP && (
+          <EsopTimeline
             range={range}
             showLegend={showLegend}
             showTimeAxis={true}
-            droneLogs={droneLogs}
+            esopLogs={esopLogs}
           />
         )}
       </div>

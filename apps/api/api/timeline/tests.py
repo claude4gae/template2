@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -419,28 +420,28 @@ class TimelineEndpointTests(TestCase):
         )
         self.assertIn("upper(eqp_cb) = %s", fetch_all.call_args.args[0])
 
-    def test_timeline_drone_logs_returns_results(self) -> None:
+    def test_timeline_esop_logs_returns_results(self) -> None:
         with patch(
             f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-drone"),
+                reverse("timeline-logs-esop"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
-        self.assert_log_selector_called(selector, log_key="drone")
+        self.assert_log_selector_called(selector, log_key="esop")
 
-    def test_timeline_drone_selector_uses_case_insensitive_eqp_filter(self) -> None:
+    def test_timeline_esop_selector_uses_case_insensitive_eqp_filter(self) -> None:
         with patch(
             f"{TIMELINE_SELECTORS}._fetch_all_on_default",
             return_value=[],
         ) as fetch_all:
             logs = selectors.get_logs_by_type(
                 eqp_id="eqpalpha",
-                log_key="drone",
+                log_key="esop",
                 start_at="2026-01-01T00:00:00",
                 limit=20,
             )
@@ -449,3 +450,44 @@ class TimelineEndpointTests(TestCase):
         self.assertEqual(logs, [])
         self.assertIn("upper(sop.eqp_id) = %s", query)
         self.assertEqual(params, ["2026-01-01T00:00:00", "EQPALPHA", 20])
+
+    def test_timeline_esop_selector_maps_log_type_to_esop(self) -> None:
+        with patch(
+            f"{TIMELINE_SELECTORS}._fetch_all_on_default",
+            return_value=[
+                {
+                    "id": 1,
+                    "event_type": "AUTO",
+                    "event_time": "2026-01-01T00:00:00",
+                    "operator": "KNOX01",
+                    "status": "DONE",
+                    "comment": "SOP done",
+                    "line_id": "LINE-A",
+                    "eqp_id": "EQP-ALPHA",
+                    "chamber_ids": "1",
+                    "lot_id": "LOT-1",
+                    "defect_url": json.dumps(
+                        [
+                            {
+                                "label": "ST001",
+                                "map_url": "https://example.com/defect-map",
+                            }
+                        ]
+                    ),
+                }
+            ],
+        ):
+            logs = selectors.get_logs_by_type(
+                eqp_id="EQP-ALPHA",
+                log_key="esop",
+            )
+
+        self.assertEqual(logs[0]["logType"], "ESOP")
+        self.assertEqual(logs[0]["operator"], "KNOX01")
+        self.assertEqual(logs[0]["eqpId"], "EQP-ALPHA")
+        self.assertEqual(logs[0]["eqpCb"], "EQP-ALPHA-1")
+        self.assertEqual(logs[0]["lotId"], "LOT-1")
+        self.assertEqual(
+            logs[0]["defectMaps"],
+            [{"label": "ST001", "url": "https://example.com/defect-map"}],
+        )
