@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import json
 import re
 from typing import Dict, List, Sequence
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.db import connections
@@ -639,7 +640,82 @@ def _unique_sequence(values: Sequence[str]) -> List[str]:
     ]
 
 
-def _normalize_esop_defect_maps(value: object) -> List[Dict[str, str]]:
+DEFECT_IMAGE_PATH = "/map/api/map-image/v3/defect-map"
+DEFECT_IMAGE_STATIC_PARAMS = {
+    "profileid": "DEFAULT",
+    "themeid": "DEFAULT",
+    "width": "500",
+    "height": "500",
+    "site": "GH",
+    "targetDB": "APP",
+    "useCache": "true",
+    "includeCoordinate": "false",
+}
+
+
+def _to_http_url(value: object) -> str:
+    """URL 값에 프로토콜이 없으면 https 기준 URL로 정규화합니다."""
+
+    if value is None:
+        return ""
+    url = str(value).strip()
+    if not url:
+        return ""
+    if re.match(r"^https?://", url, flags=re.IGNORECASE):
+        return url
+    return f"https://{url}"
+
+
+def _normalize_defect_image_row(value: object) -> int | None:
+    """defect map 이미지 행 번호를 정수로 정규화합니다."""
+
+    try:
+        selected_row = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return selected_row if selected_row >= 0 else None
+
+
+def _build_esop_defect_image_urls(entry: Dict[str, object], map_url: str) -> List[str]:
+    """ESOP defect_url JSON에서 defect map 이미지 URL 목록을 생성합니다."""
+
+    raw_image_urls = entry.get("image_urls")
+    if isinstance(raw_image_urls, list):
+        image_urls = [_to_http_url(url) for url in raw_image_urls]
+        return [url for url in image_urls if url]
+
+    map_file = str(entry.get("map_file") or "").strip()
+    raw_rows = entry.get("image_rows")
+    if raw_rows is None:
+        raw_rows = entry.get("images_rows")
+    if not map_url or not map_file or not isinstance(raw_rows, list):
+        return []
+
+    match = re.match(r"^(https?://[^/]+)", map_url, flags=re.IGNORECASE)
+    if not match:
+        return []
+
+    origin = match.group(1)
+    seen_rows: set[int] = set()
+    image_urls: List[str] = []
+    for raw_row in raw_rows:
+        selected_row = _normalize_defect_image_row(raw_row)
+        if selected_row is None or selected_row in seen_rows:
+            continue
+        seen_rows.add(selected_row)
+
+        params = {
+            "file": map_file,
+            "selected_row": str(selected_row),
+            **DEFECT_IMAGE_STATIC_PARAMS,
+        }
+        query = urlencode(params)
+        image_urls.append(f"{origin}{DEFECT_IMAGE_PATH}?{query}")
+
+    return image_urls
+
+
+def _normalize_esop_defect_maps(value: object) -> List[Dict[str, object]]:
     """ESOP defect_url 저장값을 화면용 링크 목록으로 정규화합니다."""
 
     if not value:
@@ -653,7 +729,9 @@ def _normalize_esop_defect_maps(value: object) -> List[Dict[str, str]]:
         try:
             entries = json.loads(raw)
         except json.JSONDecodeError:
-            return [{"label": "Defect Map", "url": raw}] if raw.startswith("http") else []
+            if not raw.startswith("http"):
+                return []
+            return [{"label": "Defect Map", "url": raw, "imageUrls": []}]
     else:
         entries = value
 
@@ -662,17 +740,23 @@ def _normalize_esop_defect_maps(value: object) -> List[Dict[str, str]]:
     if not isinstance(entries, list):
         return []
 
-    maps: List[Dict[str, str]] = []
+    maps: List[Dict[str, object]] = []
     for index, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
             continue
-        url = str(entry.get("map_url") or entry.get("url") or "").strip()
+        url = _to_http_url(entry.get("map_url") or entry.get("url"))
         if not url:
             continue
         label = str(
             entry.get("label") or entry.get("step_seq") or f"Defect Map {index}"
         ).strip()
-        maps.append({"label": label or f"Defect Map {index}", "url": url})
+        maps.append(
+            {
+                "label": label or f"Defect Map {index}",
+                "url": url,
+                "imageUrls": _build_esop_defect_image_urls(entry, url),
+            }
+        )
     return maps
 
 

@@ -471,6 +471,8 @@ class TimelineEndpointTests(TestCase):
                             {
                                 "label": "ST001",
                                 "map_url": "https://example.com/defect-map",
+                                "map_file": "MAP001.png",
+                                "image_rows": [0, 1, 1, -1, "bad"],
                             }
                         ]
                     ),
@@ -487,7 +489,22 @@ class TimelineEndpointTests(TestCase):
         self.assertEqual(logs[0]["eqpId"], "EQP-ALPHA")
         self.assertEqual(logs[0]["eqpCb"], "EQP-ALPHA-1")
         self.assertEqual(logs[0]["lotId"], "LOT-1")
+        image_url_base = (
+            "https://example.com/map/api/map-image/v3/defect-map"
+            "?file=MAP001.png&selected_row={row}&profileid=DEFAULT&themeid=DEFAULT"
+            "&width=500&height=500&site=GH&targetDB=APP&useCache=true"
+            "&includeCoordinate=false"
+        )
         self.assertEqual(
             logs[0]["defectMaps"],
-            [{"label": "ST001", "url": "https://example.com/defect-map"}],
+            [
+                {
+                    "label": "ST001",
+                    "url": "https://example.com/defect-map",
+                    "imageUrls": [
+                        image_url_base.format(row=0),
+                        image_url_base.format(row=1),
+                    ],
+                }
+            ],
         )
