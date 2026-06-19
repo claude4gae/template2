@@ -24,9 +24,11 @@ export const EMPTY_SUMMARY = {
   edsStepPpids: {},
   stepPpids: {},
   ppidEqcs: {},
+  ppidHighRiskEqcs: {},
   ppidBins: {},
   eqcBins: {},
   eqcAnomalyBins: {},
+  eqcHighRiskBins: {},
   bins: [],
   anomalies: [],
 }

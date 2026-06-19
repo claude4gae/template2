@@ -298,7 +298,7 @@ def get_meta() -> dict[str, object]:
 def get_summary(selection: dict[str, object]) -> dict[str, object]:
     """선택 조건의 이상감지 요약 정보를 반환합니다."""
 
-    empty = {"stats": _empty_stats(), "edsStepSeqs": {}, "edsStepPpids": {}, "stepPpids": {}, "ppidEqcs": {}, "ppidBins": {}, "eqcBins": {}, "eqcAnomalyBins": {}, "bins": [], "anomalies": []}
+    empty = {"stats": _empty_stats(), "edsStepSeqs": {}, "edsStepPpids": {}, "stepPpids": {}, "ppidEqcs": {}, "ppidHighRiskEqcs": {}, "ppidBins": {}, "eqcBins": {}, "eqcAnomalyBins": {}, "eqcHighRiskBins": {}, "bins": [], "anomalies": []}
     if not _has_required_selection(selection):
         return empty
 
@@ -375,6 +375,18 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
             for ppid, group in pairs.groupby("ppid", sort=True)
         }
 
+    ppid_high_risk_eqcs: dict[str, list[str]] = {}
+    if {"ppid", "eqc", "display_status"}.issubset(merged.columns):
+        high_risk_pairs = (
+            merged.loc[high_risk_mask, ["ppid", "eqc"]]
+            .drop_duplicates()
+            .sort_values(["ppid", "eqc"])
+        )
+        ppid_high_risk_eqcs = {
+            str(ppid): sorted(group["eqc"].dropna().astype(str).tolist())
+            for ppid, group in high_risk_pairs.groupby("ppid", sort=True)
+        }
+
     ppid_bins: dict[str, list[str]] = {}
     if {"ppid", "bin_name"}.issubset(merged.columns):
         pairs = merged[["ppid", "bin_name"]].drop_duplicates().sort_values(["ppid", "bin_name"])
@@ -403,6 +415,18 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
             for eqc, group in anomaly_pairs.groupby("eqc", sort=True)
         }
 
+    eqc_high_risk_bins: dict[str, list[str]] = {}
+    if {"eqc", "bin_name", "display_status"}.issubset(merged.columns):
+        high_risk_bin_pairs = (
+            merged.loc[high_risk_mask, ["eqc", "bin_name"]]
+            .drop_duplicates()
+            .sort_values(["eqc", "bin_name"])
+        )
+        eqc_high_risk_bins = {
+            str(eqc): sorted(group["bin_name"].dropna().astype(str).tolist())
+            for eqc, group in high_risk_bin_pairs.groupby("eqc", sort=True)
+        }
+
     bins = (
         sorted(merged["bin_name"].dropna().astype(str).unique().tolist())
         if "bin_name" in merged.columns
@@ -414,9 +438,11 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
         "edsStepPpids": eds_step_ppids,
         "stepPpids": step_ppids,
         "ppidEqcs": ppid_eqcs,
+        "ppidHighRiskEqcs": ppid_high_risk_eqcs,
         "ppidBins": ppid_bins,
         "eqcBins": eqc_bins,
         "eqcAnomalyBins": eqc_anomaly_bins,
+        "eqcHighRiskBins": eqc_high_risk_bins,
         "bins": bins,
         "anomalies": anomalies,
     }

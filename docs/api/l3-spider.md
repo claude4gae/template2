@@ -36,6 +36,15 @@ L3 Spider API는 read-only mount된 `daily_anomaly` Parquet 파일을 조회해 
 | `POST` | `summary` | 선택 조건 기준 통계, step/PPID, bin, High Risk 목록을 반환 |
 | `POST` | `data` | 선택 조건과 차트 필터 기준 Plotly 표시용 row 목록을 반환 |
 
+## Summary Response 주요 필드
+
+| 필드 | 설명 |
+| --- | --- |
+| `ppidEqcs` | PPID별 전체 EQPCH 후보 |
+| `ppidHighRiskEqcs` | PPID별 High Risk가 발생한 EQPCH 후보. EQPCH 선택 패널은 이 값을 사용 |
+| `eqcAnomalyBins` | EQPCH별 Warning 또는 High Risk가 발생한 bin 후보 |
+| `eqcHighRiskBins` | EQPCH별 High Risk가 발생한 bin 후보. EQPCH 선택 패널의 숫자 hint는 이 값의 개수를 사용 |
+
 ## Request Body
 
 `summary`와 `data`는 아래 기본 선택값을 사용합니다.

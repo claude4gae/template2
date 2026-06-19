@@ -126,10 +126,10 @@ export function L3SpiderPage() {
           <L3SpiderFilterPanel
             edsStepSeqs={summary.edsStepSeqs ?? {}}
             edsStepPpids={summary.edsStepPpids ?? {}}
-            ppidEqcs={summary.ppidEqcs ?? {}}
+            ppidHighRiskEqcs={summary.ppidHighRiskEqcs ?? {}}
             ppidBins={summary.ppidBins ?? {}}
-            eqcBins={summary.eqcBins ?? {}}
             eqcAnomalyBins={summary.eqcAnomalyBins ?? {}}
+            eqcHighRiskBins={summary.eqcHighRiskBins ?? {}}
             checkedEdsStep={checkedEdsStep}
             checkedStep={checkedStep}
             checkedPpid={checkedPpid}

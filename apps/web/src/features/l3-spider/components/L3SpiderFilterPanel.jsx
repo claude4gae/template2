@@ -102,9 +102,9 @@ function applyQuery(items, query) {
 export function L3SpiderFilterPanel({
   edsStepSeqs,
   edsStepPpids,
-  ppidEqcs,
-  eqcBins,
+  ppidHighRiskEqcs,
   eqcAnomalyBins,
+  eqcHighRiskBins,
   checkedEdsStep,  // string | null
   checkedStep,     // string | null
   checkedPpid,     // string | null
@@ -132,8 +132,8 @@ export function L3SpiderFilterPanel({
   )
 
   const visibleEqcs = useMemo(
-    () => checkedPpid ? sortedValues(ppidEqcs?.[checkedPpid] ?? []) : [],
-    [checkedPpid, ppidEqcs],
+    () => checkedPpid ? sortedValues(ppidHighRiskEqcs?.[checkedPpid] ?? []) : [],
+    [checkedPpid, ppidHighRiskEqcs],
   )
 
   // EQPCH 선택 시 이상 감지된 bin_name만 표시
@@ -182,10 +182,8 @@ export function L3SpiderFilterPanel({
     onAnalysisModeChange(next !== null ? 'bin' : 'eqpch')
   }
 
-  const showBinCol = checkedEqc !== null
-
   return (
-    <section className={`grid h-[320px] gap-4 ${showBinCol ? 'grid-cols-5' : 'grid-cols-4'}`}>
+    <section className="grid h-[320px] grid-cols-5 gap-4">
       <ColumnCard
         title="EDS Step"
         badge={`${edsSteps.length}`}
@@ -253,12 +251,12 @@ export function L3SpiderFilterPanel({
       >
         {(query) =>
           applyQuery(visibleEqcs, query).map((eqc) => {
-            const binCount = eqcBins?.[eqc]?.length ?? 0
+            const highRiskBinCount = eqcHighRiskBins?.[eqc]?.length ?? 0
             return (
               <SelectRow
                 key={eqc}
                 label={eqc}
-                hint={binCount > 0 ? `bin ${binCount}` : null}
+                hint={highRiskBinCount > 0 ? String(highRiskBinCount) : null}
                 selected={checkedEqc === eqc}
                 onClick={() => selectEqc(eqc)}
               />
@@ -267,27 +265,25 @@ export function L3SpiderFilterPanel({
         }
       </ColumnCard>
 
-      {/* Bin Name: EQPCH 선택 후 세부 필터 */}
-      {showBinCol && (
-        <ColumnCard
-          title="Bin Name"
-          badge={visibleBins.length > 0 ? `${visibleBins.length}` : null}
-          disabled={false}
-          placeholder=""
-          isActive={checkedBin !== null}
-        >
-          {(query) =>
-            applyQuery(visibleBins, query).map((bin) => (
-              <SelectRow
-                key={bin}
-                label={bin}
-                selected={checkedBin === bin}
-                onClick={() => selectBin(bin)}
-              />
-            ))
-          }
-        </ColumnCard>
-      )}
+      {/* Bin Name: EQPCH 선택 후 활성화되는 세부 필터 */}
+      <ColumnCard
+        title="Bin Name"
+        badge={visibleBins.length > 0 ? `${visibleBins.length}` : null}
+        disabled={!checkedEqc}
+        placeholder="EQPCH를 먼저 선택하세요"
+        isActive={checkedBin !== null}
+      >
+        {(query) =>
+          applyQuery(visibleBins, query).map((bin) => (
+            <SelectRow
+              key={bin}
+              label={bin}
+              selected={checkedBin === bin}
+              onClick={() => selectBin(bin)}
+            />
+          ))
+        }
+      </ColumnCard>
     </section>
   )
 }
