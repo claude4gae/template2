@@ -534,13 +534,131 @@ def _selected_pm_date(selection: dict[str, object]) -> str:
     return _date_key(selection["pmTimestamp"])
 
 
+def _safe_date_key(value: Any) -> str | None:
+    """날짜로 해석 가능한 값을 YYYY-MM-DD로 정리합니다."""
+
+    if value in (None, ""):
+        return None
+    try:
+        return _date_key(value)
+    except (TypeError, ValueError):
+        text = str(value).strip()
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            return text[:10]
+        if len(text) >= 8 and text[:8].isdigit():
+            return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    return None
+
+
+def _plain_dir_value(part: str) -> str:
+    """plain 경로 segment에서 key=value와 일반 값을 모두 지원합니다."""
+
+    if "=" in part:
+        return part.split("=", 1)[1]
+    return part
+
+
+def _plain_oes_filename_values(path: Path) -> dict[str, str]:
+    """DASHBOARD_SPEC OES 파일명에서 metadata를 추출합니다."""
+
+    fields = path.stem.split("#")
+    if len(fields) < 11:
+        return {}
+    values = {
+        "line_id": fields[0],
+        "process_id": fields[1],
+        "step_seq": fields[2],
+        "rcp_step": fields[3],
+        "ppid": fields[4],
+        "recipe_id": fields[5],
+        "eqp_id": fields[6],
+        "chamber_id": fields[7],
+        "fdc_bin": fields[7],
+        "bin_id": fields[7],
+        "lot_id": fields[8],
+        "slot_no": fields[9],
+        "slot_id": fields[9],
+        "wafer_end_time": fields[10],
+    }
+    return {key: value for key, value in values.items() if value not in (None, "")}
+
+
+def _plain_oes_path_values(path: Path) -> dict[str, str]:
+    """plain OES 경로와 파일명에서 누락 metadata를 추출합니다."""
+
+    try:
+        raw_root = selectors.ensure_dataset_root(selectors.RAW_DIR_NAME).resolve()
+        parts = path.resolve().relative_to(raw_root).parts
+    except (FileNotFoundError, NotADirectoryError, OSError, ValueError):
+        return {}
+    if "oes" not in parts:
+        return {}
+    source_index = parts.index("oes")
+    if source_index < 4:
+        return {}
+
+    values = {
+        "line_id": parts[0],
+        "eqp_id": parts[1],
+        "fdc_bin": parts[2],
+        "chamber_id": parts[2],
+        "bin_id": parts[2],
+        "dt": parts[3],
+        "data_source": "oes",
+    }
+    pm_date = _safe_date_key(parts[3])
+    if pm_date:
+        values[DATE_COLUMN] = pm_date
+    if len(parts) > source_index + 1:
+        values["type"] = _plain_dir_value(parts[source_index + 1])
+    if len(parts) > source_index + 2:
+        values["step_seq"] = _plain_dir_value(parts[source_index + 2])
+    if len(parts) > source_index + 3:
+        values["ppid"] = _plain_dir_value(parts[source_index + 3])
+    if len(parts) > source_index + 4:
+        values["recipe_id"] = _plain_dir_value(parts[source_index + 4])
+    if len(parts) > source_index + 5:
+        values["lot_id"] = _plain_dir_value(parts[source_index + 5])
+    if len(parts) > source_index + 6:
+        slot_value = _plain_dir_value(parts[source_index + 6])
+        values["slot_no"] = slot_value
+        values["slot_id"] = slot_value
+
+    filename_values = _plain_oes_filename_values(path)
+    values.update(filename_values)
+    if DATE_COLUMN not in values:
+        wafer_date = _safe_date_key(filename_values.get("wafer_end_time"))
+        if wafer_date:
+            values[DATE_COLUMN] = wafer_date
+    return values
+
+
+def _fill_metadata_column(frame: pd.DataFrame, key: str, value: str) -> None:
+    """frame 컬럼이 없거나 비어 있을 때 metadata 값을 채웁니다."""
+
+    if value in (None, ""):
+        return
+    if key not in frame.columns:
+        frame[key] = value
+        return
+    missing = frame[key].isna()
+    try:
+        missing = missing | (frame[key].astype(str) == "")
+    except (TypeError, ValueError):
+        pass
+    if missing.any():
+        frame.loc[missing, key] = value
+
+
 def _apply_partitions(frame: pd.DataFrame, path: Path) -> pd.DataFrame:
     """파일 경로 partition 값을 누락 컬럼에 보강합니다."""
 
-    partitions = selectors.parse_partition_values(path)
+    partitions = {
+        **selectors.parse_partition_values(path),
+        **_plain_oes_path_values(path),
+    }
     for key, value in partitions.items():
-        if key not in frame.columns:
-            frame[key] = value
+        _fill_metadata_column(frame, key, value)
     return frame
 
 
@@ -967,6 +1085,8 @@ def _normalize_oes(frame: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
         long_frame["rcp_step"] = long_frame["step_seq"]
     if "rcp_step" not in long_frame.columns:
         long_frame["rcp_step"] = "unknown"
+    if "traj_phase" not in long_frame.columns and "Time" in long_frame.columns:
+        long_frame["traj_phase"] = long_frame["Time"]
     long_frame["wavelength"] = pd.to_numeric(long_frame["wavelength"], errors="coerce")
     long_frame["value"] = pd.to_numeric(long_frame["value"], errors="coerce")
     return long_frame[long_frame["wavelength"].notna() & long_frame["value"].notna()].copy()

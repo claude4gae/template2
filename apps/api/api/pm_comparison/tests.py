@@ -220,6 +220,62 @@ class PmComparisonServiceTests(SimpleTestCase):
             ]
         ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
 
+    def _write_plain_oes_wide_sample(self, root: Path) -> None:
+        """DASHBOARD_SPEC plain OES wide raw와 score 데이터를 생성합니다."""
+
+        raw_target = (
+            root
+            / selectors.RAW_DIR_NAME
+            / "L1"
+            / "EQP1"
+            / "BIN1"
+            / "2026-06-01 00:00:00"
+            / "oes"
+            / "ag"
+            / "SEQ1"
+            / "PPID1"
+            / "RCP1"
+            / "LOT9"
+            / "7"
+        )
+        raw_target.mkdir(parents=True)
+        file_name = "L1#PROC1#SEQ1#4d#PPID1#RCP1#EQP1#BIN1#LOT9#7#2026-06-01T01:02:03.parquet"
+        pd.DataFrame(
+            [
+                {"Time": 0.0, "200.0": 100.0, "200.5": 110.0},
+                {"Time": 1.0, "200.0": 120.0, "200.5": 130.0},
+            ]
+        ).to_parquet(raw_target / file_name, engine="pyarrow")
+
+        score_target = self._score_base(root, data_type="oes")
+        score_target.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "날짜": "2026-06-01",
+                    "type": "ag",
+                    "data_type": "oes",
+                    "item_name": "4d/200.0",
+                    "step": "4d",
+                    "wavelength": 200.0,
+                    "score": 0.0797,
+                },
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "날짜": "2026-06-01",
+                    "type": "ag",
+                    "data_type": "oes",
+                    "item_name": "4d/200.5",
+                    "step": "4d",
+                    "wavelength": 200.5,
+                    "score": 1.0,
+                },
+            ]
+        ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
+
     def test_compare_pm_window_returns_score_rank_and_raw_detail(self) -> None:
         """score rank와 raw ref/comp 상세 row가 함께 반환되는지 확인합니다."""
 
@@ -337,6 +393,44 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(eqp_meta["fdcBins"], ["BIN1"])
         self.assertEqual(result["trace"]["summaryRows"][0]["traceSensor"], "PRESSURE")
         self.assertEqual(len(result["trace"]["trendRows"]), 1)
+
+    def test_plain_oes_wide_layout_uses_path_and_filename_metadata(self) -> None:
+        """plain OES wide raw는 경로와 파일명 metadata로 상세 plot을 생성해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_plain_oes_wide_sample(root)
+            selection = {
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "fdcBin": "BIN1",
+                "type": "ag",
+                "ppid": "PPID1",
+                "recipeId": "RCP1",
+                "pmTimestamp": "2026-06-01",
+                "dtValues": ["2026-06-01"],
+                "traceDataSource": "trace",
+                "oesDataSource": "oes",
+                "selectedStep": "4d",
+                "includeDetails": True,
+            }
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                result = services.compare_pm_window(selection)
+
+        self.assertEqual(result["oes"]["scoreFileCount"], 1)
+        self.assertEqual(result["oes"]["fileCount"], 1)
+        self.assertEqual(result["oes"]["rowCount"], 4)
+        self.assertEqual(result["oes"]["stepRows"][0]["step"], "4d")
+        self.assertEqual(result["oes"]["heatmap"]["width"], 2)
+        self.assertGreaterEqual(result["oes"]["heatmap"]["height"], 1)
+        self.assertEqual(result["oes"]["heatmap"]["wavelengths"], [200.0, 200.5])
+        self.assertEqual(result["oes"]["heatmap"]["sourcePointCount"], 4)
+        self.assertEqual(result["oes"]["detailRows"][0]["rcpStep"], "4d")
+        self.assertEqual(result["oes"]["detailRows"][0]["lotId"], "LOT9")
+        self.assertFalse(
+            any("날짜/rcp_step/wavelength/value" in warning for warning in result["warnings"])
+        )
 
     def test_meta_options_are_scoped_and_ignore_ipynb_checkpoints(self) -> None:
         """선택값 하위 옵션만 반환하고 checkpoint 폴더는 제외해야 합니다."""

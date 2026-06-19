@@ -214,6 +214,17 @@ def _plain_segment(value: str | None) -> str:
     return value or "*"
 
 
+def _plain_dt_segments(value: str | None) -> list[str]:
+    """plain layout dt 폴더 후보 glob segment를 생성합니다."""
+
+    if not value:
+        return ["*"]
+    segments = [value]
+    if len(value) == 10 and value[4] == "-" and value[7] == "-":
+        segments.extend([f"{value} *", f"{value}T*"])
+    return list(dict.fromkeys(segments))
+
+
 def _iter_plain_raw_files(
     root: Path,
     filters: dict[str, str | None],
@@ -235,15 +246,33 @@ def _iter_plain_raw_files(
 
     source_dir = "trace" if data_source == "trace" else "oes" if data_source.startswith("oes") else data_source
     for dt_value in dt_candidates:
-        dt_segment = _plain_segment(dt_value)
-        if source_dir == "trace":
-            for trace_value in trace_candidates:
-                param_segment = _segment("trace_param_name", trace_value)
+        for dt_segment in _plain_dt_segments(dt_value):
+            if source_dir == "trace":
+                for trace_value in trace_candidates:
+                    param_segment = _segment("trace_param_name", trace_value)
+                    pattern = (
+                        f"{line_id}/{eqp_id}/{chamber_id}/{dt_segment}/trace/"
+                        f"{type_segment}/{ppid_segment}/{recipe_segment}/priority=*/{param_segment}"
+                    )
+                    leaf_patterns = ["*.parquet", "*/*.parquet", "*/*/*.parquet", "*/*/*/*.parquet"]
+                    for leaf_pattern in leaf_patterns:
+                        for path in root.glob(f"{pattern}/{leaf_pattern}"):
+                            safe_path = _safe_relative_file(path, root)
+                            if safe_path is None or safe_path in seen:
+                                continue
+                            seen.add(safe_path)
+                            yield safe_path
+                            if len(seen) >= max_files:
+                                return
+                continue
+
+            if source_dir == "oes":
                 pattern = (
-                    f"{line_id}/{eqp_id}/{chamber_id}/{dt_segment}/trace/"
-                    f"{type_segment}/{ppid_segment}/{recipe_segment}/priority=*/{param_segment}"
+                    f"{line_id}/{eqp_id}/{chamber_id}/{dt_segment}/oes/"
+                    f"{_plain_segment(filters.get('type'))}/*/"
+                    f"{_plain_segment(filters.get('ppid'))}/{_plain_segment(filters.get('recipe_id'))}"
                 )
-                leaf_patterns = ["*.parquet", "*/*.parquet"]
+                leaf_patterns = ["*/*/*.parquet", "*/*/*/*.parquet"]
                 for leaf_pattern in leaf_patterns:
                     for path in root.glob(f"{pattern}/{leaf_pattern}"):
                         safe_path = _safe_relative_file(path, root)
@@ -253,24 +282,6 @@ def _iter_plain_raw_files(
                         yield safe_path
                         if len(seen) >= max_files:
                             return
-            continue
-
-        if source_dir == "oes":
-            pattern = (
-                f"{line_id}/{eqp_id}/{chamber_id}/{dt_segment}/oes/"
-                f"{_plain_segment(filters.get('type'))}/*/"
-                f"{_plain_segment(filters.get('ppid'))}/{_plain_segment(filters.get('recipe_id'))}"
-            )
-            leaf_patterns = ["*/*/*.parquet", "*/*/*/*.parquet"]
-            for leaf_pattern in leaf_patterns:
-                for path in root.glob(f"{pattern}/{leaf_pattern}"):
-                    safe_path = _safe_relative_file(path, root)
-                    if safe_path is None or safe_path in seen:
-                        continue
-                    seen.add(safe_path)
-                    yield safe_path
-                    if len(seen) >= max_files:
-                        return
 
 
 def iter_raw_files(
