@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { SearchIcon } from "lucide-react"
 
-import { Logo, ThemeColorSelector, ThemeToggle } from "@/components/common"
+import { ThemeColorSelector, ThemeToggle } from "@/components/common"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +15,7 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu"
 import { useAuth } from "@/lib/auth"
+import { resolvePortalBrand } from "@/lib/config/portalBranding"
 import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
 import { cn } from "@/lib/utils"
 
@@ -115,6 +116,9 @@ export function PortalNavbar({ navigationItems }) {
     }))
     .filter((navItem) => canShowNavigationItem(navItem, user))
     .filter((navItem) => navItem.href || (Array.isArray(navItem.items) && navItem.items.length > 0))
+  const brand = resolvePortalBrand(pathname)
+  const brandMark = brand.mark
+  const BrandIcon = brandMark?.type === "icon" ? brandMark.icon : null
 
   return (
     <div
@@ -126,8 +130,17 @@ export function PortalNavbar({ navigationItems }) {
     >
       <div className="flex flex-1 items-center gap-4">
         <PortalNavLink href="/" className="flex items-center gap-3">
-          <Logo className="size-6 w-8" />
-          <span className="hidden text-xl font-semibold sm:block">Etch AX Portal</span>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-foreground">
+            {brandMark?.type === "image" ? (
+              <img
+                src={brandMark.src}
+                alt={brandMark.alt ?? brand.name}
+                className="size-6 object-contain"
+              />
+            ) : null}
+            {BrandIcon ? <BrandIcon className="size-4" aria-hidden="true" /> : null}
+          </span>
+          <span className="hidden text-xl font-semibold sm:block">{brand.name}</span>
         </PortalNavLink>
       </div>
 

@@ -1,0 +1,331 @@
+/* ───────────────────────────────────────────────
+   📅 vis-timeline 커스터마이징 (디자인 토큰 기반)
+─────────────────────────────────────────────── */
+
+:root {
+  --observer-text: var(--foreground);
+  --observer-text-strong: var(--muted-foreground);
+  --observer-text-dark: var(--card-foreground);
+  --observer-surface: var(--card);
+  --observer-border: var(--border);
+  --observer-item-surface: var(--card);
+  --observer-border-soft: color-mix(in oklch, var(--observer-border) 72%, transparent);
+  --observer-tooltip-bg: color-mix(in oklch, var(--popover) 90%, transparent);
+  --observer-tooltip-text: var(--popover-foreground);
+
+  /* 팔레트 기반 컬러 선택 */
+  /* 가동/런 */
+  --observer-palette-active: hsl(246, 100%, 50%);
+  /* 강조/오픈 */
+  --observer-palette-accent: hsl(123, 78%, 62%);
+  /* 유지보수/유휴 */
+  --observer-palette-maintenance: hsl(84 65% 60%);
+  /* 경고/PM */
+  --observer-palette-caution: hsl(35 92% 61%);
+  /* 강조 하이라이트 */
+  --observer-palette-highlight: hsl(14 88% 58%);
+  /* 정보 */
+  --observer-palette-info: hsl(198 82% 56%);
+  /* 성공 */
+  --observer-palette-success: hsl(152 62% 48%);
+  /* 보라 */
+  --observer-palette-violet: hsl(268 72% 60%);
+  /* 청록 */
+  --observer-palette-teal: hsl(186 62% 52%);
+  /* 중립 */
+  --observer-palette-neutral: hsl(220 9% 72%);
+  /* 치명 */
+  --observer-palette-critical: hsl(358 72% 52%);
+
+
+  --observer-selected: var(--observer-palette-accent);
+  --observer-selected-soft: color-mix(in hsl, var(--observer-selected) 20%, transparent);
+  --observer-eqp-run: var(--observer-palette-active);
+  --observer-eqp-idle: color-mix(in hsl, var(--observer-palette-maintenance) 85%, var(--observer-surface) 15%);
+  --observer-eqp-pm: color-mix(in hsl, var(--observer-palette-caution) 90%, transparent);
+  --observer-eqp-down: var(--observer-palette-critical);
+  --observer-eqp-local: color-mix(in hsl, var(--observer-palette-neutral) 65%, var(--observer-surface) 35%);
+  --observer-tip-open: var(--observer-palette-accent);
+  --observer-tip-close: var(--observer-palette-critical);
+  --observer-racb-alarm: var(--observer-palette-critical);
+  --observer-racb-warn: var(--observer-palette-caution);
+  --observer-ctttm-cbm: var(--observer-palette-info);
+  --observer-ctttm-nsp: var(--observer-palette-violet);
+  --observer-esop: var(--observer-palette-teal);
+  --observer-foreground-strong: var(--primary-foreground);
+}
+
+html.dark {
+  --observer-palette-active: hsl(200 100% 68%);
+  --observer-palette-accent: hsl(268 85% 70%);
+  --observer-palette-maintenance: hsl(88 60% 64%);
+  --observer-palette-caution: hsl(35 92% 66%);
+  --observer-palette-highlight: hsl(20 90% 64%);
+  --observer-palette-info: hsl(198 90% 68%);
+  --observer-palette-success: hsl(152 60% 58%);
+  --observer-palette-violet: hsl(268 80% 72%);
+  --observer-palette-teal: hsl(186 70% 62%);
+  --observer-palette-neutral: hsl(220 10% 58%);
+  --observer-palette-critical: hsl(358 70% 60%);
+}
+
+
+
+.observer {
+  background-color: var(--observer-surface);
+  border: 1px solid color-mix(in oklch, var(--observer-border) 85%, transparent) !important;
+}
+
+.observer .vis-timeline {
+  background-color: var(--observer-surface) !important;
+  border: 1.5px solid color-mix(in oklch, var(--observer-border) 100%, transparent) !important;
+}
+
+.observer .vis-panel.vis-left,
+.observer .vis-panel.vis-center,
+.observer .vis-panel.vis-right,
+.observer .vis-panel.vis-bottom,
+.observer .vis-panel.vis-top,
+.observer .vis-labelset,
+.observer .vis-itemset .vis-background,
+.observer .vis-itemset .vis-foreground {
+  background-color: var(--observer-surface) !important;
+}
+
+.observer .vis-labelset .vis-label,
+.observer .vis-foreground .vis-group {
+  border-color: var(--observer-border-soft) !important;
+}
+
+.observer .vis-time-axis {
+  background-color: var(--observer-surface) !important;
+}
+
+.observer .vis-time-axis .vis-grid.vis-minor {
+  border-color: color-mix(in oklch, var(--observer-border) 70%, transparent);
+}
+
+.observer .vis-time-axis .vis-grid.vis-major {
+  border-color: color-mix(in oklch, var(--observer-border) 50%, transparent);
+}
+
+.observer .vis-label.vis-nested-group.vis-group-level-0,
+.observer .vis-label.vis-nested-group {
+  background-color: var(--observer-surface) !important;
+}
+
+.observer .vis-timeline .vis-legend-background {
+  fill: var(--observer-surface);
+  stroke: var(--observer-border-soft);
+}
+
+/* 공통 아이템 스타일 */
+.observer .vis-item {
+  color: var(--observer-text);
+  height: 100% !important;
+  box-shadow: none !important;
+  pointer-events: all !important;
+  overflow: hidden !important;
+  border-radius: 0 !important;
+  background-color: var(--observer-item-surface) !important;
+  border: 1px solid var(--observer-item-surface) !important;
+}
+
+.dark .observer .vis-item {
+  color: var(--observer-text-dark);
+}
+
+/* 범례 칩은 Observer 아이템과 같은 팔레트를 공유합니다. */
+.observer-legend-dot {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--observer-border-soft);
+  background-color: var(--observer-item-surface);
+  flex-shrink: 0;
+}
+
+/* 아이템 콘텐츠 스타일 */
+.observer .vis-item .observer-item-label,
+.observer .vis-item .vis-item-overflow>span:not(.observer-item-label),
+.observer .vis-item .vis-item-content {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  text-align: center;
+  color: var(--observer-text);
+}
+
+.dark .observer .vis-item .observer-item-label,
+.dark .observer .vis-item .vis-item-overflow>span:not(.observer-item-label) {
+  color: var(--observer-text-dark);
+}
+
+/* 상태 색상 (디자인 토큰) */
+.observer .vis-item.observer-color-eqp-run,
+.observer-legend-dot.observer-color-eqp-run {
+  background-color: var(--observer-eqp-run) !important;
+  border-color: var(--observer-eqp-run) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-eqp-idle,
+.observer-legend-dot.observer-color-eqp-idle {
+  background-color: var(--observer-eqp-idle) !important;
+  border-color: var(--observer-eqp-idle) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-eqp-pm,
+.observer-legend-dot.observer-color-eqp-pm {
+  background-color: var(--observer-eqp-pm) !important;
+  border-color: var(--observer-eqp-pm) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-eqp-down,
+.observer-legend-dot.observer-color-eqp-down {
+  background-color: var(--observer-eqp-down) !important;
+  border-color: var(--observer-eqp-down) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-eqp-local,
+.observer-legend-dot.observer-color-eqp-local {
+  background-color: var(--observer-eqp-local) !important;
+  border-color: var(--observer-eqp-local) !important;
+  color: var(--observer-text);
+}
+
+.observer .vis-item.observer-color-tip-open,
+.observer-legend-dot.observer-color-tip-open {
+  background-color: var(--observer-tip-open) !important;
+  border-color: var(--observer-tip-open) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-tip-close,
+.observer-legend-dot.observer-color-tip-close {
+  background-color: var(--observer-tip-close) !important;
+  border-color: var(--observer-tip-close) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-racb-alarm,
+.observer-legend-dot.observer-color-racb-alarm {
+  background-color: var(--observer-racb-alarm) !important;
+  border-color: var(--observer-racb-alarm) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-racb-warn,
+.observer-legend-dot.observer-color-racb-warn {
+  background-color: var(--observer-racb-warn) !important;
+  border-color: var(--observer-racb-warn) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-ctttm-cbm,
+.observer-legend-dot.observer-color-ctttm-cbm {
+  background-color: var(--observer-ctttm-cbm) !important;
+  border-color: var(--observer-ctttm-cbm) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-ctttm-nsp,
+.observer-legend-dot.observer-color-ctttm-nsp {
+  background-color: var(--observer-ctttm-nsp) !important;
+  border-color: var(--observer-ctttm-nsp) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop,
+.observer-legend-dot.observer-color-esop {
+  background-color: var(--observer-esop) !important;
+  border-color: var(--observer-esop) !important;
+  color: var(--observer-text);
+}
+
+.observer .vis-item.observer-color-fallback,
+.observer-legend-dot.observer-color-fallback {
+  background-color: color-mix(in hsl,
+      var(--observer-palette-neutral) 65%,
+      var(--observer-surface) 35%) !important;
+  border-color: color-mix(in hsl,
+      var(--observer-palette-neutral) 65%,
+      var(--observer-surface) 35%) !important;
+  color: var(--observer-text);
+}
+
+/* 선택된 아이템 강조: 배경 유지, 테두리만 변경 */
+.observer .vis-item.vis-selected {
+  outline: 1px dashed var(--observer-selected) !important;
+  outline-offset: 0px !important;
+  border-color: var(--observer-selected) !important;
+  z-index: 10 !important;
+}
+
+/* 그룹 라벨 스타일 */
+.observer .vis-label.custom-group-label {
+  font-size: 12px !important;
+  width: 150px !important;
+  min-width: 150px !important;
+  max-width: 150px !important;
+  color: var(--observer-text-strong);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dark .observer .vis-label.custom-group-label {
+  color: var(--observer-text-dark) !important;
+}
+
+/* 시간축 텍스트 스타일 */
+.observer .vis-time-axis .vis-text,
+.observer .vis-time-axis .vis-label {
+  font-size: 11px !important;
+  color: var(--observer-text-strong);
+}
+
+.dark .observer .vis-time-axis .vis-text,
+.dark .observer .vis-time-axis .vis-label {
+  color: var(--observer-text-dark) !important;
+}
+
+/* 툴팁 스타일 */
+.observer .vis-tooltip {
+  background-color: var(--observer-tooltip-bg) !important;
+  color: var(--observer-tooltip-text) !important;
+  font-size: 11px !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  position: absolute !important;
+  pointer-events: none !important;
+}
+
+/* x축 없는 Observer */
+.no-time-axis .vis-panel.vis-bottom {
+  display: none !important;
+}
+
+.observer-container.no-time-axis {
+  margin-bottom: 10px !important;
+}
+
+/* Observer 간격 정리 */
+.observer-container {
+  margin-bottom: 15px !important;
+}
+
+.observer-container:last-child {
+  margin-bottom: 10px !important;
+}

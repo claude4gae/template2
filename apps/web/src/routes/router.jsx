@@ -14,7 +14,7 @@ import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
 import { pmComparisonRoutes } from "@/features/pm-comparison"
 import { teamstaffRoutes } from "@/features/teamstaff"
-import { timelineRoutes } from "@/features/timeline"
+import { observerRoutes } from "@/features/observer"
 import { vocRoutes } from "@/features/voc"
 import { ChatWidget, assistantRoutes } from "@/features/assistant"
 import { emailsRoutes, useEmailMailboxes } from "@/features/emails"
@@ -68,7 +68,7 @@ const assistantWidgetRoutes = {
       children: [
         ...homeRoutes,
         ...protectedFeatureRoutes,
-        ...timelineRoutes,
+        ...observerRoutes,
       ],
     },
   ],

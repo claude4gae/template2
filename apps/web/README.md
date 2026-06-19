@@ -67,7 +67,7 @@ npm run preview
 - `auth`: 로그인, 온보딩, 소속 재확인
 - `emails`: 메일함과 메일 처리
 - `line-dashboard`: Drone SOP/라인 대시보드
-- `timeline`: 설비/로그 타임라인
+- `observer`: 설비/로그 Observer
 - `voc`: VOC 게시판
 - `home`, `errors`, `teamstaff`: 공통 화면/보조 기능
 

@@ -32,7 +32,7 @@ export const portalNavigationItems = [
     items: compactItems([
       { title: "Appstore", href: "/appstore" },
       { title: "ESOP Dashboard", href: "/esop_dashboard" },
-      { title: "Timeline", href: "/timeline" },
+      { title: "Observer", href: "/observer" },
       { title: "메일함", href: "/emails/inbox" },
       { title: "L0 Spider(개발중)", href: "/fdc_trend" },
       { title: "L3 Spider(개발중)", href: "/l3_spider" },

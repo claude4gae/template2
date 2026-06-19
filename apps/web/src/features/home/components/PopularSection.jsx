@@ -23,11 +23,11 @@ const popularServices = [
   },
   {
     icon: SquareChartGantt,
-    title: 'Timeline',
-    subtitle: '설비 변경점 이력을 한눈에 파악할 수 있는 Timeline',
+    title: 'Observer',
+    subtitle: '설비 변경점 이력을 한눈에 파악할 수 있는 Observer',
     category: 'System',
     popular: false,
-    href: '/timeline'
+    href: '/observer'
   },
   {
     icon: SquarePen,

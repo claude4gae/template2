@@ -35,9 +35,9 @@ const APP_ACCESS_RULES = [
     prefixes: ["/teamstaff"],
   },
   {
-    appId: "timeline",
-    appName: "Timeline",
-    prefixes: ["/timeline"],
+    appId: "observer",
+    appName: "Observer",
+    prefixes: ["/observer"],
   },
   {
     appId: "emails",
