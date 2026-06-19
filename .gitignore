@@ -32,11 +32,21 @@ vendor/
 # misc
 .DS_Store
 *.pem
+
+# Codex shared agent assets
 .codex/*
+!.codex/
 !.codex/skills/
 !.codex/skills/**
 .codex/skills/.system/
 .codex/skills/.system/**
+.codex/plugins/
+.codex/cache/
+.codex/log/
+.codex/logs/
+.codex/tmp/
+.codex/**/*.env
+.codex/**/secrets*
 .specify/
 
 # debug
