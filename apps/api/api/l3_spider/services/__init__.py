@@ -520,3 +520,51 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
     merged = merged.replace([np.inf, -np.inf], np.nan)
 
     return {"rows": [_camelize_mapping(row) for row in merged.to_dict(orient="records")]}
+
+
+def get_filter_candidates(selection: dict[str, object]) -> dict[str, object]:
+    """PPID 선택 경로(date/line/process/eds_step/step_seq#ppid#*)에서 High Risk EQPCH·Bin 후보를 반환합니다."""
+
+    dates = selection.get("dates") or []
+    line_ids = selection.get("lineIds") or []
+    process_ids = selection.get("processIds") or []
+    eds_step = selection.get("edsStep", "")
+    step_seq = selection.get("stepSeq", "")
+    ppid = selection.get("ppid", "")
+
+    if not all([dates, line_ids, process_ids, eds_step, step_seq, ppid]):
+        return {"eqcHighRiskBins": {}}
+
+    frames: list[pd.DataFrame] = []
+    try:
+        files = list(selectors.iter_filter_candidate_files(dates, line_ids, process_ids, eds_step, step_seq, ppid))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    for path in files:
+        try:
+            frame = selectors.read_parquet_columns(path, ["eqc", "bin_name", "display_status"])
+            frame = _normalize_display_status(frame)
+            frames.append(frame)
+        except Exception as exc:
+            print(f"[WARN] L3 Spider filter-candidates read failed: {path}: {exc}")
+
+    if not frames:
+        return {"eqcHighRiskBins": {}}
+
+    merged = pd.concat(frames, ignore_index=True)
+
+    eqc_high_risk_bins: dict[str, list[str]] = {}
+    if {"eqc", "bin_name", "display_status"}.issubset(merged.columns):
+        high_risk_mask = merged["display_status"] == "High Risk Chamber"
+        pairs = (
+            merged.loc[high_risk_mask, ["eqc", "bin_name"]]
+            .drop_duplicates()
+            .sort_values(["eqc", "bin_name"])
+        )
+        eqc_high_risk_bins = {
+            str(eqc): sorted(group["bin_name"].dropna().astype(str).tolist())
+            for eqc, group in pairs.groupby("eqc", sort=True)
+        }
+
+    return {"eqcHighRiskBins": eqc_high_risk_bins}

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import {
   fetchL3SpiderData,
+  fetchL3SpiderFilterCandidates,
   fetchL3SpiderMeta,
   fetchL3SpiderSummary,
   l3SpiderQueryKeys,
@@ -27,6 +28,34 @@ export function useL3SpiderSummary(selection) {
     queryKey: l3SpiderQueryKeys.summary(selectionKey),
     queryFn: () => fetchL3SpiderSummary(buildSelectionPayload(selection)),
     enabled: hasCompleteSelection(selection),
+  })
+}
+
+// ppid 선택 시 해당 경로의 파일에서 high risk EQPCH·Bin 후보만 반환
+export function useL3SpiderFilterCandidates(selection, edsStep, stepSeq, ppid) {
+  const enabled = Boolean(
+    hasCompleteSelection(selection) && edsStep && stepSeq && ppid,
+  )
+  const key = JSON.stringify({
+    date: selection.date,
+    lineIds: [...(selection.lineIds ?? [])].sort(),
+    processIds: [...(selection.processIds ?? [])].sort(),
+    edsStep,
+    stepSeq,
+    ppid,
+  })
+  return useQuery({
+    queryKey: l3SpiderQueryKeys.filterCandidates(key),
+    queryFn: () =>
+      fetchL3SpiderFilterCandidates({
+        dates: [selection.date],
+        lineIds: [...(selection.lineIds ?? [])],
+        processIds: [...(selection.processIds ?? [])],
+        edsStep,
+        stepSeq,
+        ppid,
+      }),
+    enabled,
   })
 }
 

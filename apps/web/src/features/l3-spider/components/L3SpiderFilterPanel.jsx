@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
@@ -37,7 +37,7 @@ function SelectRow({ label, hint, selected, onClick }) {
   )
 }
 
-function ColumnCard({ title, badge, disabled, placeholder, isActive, children }) {
+function ColumnCard({ title, badge, disabled, placeholder, isActive, isLoading, children }) {
   const [query, setQuery] = useState("")
 
   return (
@@ -63,7 +63,9 @@ function ColumnCard({ title, badge, disabled, placeholder, isActive, children })
           >
             {title}
           </CardTitle>
-          {badge != null ? (
+          {isLoading ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+          ) : badge != null ? (
             <Badge variant={isActive ? "default" : "secondary"} className="shrink-0 text-[11px]">
               {badge}
             </Badge>
@@ -101,56 +103,54 @@ function applyQuery(items, query) {
 
 export function L3SpiderFilterPanel({
   edsStepSeqs,
-  edsStepPpids,
-  ppidHighRiskEqcs,
-  eqcAnomalyBins,
-  eqcHighRiskBins,
-  checkedEdsStep,  // string | null
-  checkedStep,     // string | null
-  checkedPpid,     // string | null
-  checkedEqc,      // string | null — EQPCH 모드 (단일)
-  checkedBin,      // string | null — Bin 모드 (단일)
-  onCheckedEdsStepChange,
+  edsStepPpids,      // dict: eds_step|||step_seq → [ppids]
+  selectedEdsSteps,  // Set<string> — DataSelector에서 선택된 EDS Steps
+  eqcHighRiskBins,   // null(로딩/미선택) | dict: eqc → [high_risk_bins] (candidates)
+  isCandidatesLoading,
+  checkedStep,       // string | null — 복합키: "eds_step|||step_seq"
+  checkedPpid,       // string | null
+  checkedEqc,        // string | null — EQPCH 모드 (단일)
+  checkedBin,        // string | null — Bin 모드 (단일)
   onCheckedStepChange,
   onCheckedPpidChange,
   onCheckedEqcChange,
   onCheckedBinChange,
   onAnalysisModeChange,
 }) {
-  const edsSteps = useMemo(() => sortedValues(Object.keys(edsStepSeqs || {})), [edsStepSeqs])
-
-  const visibleSteps = useMemo(
-    () => checkedEdsStep ? sortedValues(edsStepSeqs?.[checkedEdsStep] ?? []) : [],
-    [checkedEdsStep, edsStepSeqs],
+  // EDS Step별로 step_seq 그룹핑 (같은 step_seq가 다른 EDS Step에 있을 수 있음)
+  const groupedSteps = useMemo(
+    () => sortedValues(selectedEdsSteps ?? [])
+      .map((eds) => ({ eds, steps: sortedValues(edsStepSeqs?.[eds] ?? []) }))
+      .filter(({ steps }) => steps.length > 0),
+    [selectedEdsSteps, edsStepSeqs],
   )
 
+  const totalStepCount = useMemo(
+    () => groupedSteps.reduce((sum, { steps }) => sum + steps.length, 0),
+    [groupedSteps],
+  )
+
+  // 복합키 "eds_step|||step_seq" 기반으로 ppid 조회
   const visiblePpids = useMemo(
-    () => (checkedEdsStep && checkedStep)
-      ? sortedValues(edsStepPpids?.[`${checkedEdsStep}|||${checkedStep}`] ?? [])
-      : [],
-    [checkedEdsStep, checkedStep, edsStepPpids],
+    () => checkedStep ? sortedValues(edsStepPpids?.[checkedStep] ?? []) : [],
+    [checkedStep, edsStepPpids],
   )
 
+  // candidate 로드 완료 시점에만 표시 (null = 로딩 중 또는 ppid 미선택)
   const visibleEqcs = useMemo(
-    () => checkedPpid ? sortedValues(ppidHighRiskEqcs?.[checkedPpid] ?? []) : [],
-    [checkedPpid, ppidHighRiskEqcs],
+    () => (checkedPpid && eqcHighRiskBins != null)
+      ? sortedValues(Object.keys(eqcHighRiskBins))
+      : [],
+    [checkedPpid, eqcHighRiskBins],
   )
 
-  // EQPCH 선택 시 이상 감지된 bin_name만 표시
+  // 해당 EQPCH에서 high risk가 발생한 bin_name만 표시
   const visibleBins = useMemo(
-    () => checkedEqc ? sortedValues(eqcAnomalyBins?.[checkedEqc] ?? []) : [],
-    [checkedEqc, eqcAnomalyBins],
+    () => (checkedEqc && eqcHighRiskBins != null)
+      ? sortedValues(eqcHighRiskBins[checkedEqc] ?? [])
+      : [],
+    [checkedEqc, eqcHighRiskBins],
   )
-
-  // 상위 해제 시 하위 전부 리셋
-  const selectEdsStep = (eds) => {
-    const next = checkedEdsStep === eds ? null : eds
-    onCheckedEdsStepChange(next)
-    onCheckedStepChange(null)
-    onCheckedPpidChange(null)
-    onCheckedEqcChange(null)
-    onCheckedBinChange(null)
-  }
 
   const selectStep = (step) => {
     const next = checkedStep === step ? null : step
@@ -167,7 +167,6 @@ export function L3SpiderFilterPanel({
     onCheckedBinChange(null)
   }
 
-  // EQPCH 선택 → 모드 'eqpch', Bin 클리어
   const selectEqc = (eqc) => {
     const next = checkedEqc === eqc ? null : eqc
     onCheckedEqcChange(next)
@@ -175,51 +174,46 @@ export function L3SpiderFilterPanel({
     if (next !== null) onAnalysisModeChange("eqpch")
   }
 
-  // Bin 선택 → 해당 bin의 전체 EQPCH trellis (모드 전환, EQPCH는 유지)
   const selectBin = (bin) => {
     const next = checkedBin === bin ? null : bin
     onCheckedBinChange(next)
-    onAnalysisModeChange(next !== null ? 'bin' : 'eqpch')
+    onAnalysisModeChange(next !== null ? "bin" : "eqpch")
   }
 
   return (
-    <section className="grid h-[320px] grid-cols-5 gap-4">
-      <ColumnCard
-        title="EDS Step"
-        badge={`${edsSteps.length}`}
-        disabled={edsSteps.length === 0}
-        placeholder="항목 없음"
-        isActive={checkedEdsStep !== null}
-      >
-        {(query) =>
-          applyQuery(edsSteps, query).map((eds) => (
-            <SelectRow
-              key={eds}
-              label={eds}
-              selected={checkedEdsStep === eds}
-              onClick={() => selectEdsStep(eds)}
-            />
-          ))
-        }
-      </ColumnCard>
-
+    <section className="grid h-[320px] grid-cols-4 gap-4">
       <ColumnCard
         title="Step Seq"
-        badge={visibleSteps.length > 0 ? `${visibleSteps.length}` : null}
-        disabled={!checkedEdsStep}
+        badge={totalStepCount > 0 ? `${totalStepCount}` : null}
+        disabled={!selectedEdsSteps || selectedEdsSteps.size === 0}
         placeholder="EDS Step을 먼저 선택하세요"
         isActive={checkedStep !== null}
       >
-        {(query) =>
-          applyQuery(visibleSteps, query).map((step) => (
-            <SelectRow
-              key={step}
-              label={step}
-              selected={checkedStep === step}
-              onClick={() => selectStep(step)}
-            />
-          ))
-        }
+        {(query) => {
+          const q = query.trim().toLowerCase()
+          return groupedSteps.map(({ eds, steps }) => {
+            const filtered = q ? steps.filter((s) => s.toLowerCase().includes(q)) : steps
+            if (filtered.length === 0) return null
+            return (
+              <div key={eds}>
+                <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground first:pt-0">
+                  {eds}
+                </div>
+                {filtered.map((step) => {
+                  const compositeKey = `${eds}|||${step}`
+                  return (
+                    <SelectRow
+                      key={compositeKey}
+                      label={step}
+                      selected={checkedStep === compositeKey}
+                      onClick={() => selectStep(compositeKey)}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })
+        }}
       </ColumnCard>
 
       <ColumnCard
@@ -241,13 +235,13 @@ export function L3SpiderFilterPanel({
         }
       </ColumnCard>
 
-      {/* EQPCH: 단일 선택 → bin_name trellis */}
       <ColumnCard
         title="EQPCH"
         badge={visibleEqcs.length > 0 ? `${visibleEqcs.length}` : null}
-        disabled={!checkedPpid}
-        placeholder="PPID를 먼저 선택하세요"
+        disabled={!checkedPpid || isCandidatesLoading}
+        placeholder={isCandidatesLoading ? "로딩 중…" : "PPID를 먼저 선택하세요"}
         isActive={checkedEqc !== null}
+        isLoading={isCandidatesLoading}
       >
         {(query) =>
           applyQuery(visibleEqcs, query).map((eqc) => {
@@ -265,7 +259,6 @@ export function L3SpiderFilterPanel({
         }
       </ColumnCard>
 
-      {/* Bin Name: EQPCH 선택 후 활성화되는 세부 필터 */}
       <ColumnCard
         title="Bin Name"
         badge={visibleBins.length > 0 ? `${visibleBins.length}` : null}

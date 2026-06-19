@@ -2,6 +2,7 @@
 // L3 Spider API public module입니다.
 export {
   fetchL3SpiderData,
+  fetchL3SpiderFilterCandidates,
   fetchL3SpiderMeta,
   fetchL3SpiderSummary,
 } from "./l3SpiderApi"

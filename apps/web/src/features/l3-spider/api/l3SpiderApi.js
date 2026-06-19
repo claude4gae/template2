@@ -44,3 +44,7 @@ export function fetchL3SpiderSummary(selection) {
 export function fetchL3SpiderData(selection) {
   return postJson("/data", selection)
 }
+
+export function fetchL3SpiderFilterCandidates(params) {
+  return postJson("/filter-candidates", params)
+}

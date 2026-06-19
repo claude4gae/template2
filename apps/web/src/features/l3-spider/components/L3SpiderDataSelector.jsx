@@ -1,71 +1,130 @@
-import { RefreshCw } from "lucide-react"
+import { Activity, AlertTriangle, Check, Gauge, RefreshCw } from "lucide-react"
+import { useMemo, useState } from "react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 import { EMPTY_SELECTION, sortedValues, toggleSetValue } from "../utils/selection"
+import { formatNumber } from "../utils/format"
 
-function CheckboxPill({ checked, disabled, label, onChange }) {
+function MultiSelectColumnCard({ title, badge, disabled, placeholder, items, selected, onChange }) {
+  const [query, setQuery] = useState("")
+  const isActive = selected.size > 0
+  const allSelected = items.length > 0 && items.every((item) => selected.has(item))
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? items.filter((item) => item.toLowerCase().includes(q)) : items
+  }, [items, query])
+
   return (
-    <label
+    <Card
       className={cn(
-        "inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition",
-        checked
-          ? "border-primary/50 bg-primary/10 text-primary"
-          : "border-border bg-muted/40 text-muted-foreground",
-        disabled && "cursor-not-allowed opacity-50",
+        "grid min-h-0 grid-rows-[48px_40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl border bg-card py-0 shadow-sm transition-all",
+        isActive && "ring-2 ring-primary/50",
       )}
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-        className="size-3.5 accent-primary"
-      />
-      <span>{label}</span>
-    </label>
+      <div
+        className={cn(
+          "flex h-12 items-center border-b px-4",
+          isActive ? "bg-primary/10" : "bg-muted/40",
+        )}
+      >
+        <div className="flex h-full min-w-0 flex-1 items-center justify-between gap-2">
+          <CardTitle
+            className={cn(
+              "truncate text-sm font-semibold leading-5",
+              disabled && "text-muted-foreground",
+              isActive && "text-primary",
+            )}
+          >
+            {title}
+          </CardTitle>
+          {badge != null && (
+            <Badge variant={isActive ? "default" : "secondary"} className="shrink-0 text-[11px]">
+              {badge}
+            </Badge>
+          )}
+        </div>
+      </div>
+      <div className="border-b px-2 py-1.5">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="검색…"
+          className="h-7 text-xs"
+          disabled={disabled}
+        />
+      </div>
+      <CardContent className="min-h-0 overflow-y-auto bg-background/60 p-2">
+        {disabled ? (
+          <div className="flex h-full min-h-16 items-center justify-center text-center text-sm text-muted-foreground">
+            {placeholder}
+          </div>
+        ) : (
+          <div className="grid content-start gap-1.5">
+            <button
+              type="button"
+              onClick={() => onChange(allSelected ? new Set() : new Set(items))}
+              className={cn(
+                "flex h-9 w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 text-left transition",
+                "hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                allSelected && "border-primary/30 bg-primary/10 shadow-sm",
+              )}
+            >
+              <span className={cn("text-[13px] font-medium leading-5 text-foreground", allSelected && "text-primary")}>
+                All
+              </span>
+              <Check className={cn("size-3 shrink-0", allSelected ? "text-primary" : "text-transparent")} />
+            </button>
+            <div className="h-px bg-border" />
+            {filteredItems.map((item) => {
+              const isSelected = selected.has(item)
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onChange(toggleSetValue(selected, item))}
+                  className={cn(
+                    "flex h-9 w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 text-left transition",
+                    "hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    isSelected && "border-primary/30 bg-primary/10 shadow-sm",
+                  )}
+                >
+                  <span className={cn("flex-1 truncate text-[13px] font-medium leading-5 text-foreground", isSelected && "text-primary")}>
+                    {item}
+                  </span>
+                  <Check className={cn("size-3 shrink-0", isSelected ? "text-primary" : "text-transparent")} />
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
-function OptionGroup({ title, items, selected, disabled, onChange }) {
-  const allChecked = items.length > 0 && items.every((item) => selected.has(item))
-  const someChecked = selected.size > 0 && !allChecked
-
+function InlineStats({ stats }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <span className="w-20 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </span>
-      <CheckboxPill
-        label="All"
-        checked={allChecked}
-        disabled={disabled || items.length === 0}
-        onChange={() => onChange(allChecked ? new Set() : new Set(items))}
-      />
-      <div className="h-4 w-px shrink-0 bg-border" />
-      <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-        {items.length === 0 ? (
-          <span className="text-xs text-muted-foreground">선택 가능한 항목이 없습니다.</span>
-        ) : (
-          items.map((item) => (
-            <CheckboxPill
-              key={item}
-              label={item}
-              checked={selected.has(item)}
-              disabled={disabled}
-              onChange={() => onChange(toggleSetValue(selected, item))}
-            />
-          ))
-        )}
+    <div className="flex items-center gap-5 border-l pl-5">
+      <div className="flex items-center gap-1.5">
+        <AlertTriangle className="size-3.5 shrink-0 text-chart-4" aria-hidden="true" />
+        <span className="text-sm font-semibold tabular-nums text-chart-4">{formatNumber(stats?.anomalySteps)}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Anomaly Steps</span>
       </div>
-      <div className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-        {someChecked
-          ? `${selected.size}/${items.length}`
-          : allChecked
-            ? "All selected"
-            : `${selected.size}/${items.length}`}
+      <div className="flex items-center gap-1.5">
+        <Activity className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+        <span className="text-sm font-semibold tabular-nums text-destructive">{formatNumber(stats?.highRiskEqpchs)}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">High Risk EQPCH</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Gauge className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="text-sm font-semibold tabular-nums">{formatNumber(stats?.total)}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Rows</span>
       </div>
     </div>
   )
@@ -91,6 +150,9 @@ export function L3SpiderDataSelector({
   onSelectionChange,
   isLoading,
   onRefresh,
+  stats,
+  showStats,
+  rightContent,
 }) {
   const availabilityForDate = selection.date ? meta.availability?.[selection.date] ?? {} : {}
   const visibleLineIds = sortedValues(Object.keys(availabilityForDate))
@@ -125,10 +187,7 @@ export function L3SpiderDataSelector({
   const noData = Boolean(selection.date && visibleLineIds.length === 0)
 
   const changeDate = (date) => {
-    onSelectionChange({
-      ...EMPTY_SELECTION,
-      date,
-    })
+    onSelectionChange({ ...EMPTY_SELECTION, date })
   }
 
   const changeLines = (lineIds) => {
@@ -156,12 +215,7 @@ export function L3SpiderDataSelector({
         ).includes(edsStep),
       ),
     )
-    onSelectionChange({
-      ...selection,
-      lineIds,
-      processIds: nextProcessIds,
-      edsSteps: nextEdsSteps,
-    })
+    onSelectionChange({ ...selection, lineIds, processIds: nextProcessIds, edsSteps: nextEdsSteps })
   }
 
   const changeProcesses = (processIdsNext) => {
@@ -178,12 +232,40 @@ export function L3SpiderDataSelector({
         ).includes(edsStep),
       ),
     )
-    onSelectionChange({
-      ...selection,
-      processIds: processIdsNext,
-      edsSteps: nextEdsSteps,
-    })
+    onSelectionChange({ ...selection, processIds: processIdsNext, edsSteps: nextEdsSteps })
   }
+
+  const selectorCards = (
+    <div className="grid h-[320px] grid-cols-3 gap-4">
+      <MultiSelectColumnCard
+        title="Line ID"
+        badge={`${visibleLineIds.length}`}
+        disabled={!selection.date}
+        placeholder="날짜를 먼저 선택하세요"
+        items={visibleLineIds}
+        selected={selection.lineIds}
+        onChange={changeLines}
+      />
+      <MultiSelectColumnCard
+        title="Process ID"
+        badge={processIds.length > 0 ? `${processIds.length}` : null}
+        disabled={selectedVisibleLineIds.length === 0}
+        placeholder="Line ID를 먼저 선택하세요"
+        items={processIds}
+        selected={selection.processIds}
+        onChange={changeProcesses}
+      />
+      <MultiSelectColumnCard
+        title="EDS Step"
+        badge={edsSteps.length > 0 ? `${edsSteps.length}` : null}
+        disabled={selectedVisibleProcessIds.length === 0}
+        placeholder="Process ID를 먼저 선택하세요"
+        items={edsSteps}
+        selected={selection.edsSteps}
+        onChange={(edsStepsNext) => onSelectionChange({ ...selection, edsSteps: edsStepsNext })}
+      />
+    </div>
+  )
 
   return (
     <section className="shrink-0 border-b bg-card">
@@ -206,6 +288,7 @@ export function L3SpiderDataSelector({
         ) : hasDate ? (
           <span className="text-xs font-medium text-chart-2">✓ {selection.date}</span>
         ) : null}
+        {showStats && stats && <InlineStats stats={stats} />}
         <div className="ml-auto flex items-center gap-3">
           <SelectionStatus
             canFetch={canFetch}
@@ -226,30 +309,20 @@ export function L3SpiderDataSelector({
           </Button>
         </div>
       </div>
-      <div className="grid gap-2 border-t px-6 py-2">
-        <OptionGroup
-          title="Line ID"
-          items={visibleLineIds}
-          selected={selection.lineIds}
-          disabled={!selection.date}
-          onChange={changeLines}
-        />
-        <OptionGroup
-          title="Process ID"
-          items={processIds}
-          selected={selection.processIds}
-          disabled={selectedVisibleLineIds.length === 0}
-          onChange={changeProcesses}
-        />
-        <OptionGroup
-          title="EDS Step"
-          items={edsSteps}
-          selected={selection.edsSteps}
-          disabled={selectedVisibleProcessIds.length === 0}
-          onChange={(edsStepsNext) =>
-            onSelectionChange({ ...selection, edsSteps: edsStepsNext })}
-        />
-      </div>
+      {rightContent ? (
+        <div className="flex min-h-0 items-stretch gap-4 border-t px-6 py-2">
+          <div className="shrink-0">
+            {selectorCards}
+          </div>
+          <div className="min-w-0 flex-1">
+            {rightContent}
+          </div>
+        </div>
+      ) : (
+        <div className="border-t px-6 py-2">
+          {selectorCards}
+        </div>
+      )}
     </section>
   )
 }
