@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/lib/auth"
 import { resolvePortalBrand } from "@/lib/config/portalBranding"
 import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
+import { useTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
 import { PortalNavLink } from "./PortalNavLink"
@@ -37,6 +38,7 @@ function canShowNavigationItem(item, user) {
 
 export function PortalNavbar({ navigationItems }) {
   const { user } = useAuth()
+  const { theme = "system", systemTheme } = useTheme()
   const { pathname } = useLocation()
   const isHomeRoute = pathname === "/"
   const shouldFadeNavItems = !isHomeRoute
@@ -119,6 +121,11 @@ export function PortalNavbar({ navigationItems }) {
   const brand = resolvePortalBrand(pathname)
   const brandMark = brand.mark
   const BrandIcon = brandMark?.type === "icon" ? brandMark.icon : null
+  const resolvedTheme = theme === "system" ? systemTheme : theme
+  const brandImageSrc =
+    brandMark?.type === "image" && resolvedTheme === "dark" && brandMark.darkSrc
+      ? brandMark.darkSrc
+      : brandMark?.src
 
   return (
     <div
@@ -130,12 +137,12 @@ export function PortalNavbar({ navigationItems }) {
     >
       <div className="flex flex-1 items-center gap-4">
         <PortalNavLink href="/" className="flex items-center gap-3">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-foreground">
+          <span className="flex size-8 shrink-0 items-center justify-center text-foreground">
             {brandMark?.type === "image" ? (
               <img
-                src={brandMark.src}
+                src={brandImageSrc}
                 alt={brandMark.alt ?? brand.name}
-                className="size-6 object-contain"
+                className="size-8 object-contain"
               />
             ) : null}
             {BrandIcon ? <BrandIcon className="size-4" aria-hidden="true" /> : null}

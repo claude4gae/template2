@@ -1,19 +1,20 @@
 import {
-  ActivityIcon,
   BarChart3Icon,
   BotIcon,
-  ClipboardListIcon,
   LayoutGridIcon,
   MailIcon,
   MessageSquareIcon,
   SettingsIcon,
-  ShieldCheckIcon,
-  SparklesIcon,
-  StoreIcon,
   UsersIcon,
 } from "lucide-react"
 
+import appstoreLogoDarkPng from "../../assets/images/appstore_darkmode.png"
+import appstoreLogoLightPng from "../../assets/images/appstore_lightmode.png"
+import observerLogoDarkPng from "../../assets/images/observer_darkmode.png"
+import observerLogoLightPng from "../../assets/images/observer_lightmode.png"
 import portalLogoPng from "../../assets/images/logo.png"
+import spiderLogoDarkPng from "../../assets/images/spider_darkmode.png"
+import spiderLogoLightPng from "../../assets/images/spider_lightmode.png"
 
 export const PORTAL_BRAND_KEY = "portal"
 
@@ -33,8 +34,10 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
     name: "Appstore",
     pathPrefixes: ["/appstore"],
     mark: {
-      type: "icon",
-      icon: StoreIcon,
+      type: "image",
+      src: appstoreLogoLightPng,
+      darkSrc: appstoreLogoDarkPng,
+      alt: "Appstore",
     },
   },
   "line-dashboard": {
@@ -51,8 +54,10 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
     name: "Observer",
     pathPrefixes: ["/observer"],
     mark: {
-      type: "icon",
-      icon: ClipboardListIcon,
+      type: "image",
+      src: observerLogoLightPng,
+      darkSrc: observerLogoDarkPng,
+      alt: "Observer",
     },
   },
   emails: {
@@ -69,8 +74,10 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
     name: "L0 Spider",
     pathPrefixes: ["/fdc_trend"],
     mark: {
-      type: "icon",
-      icon: ActivityIcon,
+      type: "image",
+      src: spiderLogoLightPng,
+      darkSrc: spiderLogoDarkPng,
+      alt: "L0 Spider",
     },
   },
   "l3-spider": {
@@ -78,8 +85,10 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
     name: "L3 Spider",
     pathPrefixes: ["/l3_spider"],
     mark: {
-      type: "icon",
-      icon: SparklesIcon,
+      type: "image",
+      src: spiderLogoLightPng,
+      darkSrc: spiderLogoDarkPng,
+      alt: "L3 Spider",
     },
   },
   "pm-comparison": {
@@ -87,8 +96,10 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
     name: "PM SPIDER",
     pathPrefixes: ["/pm-comparison"],
     mark: {
-      type: "icon",
-      icon: ShieldCheckIcon,
+      type: "image",
+      src: spiderLogoLightPng,
+      darkSrc: spiderLogoDarkPng,
+      alt: "PM Spider",
     },
   },
   "access-stats": {

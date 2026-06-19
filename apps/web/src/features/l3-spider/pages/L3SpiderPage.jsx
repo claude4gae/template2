@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, ArrowUp, Database, RefreshCw } from "lucide-react"
+import { ArrowDown, ArrowUp, Database } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
@@ -121,27 +121,6 @@ export function L3SpiderPage() {
       className="relative flex h-full min-h-0 min-w-0 flex-col overflow-y-auto"
       onScroll={handlePageScroll}
     >
-      <header className="shrink-0 border-b bg-card px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">L3 Spider</h1>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              metaQuery.refetch()
-              summaryQuery.refetch()
-              dataQuery.refetch()
-            }}
-          >
-            <RefreshCw className="size-4" />
-            전체 새로고침
-          </Button>
-        </div>
-      </header>
-
       <L3SpiderDataSelector
         meta={meta}
         selection={selection}

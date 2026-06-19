@@ -1,7 +1,5 @@
 import { useState } from "react"
-import { AlertTriangle, Database, RefreshCw } from "lucide-react"
-
-import { Button } from "@/components/ui/button"
+import { AlertTriangle, Database } from "lucide-react"
 
 import { PmComparisonFilterBar } from "../components/PmComparisonFilterBar"
 import { PmSpiderCategoryDashboard } from "../components/PmSpiderCategoryDashboard"
@@ -91,28 +89,6 @@ export function PmComparisonPage() {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-muted/30">
-      <header className="shrink-0 border-b bg-card px-4 py-3 md:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">PM SPIDER</h1>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              metaQuery.refetch()
-              if (payload) {
-                categoryResults.refetch()
-              }
-            }}
-            disabled={metaQuery.isFetching || categoryResults.isFetching}
-          >
-            <RefreshCw className="size-4" />
-            전체 새로고침
-          </Button>
-        </div>
-      </header>
-
       <PmComparisonFilterBar
         form={form}
         meta={filterOptionsMeta}
