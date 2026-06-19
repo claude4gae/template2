@@ -3,6 +3,7 @@ name: frontend-boundary-audit
 description: |
   React feature boundary와 public facade 규칙을 deterministic script로 점검하는 스킬.
   cross-feature internal import, export-star, routes/index 누락, 허용되지 않은 feature 하위 폴더를 찾는다.
+  components 하위 그룹 이름과 추가 중첩도 함께 점검한다.
 ---
 
 # frontend-boundary-audit
@@ -34,3 +35,5 @@ scripts/agent/check_frontend_boundaries.sh
 - feature `index.js`의 `export *` 금지
 - 모든 feature의 `index.js`, `routes.jsx` 존재
 - feature 하위 폴더가 허용 목록을 따르는지 확인
+- `components/<group>`은 허용된 그룹명만 사용하는지 확인
+- `components/<group>/<nested>` 추가 중첩이 없는지 확인

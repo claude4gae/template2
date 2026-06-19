@@ -20,6 +20,7 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Request intake gate: `.codex/skills/request-intake-gate/SKILL.md`
 - New Django feature scaffold: `.codex/skills/create-django-feature/SKILL.md`
 - Django tests + migrations flow: `.codex/skills/django-test-migration-flow/SKILL.md`
+- Backend boundary audit: `.codex/skills/backend-boundary-audit/SKILL.md`
 - Korean-commented Python output: `.codex/skills/write-commented-python/SKILL.md`
 - Frontend layout composition: `.codex/skills/compose-frontend-layout/SKILL.md`
 - Product UI design system: `.codex/skills/product-ui-design-system/SKILL.md`
@@ -124,6 +125,14 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - `[timeline]`: timeline domain changes
 - `[line-dashboard]`: line dashboard domain changes
 - `[data-movement]`: data movement or Airflow data pipeline changes
+- `[pm-comparison]`: PM comparison domain changes
+- `[l3-spider]`: L3 spider domain changes
+- `[fdc-trend]`: FDC trend domain changes
+- `[voc]`: VOC domain changes
+- `[auth]`: auth domain changes
+- `[access-stats]`: access stats domain changes
+- `[home]`: home shell or portal entry changes
+- `[teamstaff]`: teamstaff domain changes
 - `[infra]`: compose, env, Docker, deploy, CI, or operational scripts
 - `[docs]`: documentation-only changes
 - `[agent]`: `AGENTS.md`, `.codex/skills`, or agent support scripts

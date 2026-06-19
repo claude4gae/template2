@@ -105,6 +105,36 @@ else
 fi
 echo
 
+echo "== Disallowed component group subdirectories =="
+allowed_component_groups='^(list|detail|form|dialog|table|chart|filters|cards|sections)$'
+component_group_status=0
+while IFS= read -r component_group; do
+  group_name="$(basename "$component_group")"
+  if [[ ! "$group_name" =~ $allowed_component_groups ]]; then
+    echo "${component_group#$ROOT_DIR/}"
+    component_group_status=1
+  fi
+done < <(find "$FEATURES_DIR" -mindepth 3 -maxdepth 3 -type d -path '*/components/*' | sort)
+if [[ "$component_group_status" -eq 1 ]]; then
+  status=1
+else
+  echo "OK"
+fi
+echo
+
+echo "== Nested component group depth =="
+component_depth_status=0
+while IFS= read -r nested_component_dir; do
+  echo "${nested_component_dir#$ROOT_DIR/}"
+  component_depth_status=1
+done < <(find "$FEATURES_DIR" -mindepth 4 -type d -path '*/components/*/*' | sort)
+if [[ "$component_depth_status" -eq 1 ]]; then
+  status=1
+else
+  echo "OK"
+fi
+echo
+
 if [[ "$status" -eq 0 ]]; then
   echo "Frontend boundary audit passed."
 else

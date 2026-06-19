@@ -70,6 +70,8 @@ These rules apply to `apps/api/**`.
 - Domain-specific commands stay in each feature app.
 - Shared commands use service/selector facade only.
 - Backend tests/commands must run in Docker Compose `api` container.
+- Static agent audit scripts may run on the host because they do not execute Django runtime code.
+- After backend domain boundary/import/view/selector changes, run or recommend `npm run agent:audit:api-boundary`.
 - Detailed execution sequence and commands are in `django-test-migration-flow` skill.
 
 ## Offsite Development

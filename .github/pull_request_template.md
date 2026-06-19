@@ -14,6 +14,7 @@
 ## 검증
 
 - [ ] `npm run agent:audit:web-boundary`
+- [ ] backend 변경 시 `npm run agent:audit:api-boundary`
 - [ ] `npm run web:lint`
 - [ ] `npm run web:build`
 - [ ] backend 변경 시 Docker Compose `api` 컨테이너 기준 테스트 또는 실행 불가 사유 기록

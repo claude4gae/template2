@@ -7,14 +7,21 @@
 - `.codex/skills/.system/**`은 로컬 시스템 skill로 보고 추적/공유 대상에서 제외한다.
 - frontend UI 변경 후에는 `npm run agent:audit:ui` 또는 `scripts/agent/check_ui_consistency.sh`를 실행한다.
 - frontend feature import/export/routing 변경 후에는 `npm run agent:audit:web-boundary` 또는 `scripts/agent/check_frontend_boundaries.sh`를 실행한다.
-- PR에서는 `.github/workflows/feature-guardrails.yml`의 feature boundary, lint, build 검사를 통과해야 한다.
+- backend domain boundary/import/view/selector 변경 후에는 `npm run agent:audit:api-boundary` 또는 `scripts/agent/check_backend_boundaries.py`를 실행한다.
+- PR에서는 `.github/workflows/feature-guardrails.yml`의 frontend boundary, backend boundary, lint, build, backend syntax 검사를 통과해야 한다.
 - AI가 feature 작업을 수행할 때는 `docs/agent/ai-feature-workflow.md`의 기본 프롬프트와 검증 절차를 따른다.
 - 큰 작업은 `docs/agent/PLANS.md`의 ExecPlan 기준을 따른다.
 - eval은 `docs/agent/evals/*`의 작업/성공 기준을 기준으로 누적한다.
 
 ## 보류된 결정
-- backend boundary audit은 단순 grep이 아니라 AST 기반으로 별도 설계한다.
 - multi-agent orchestration은 eval에서 병렬 검토 효과가 확인될 때까지 도입하지 않는다.
+
+## 2026-06-19: backend boundary audit 1차 도입
+
+- backend boundary audit은 `scripts/agent/check_backend_boundaries.py`의 AST 기반 검증으로 운영한다.
+- 1차 실패 기준은 cross-domain internal import, test cross-domain internal import, `views.py` 직접 ORM, `selectors.py` write ORM, backend app 구조 위반이다.
+- 기존 service direct read ORM 후보는 범위가 넓어 CI 실패 기준에 넣지 않고 별도 debt로 관리한다.
+- CI backend job은 boundary audit 후 Python compile을 실행한다.
 
 ## 2026-05-17: 앱 문서 상세화 구조
 

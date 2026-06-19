@@ -37,10 +37,11 @@ npm run web:build
 Backend business logic 변경 후:
 
 ```bash
+npm run agent:audit:api-boundary
 docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.<feature>
 ```
 
-Docker Compose `api` 컨테이너가 실행되지 않으면, 실패 원인을 PR에 기록합니다.
+Docker Compose `api` 컨테이너가 실행되지 않으면, 테스트 실패 원인을 PR에 기록합니다.
 
 ## PR에서 확인할 것
 

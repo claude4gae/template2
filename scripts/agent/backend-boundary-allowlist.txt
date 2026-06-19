@@ -1,0 +1,7 @@
+# 기존 코드에서 별도 정리 범위로 분류한 backend boundary 후보입니다.
+# 새 코드가 이 목록에 의존하지 않도록, 가능한 한 path + 구체 패턴으로 제한합니다.
+
+^apps/api/api/pm_comparison/writer\.py: pm_comparison has a non-standard file
+^apps/api/api/auth/tests\.py:.*tests must use other domains through services facade or selectors: api.account.models
+^apps/api/api/data_movement/tests\.py:.*tests must use other domains through services facade or selectors: api.data_movement.m_tkin_prevent.models
+^apps/api/api/data_movement/tests\.py:.*tests must use other domains through services facade or selectors: api.data_movement.m_tkin_prevent.services.loader
