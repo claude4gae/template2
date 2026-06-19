@@ -55,6 +55,8 @@ function HeatmapCanvas({ title, values, width, height, wavelengths, selectedWave
   const canvasRef = useRef(null)
   const domain = useMemo(() => extent(values), [values])
   const absMax = useMemo(() => Math.max(0.01, ...finiteValues(values).map((value) => Math.abs(value))), [values])
+  const firstWavelength = Math.round(Number(wavelengths?.[0]))
+  const lastWavelength = Math.round(Number(wavelengths?.[wavelengths.length - 1]))
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -114,6 +116,11 @@ function HeatmapCanvas({ title, values, width, height, wavelengths, selectedWave
       >
         <canvas ref={canvasRef} className="block size-full" />
       </button>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center text-[9px] text-muted-foreground">
+        <span>{Number.isFinite(firstWavelength) ? `${firstWavelength} nm` : "-"}</span>
+        <span>wavelength</span>
+        <span className="text-right">{Number.isFinite(lastWavelength) ? `${lastWavelength} nm` : "-"}</span>
+      </div>
     </div>
   )
 }
@@ -161,11 +168,6 @@ export function CanvasHeatmap({ heatmap, selectedWavelength, onSelectWavelength,
           onSelectWavelength={onSelectWavelength}
           colorMode="diverging"
         />
-      </div>
-      <div className="flex justify-between text-[9px] text-muted-foreground">
-        <span>{Math.round(Number(wavelengths[0]))} nm</span>
-        <span>wavelength</span>
-        <span>{Math.round(Number(wavelengths[wavelengths.length - 1]))} nm</span>
       </div>
       {heatmap?.sourcePointCount ? (
         <p className="text-[10px] text-muted-foreground">
