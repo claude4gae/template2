@@ -395,6 +395,35 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(fdc_meta["recipeIds"], ["RCP1", "RCP2"])
         self.assertEqual(ppid_meta["recipeIds"], ["RCP1"])
 
+    def test_initial_meta_does_not_descend_to_slow_deep_options(self) -> None:
+        """선택값 없는 초기 메타는 line 목록만 수집하고 깊은 옵션은 비워둡니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deep_target = (
+                root
+                / selectors.RAW_DIR_NAME
+                / "L1"
+                / "EQP1"
+                / "BIN1"
+                / "2026-06-03 14:23:23"
+                / "trace"
+                / "type=ag"
+                / "ppid=PPID1"
+                / "recipe_id=RCP1"
+                / "priority=1"
+                / "trace_param_name=PRESSURE"
+            )
+            deep_target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                meta = services.get_meta()
+
+        self.assertEqual(meta["lineIds"], ["L1"])
+        self.assertEqual(meta["eqpIds"], [])
+        self.assertEqual(meta["ppids"], [])
+        self.assertEqual(meta["recipeIds"], [])
+
     def test_score_fallback_meta_options_are_scoped(self) -> None:
         """raw data가 없을 때 score fallback 메타도 선택값으로 좁혀야 합니다."""
 
