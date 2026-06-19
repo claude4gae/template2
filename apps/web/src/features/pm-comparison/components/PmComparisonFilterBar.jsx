@@ -42,11 +42,9 @@ function MetaSelect({ id, value, onChange, options, placeholder, disabled }) {
 }
 
 const RESET_FIELDS_BY_KEY = {
-  lineId: ["eqpId", "fdcBin", "pmTimestamp", "ppid", "recipeId"],
-  eqpId: ["fdcBin", "pmTimestamp", "ppid", "recipeId"],
-  fdcBin: ["pmTimestamp", "ppid", "recipeId"],
-  pmTimestamp: ["ppid", "recipeId"],
-  ppid: ["recipeId"],
+  lineId: ["eqpId", "fdcBin", "pmTimestamp"],
+  eqpId: ["fdcBin", "pmTimestamp"],
+  fdcBin: ["pmTimestamp"],
 }
 
 export function PmComparisonFilterBar({
@@ -76,7 +74,7 @@ export function PmComparisonFilterBar({
   return (
     <section className="shrink-0 border-b bg-card">
       <form onSubmit={submit} className="px-4 py-3 md:px-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
           <Field id="pm-line-id" label="Line ID *">
             <MetaSelect
               id="pm-line-id"
@@ -99,7 +97,7 @@ export function PmComparisonFilterBar({
             />
           </Field>
 
-          <Field id="pm-fdc-bin" label="FDC Bin">
+          <Field id="pm-fdc-bin" label="FDC Bin *">
             <MetaSelect
               id="pm-fdc-bin"
               value={form.fdcBin}
@@ -121,30 +119,8 @@ export function PmComparisonFilterBar({
             />
           </Field>
 
-          <Field id="pm-ppid" label="PPID">
-            <MetaSelect
-              id="pm-ppid"
-              value={form.ppid}
-              onChange={(v) => setField("ppid", v)}
-              options={meta?.ppids}
-              placeholder="PPID 선택"
-              disabled={isMetaLoading}
-            />
-          </Field>
-
-          <Field id="pm-recipe-id" label="Recipe ID">
-            <MetaSelect
-              id="pm-recipe-id"
-              value={form.recipeId}
-              onChange={(v) => setField("recipeId", v)}
-              options={meta?.recipeIds}
-              placeholder="Recipe 선택"
-              disabled={isMetaLoading}
-            />
-          </Field>
-
           <div className="flex items-end">
-            <Button type="submit" disabled={!canSubmit} className="h-9 w-full xl:w-auto">
+            <Button type="submit" disabled={!canSubmit} className="h-9 w-full lg:w-auto">
               <Search className="size-4" />
               조회
             </Button>

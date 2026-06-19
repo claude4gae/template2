@@ -62,6 +62,11 @@ class PmComparisonRequestSerializer(serializers.Serializer):
         required=False,
     )
     limit = serializers.IntegerField(min_value=50, max_value=5000, default=1200)
+    maxPoints = serializers.IntegerField(min_value=100, max_value=20000, default=2400)
+    xStart = serializers.FloatField(required=False)
+    xEnd = serializers.FloatField(required=False)
+    heatmapXBins = serializers.IntegerField(min_value=20, max_value=1600, default=1200)
+    heatmapYBins = serializers.IntegerField(min_value=10, max_value=240, default=100)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """파일 경로에 반영되는 값을 traversal 없이 안전하게 제한합니다."""

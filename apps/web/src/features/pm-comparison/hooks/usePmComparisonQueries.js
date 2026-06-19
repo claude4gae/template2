@@ -110,7 +110,7 @@ function getRowItemKey(category, row) {
 
 export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCell = null) {
   const itemKey = getRowItemKey(category, row)
-  // For OES: prefer oesCell (heatmap click) over row for step/wavelength
+  // OES는 히트맵 클릭으로 전달된 step/wavelength를 row 값보다 우선합니다.
   const oesStep = oesCell?.step ?? row?.step ?? ""
   const oesWl   = oesCell?.wavelength != null ? String(oesCell.wavelength) : String(row?.wavelength ?? "")
 
@@ -123,6 +123,10 @@ export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCel
       traceParamNames: category.kind === "trace" ? [itemKey].filter(Boolean) : [],
       selectedStep: category.kind === "oes" ? oesStep : "",
       selectedWavelength: category.kind === "oes" ? oesWl : "",
+      limit: category.kind === "oes" ? 800 : 1200,
+      maxPoints: category.kind === "oes" && oesWl ? 3600 : 2400,
+      heatmapXBins: 1200,
+      heatmapYBins: 100,
     }
   }
   const cellKey = oesCell ? `${oesCell.step}:${oesCell.wavelength}` : "none"

@@ -5,8 +5,6 @@ export const DEFAULT_PM_FORM = {
   lineId: "",
   eqpId: "",
   fdcBin: "",
-  ppid: "",
-  recipeId: "",
   pmTimestamp: "",
 }
 
@@ -58,7 +56,7 @@ export function splitCsv(value) {
 }
 
 export function hasRequiredPmFilters(form) {
-  return Boolean(form.lineId && form.eqpId && form.pmTimestamp)
+  return Boolean(form.lineId && form.eqpId && form.fdcBin && form.pmTimestamp)
 }
 
 export function buildPmComparisonPayload(form) {
@@ -67,8 +65,6 @@ export function buildPmComparisonPayload(form) {
     lineId: form.lineId.trim(),
     eqpId: form.eqpId.trim(),
     fdcBin: (form.fdcBin || "").trim(),
-    ppid: (form.ppid || "").trim(),
-    recipeId: (form.recipeId || "").trim(),
     pmTimestamp: form.pmTimestamp,
     dtValues: form.pmTimestamp ? [form.pmTimestamp] : [],
     traceDataSource: "trace",

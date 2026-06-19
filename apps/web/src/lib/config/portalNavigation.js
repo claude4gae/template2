@@ -2,7 +2,6 @@ import {
   BookOpenIcon,
   LayoutGridIcon,
   MessageSquareIcon,
-  ShieldCheckIcon,
 } from "lucide-react"
 
 function readEnvValue(key) {

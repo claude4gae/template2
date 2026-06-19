@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { AlertTriangle, Database, RefreshCw } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
 import { PmComparisonFilterBar } from "../components/PmComparisonFilterBar"
@@ -26,11 +25,30 @@ function EmptyState() {
         <Database className="size-7" aria-hidden="true" />
         <div>
           <p className="font-medium text-foreground">PM SPIDER 조건을 입력하세요.</p>
-          <p className="mt-1">Line ID, EQP ID, PM 기준 시점을 넣으면 NPW/PW trace/OES 랭킹을 조회합니다.</p>
+          <p className="mt-1">Line ID, EQP ID, FDC Bin, PM 시점을 선택하면 랭킹을 조회합니다.</p>
         </div>
       </div>
     </div>
   )
+}
+
+function buildFilterOptionsMeta({
+  lineMeta,
+  eqpMeta,
+  fdcMeta,
+  pmDateMeta,
+  selectedMeta,
+  form,
+}) {
+  return {
+    ...selectedMeta,
+    lineIds: lineMeta?.lineIds ?? selectedMeta?.lineIds ?? [],
+    eqpIds: form.lineId ? (eqpMeta?.eqpIds ?? selectedMeta?.eqpIds ?? []) : [],
+    fdcBins: form.lineId && form.eqpId ? (fdcMeta?.fdcBins ?? selectedMeta?.fdcBins ?? []) : [],
+    pmDates: form.lineId && form.eqpId && form.fdcBin
+      ? (pmDateMeta?.pmDates ?? selectedMeta?.pmDates ?? [])
+      : [],
+  }
 }
 
 export function PmComparisonPage() {
@@ -38,7 +56,29 @@ export function PmComparisonPage() {
   const [payload, setPayload] = useState(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState("ag")
   const metaQuery = usePmComparisonMeta(form)
+  const lineOptionsQuery = usePmComparisonMeta({})
+  const eqpOptionsQuery = usePmComparisonMeta({ lineId: form.lineId })
+  const fdcOptionsQuery = usePmComparisonMeta({ lineId: form.lineId, eqpId: form.eqpId })
+  const pmDateOptionsQuery = usePmComparisonMeta({
+    lineId: form.lineId,
+    eqpId: form.eqpId,
+    fdcBin: form.fdcBin,
+  })
   const categoryResults = usePmSpiderCategoryResults(payload, null)
+  const filterOptionsMeta = buildFilterOptionsMeta({
+    lineMeta: lineOptionsQuery.data,
+    eqpMeta: eqpOptionsQuery.data,
+    fdcMeta: fdcOptionsQuery.data,
+    pmDateMeta: pmDateOptionsQuery.data,
+    selectedMeta: metaQuery.data,
+    form,
+  })
+  const isFilterMetaFetching =
+    metaQuery.isFetching ||
+    lineOptionsQuery.isFetching ||
+    eqpOptionsQuery.isFetching ||
+    fdcOptionsQuery.isFetching ||
+    pmDateOptionsQuery.isFetching
 
   const updateForm = (nextForm) => {
     setForm(nextForm)
@@ -54,13 +94,7 @@ export function PmComparisonPage() {
       <header className="shrink-0 border-b bg-card px-4 py-3 md:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold tracking-tight">PM SPIDER</h1>
-              <Badge variant="outline">NPW / PW · P2 / P3</Badge>
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              NPW(ag)/PW(process) × Trace/OES 기준 P2(per-wafer) / P3(집단비교) 이상 파라미터 랭킹.
-            </p>
+            <h1 className="text-lg font-semibold tracking-tight">PM SPIDER</h1>
           </div>
           <Button
             type="button"
@@ -81,8 +115,8 @@ export function PmComparisonPage() {
 
       <PmComparisonFilterBar
         form={form}
-        meta={metaQuery.data}
-        isMetaLoading={metaQuery.isFetching}
+        meta={filterOptionsMeta}
+        isMetaLoading={isFilterMetaFetching}
         isResultFetching={categoryResults.isFetching}
         onFormChange={updateForm}
         onSubmit={submit}
@@ -100,6 +134,7 @@ export function PmComparisonPage() {
         ) : (
           <PmSpiderCategoryDashboard
             categories={categoryResults.categories}
+            meta={metaQuery.data}
             selectedCategoryId={selectedCategoryId}
             onSelectedCategoryChange={setSelectedCategoryId}
             isFetching={categoryResults.isFetching}

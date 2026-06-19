@@ -1,4 +1,5 @@
 .tc-wrap {
+  position: relative;
   background: #ffffff;
   border: 1px solid #e0e4f0;
   border-radius: 8px;
@@ -7,46 +8,30 @@
   flex-direction: column;
 }
 
-.tc-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 16px;
-  background: #f5f7fc;
-  border-bottom: 1px solid #e0e4f0;
-}
-
-.tc-info-count {
-  font-size: 12px;
-  color: #6b7394;
-}
-
-.tc-info-progress {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #2563eb;
-}
-
-.tc-clear-selection {
-  flex-shrink: 0;
+.tc-clear-selection-float {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 20;
   min-height: 26px;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border: 1px solid #d7ddea;
   border-radius: 6px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
   color: #4b5578;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
 }
 
-.tc-clear-selection:hover {
+.tc-clear-selection-float:hover {
   background: #fff7d6;
   border-color: #facc15;
   color: #854d0e;
 }
+
 
 .tc-plot-grid {
   display: grid;

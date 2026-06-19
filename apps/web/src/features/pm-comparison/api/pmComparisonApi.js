@@ -35,7 +35,7 @@ function postJson(path, body) {
 
 export function fetchPmComparisonMeta(selection = {}) {
   const params = new URLSearchParams()
-  for (const key of ["lineId", "eqpId", "fdcBin", "pmTimestamp", "type", "ppid", "recipeId", "traceDataSource"]) {
+  for (const key of ["lineId", "eqpId", "fdcBin", "pmTimestamp", "type", "traceDataSource"]) {
     const value = selection[key]
     if (value) params.set(key, value)
   }
