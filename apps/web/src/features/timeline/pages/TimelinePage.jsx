@@ -42,7 +42,12 @@ export default function TimelinePage() {
   } = timelinePrefs;
 
   const { typeFilters, handleFilterChange } = filters;
-  const { isSettingsOpen, setIsSettingsOpen } = settings;
+  const {
+    isSettingsOpen,
+    setIsSettingsOpen,
+    logRange,
+    setLogRange,
+  } = settings;
 
   const { isValidating, validationError } = validation;
   const {
@@ -89,6 +94,8 @@ export default function TimelinePage() {
           setSdwt={setSdwt}
           setPrcGroup={setPrcGroup}
           setEqp={setEqp}
+          logRange={logRange}
+          onLogRangeChange={setLogRange}
         />
 
         <div className="grid min-h-0 grid-rows-[auto_1fr] gap-2">

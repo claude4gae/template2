@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { DEFAULT_TYPE_FILTERS } from "../utils/constants";
+import {
+  DEFAULT_TYPE_FILTERS,
+} from "../utils/constants";
+import {
+  buildLogDateRangeOptions,
+  getDefaultLogRange,
+} from "../utils/logDateRange";
 import { useTimelineSelectionStore } from "../store/useTimelineSelectionStore";
 import { useTimelineStore } from "../store/useTimelineStore";
 import { useTimelineLogs } from "./useTimelineLogs";
@@ -38,6 +44,11 @@ export function useTimelinePageState(params) {
   // 페이지 로컬 UI 상태
   const [typeFilters, setTypeFilters] = useState({ ...DEFAULT_TYPE_FILTERS });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [logRange, setLogRange] = useState(() => getDefaultLogRange());
+  const logQueryOptions = useMemo(
+    () => buildLogDateRangeOptions(logRange),
+    [logRange]
+  );
 
   // URL 파라미터 검증 및 상태 반영 (과도한 파일 분리를 줄이기 위해 이 훅 안에서 처리)
   const [validationError, setValidationError] = useState(null);
@@ -124,7 +135,12 @@ export function useTimelinePageState(params) {
     setTypeFilters((prev) => ({ ...prev, [name]: checked }));
   };
 
-  const logs = useTimelineLogs(eqpId, typeFilters, selectedTipGroups);
+  const logs = useTimelineLogs(
+    eqpId,
+    typeFilters,
+    selectedTipGroups,
+    logQueryOptions
+  );
   const selectedLog =
     logs.mergedLogs.find((log) => String(log.id) === String(selectedRow)) ||
     null;
@@ -154,6 +170,8 @@ export function useTimelinePageState(params) {
     settings: {
       isSettingsOpen,
       setIsSettingsOpen,
+      logRange,
+      setLogRange,
     },
     validation: { isValidating, validationError },
     logs,
