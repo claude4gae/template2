@@ -1,11 +1,9 @@
 import React from "react";
 import { useParams } from "react-router-dom";
-import { AdjustmentsHorizontalIcon } from "@heroicons/react/24/outline";
 import { LoadingSpinner } from "../components/Loaders";
 import ObserverBoard from "../components/ObserverBoard";
 import DataLogSection from "../components/DataLogSection";
 import LogViewerSection from "../components/LogViewerSection";
-import ShareButton from "../components/ShareButton";
 import LogDetailSection from "../components/LogDetailSection";
 import ObserverSettings from "../components/ObserverSettings";
 import { useObserverPageState } from "../hooks/useObserverPageState";
@@ -96,6 +94,11 @@ export default function ObserverPage() {
           setEqp={setEqp}
           logRange={logRange}
           onLogRangeChange={setLogRange}
+          showSettingsButton={true}
+          isSettingsOpen={isSettingsOpen}
+          isSettingsDisabled={!observerReady || logsLoading}
+          onSettingsToggle={() => setIsSettingsOpen(!isSettingsOpen)}
+          showShareButton={true}
         />
 
         <div className="grid min-h-0 grid-rows-[auto_1fr] gap-2">
@@ -120,24 +123,7 @@ export default function ObserverPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 grid-rows-[auto_1fr] gap-3">
-        <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 shadow-sm">
-          <div className="flex items-center gap-2">
-            <h2 className="text-md font-bold text-foreground">📊 Observer</h2>
-            {lineId && eqpId && <ShareButton />}
-          </div>
-
-          {eqpId && !logsLoading ? (
-            <button
-              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-            >
-              <AdjustmentsHorizontalIcon className="h-4 w-4" />
-              설정
-            </button>
-          ) : null}
-        </div>
-
+      <div className="grid h-full min-h-0 grid-rows-[1fr] gap-3">
         <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[1fr_auto]">
           <div className="relative min-h-0 overflow-hidden rounded-xl border bg-card shadow-sm">
             {!eqpId && !logsLoading ? (

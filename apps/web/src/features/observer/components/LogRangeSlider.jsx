@@ -139,21 +139,21 @@ export default function LogRangeSlider({
   useEffect(() => cleanupRangeDrag, [cleanupRangeDrag]);
 
   return (
-    <div className="flex h-9 min-w-[252px] max-w-[308px] flex-1 items-end gap-2">
-      <CalendarDaysIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 text-[10px] text-muted-foreground">
+    <div className="flex h-9 min-w-[252px] max-w-[520px] flex-1 items-center gap-2 rounded-md border-border bg-card px-2">
+      <CalendarDaysIcon className="h-8 w-8 shrink-0 self-end text-muted-foreground" />
+      <span className="mt-5 shrink-0 text-[11px] text-muted-foreground">
         - 90 days
       </span>
       <div
         ref={sliderAreaRef}
-        className="relative min-w-[84px] flex-1 cursor-grab pt-5 active:cursor-grabbing"
+        className="relative min-w-[105px] flex-1 cursor-grab pt-5 active:cursor-grabbing"
         onPointerDownCapture={handleRangePointerDown}
       >
-        <span className="absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+        <span className="absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-muted-foreground">
           {rangeLabel} ({rangeWindow})
         </span>
         <Slider
-          className="[&_[role=slider]]:size-3 [&_[role=slider]]:shadow-sm"
+          className="[&>span:first-child]:h-2 [&_[role=slider]]:size-3 [&_[role=slider]]:shadow-sm"
           min={MIN_LOG_RANGE_DAYS}
           max={MAX_LOG_RANGE_DAYS}
           step={LOG_RANGE_SLIDER_STEP}
@@ -165,7 +165,7 @@ export default function LogRangeSlider({
           aria-label="로그 조회 기간 선택"
         />
       </div>
-      <span className="shrink-0 text-[10px] text-muted-foreground">
+      <span className="mt-5 shrink-0 text-[11px] text-muted-foreground">
         -1 day
       </span>
     </div>

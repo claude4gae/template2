@@ -35,24 +35,32 @@ export default function ShareButton() {
 
   return (
     <>
-      {/* 부모 div에 relative position 추가 */}
-      <div className="relative inline-block">
-        <svg
+      {/* 링크복사 버튼과 툴팁을 같은 기준점에 둡니다. */}
+      <div className="relative inline-flex h-9 shrink-0 items-center">
+        <button
+          type="button"
           onClick={handleShare}
-          className="w-5 h-5 cursor-pointer text-primary transition-colors hover:text-primary/80"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+          aria-label="URL 복사"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-primary transition-colors hover:bg-muted hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
           onMouseEnter={() => setShowTooltip(true)}
           onMouseLeave={() => setShowTooltip(false)}
+          onFocus={() => setShowTooltip(true)}
+          onBlur={() => setShowTooltip(false)}
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-          />
-        </svg>
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
+          </svg>
+        </button>
 
         {/* 툴팁 */}
         {showTooltip && (

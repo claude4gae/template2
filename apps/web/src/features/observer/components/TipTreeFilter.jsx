@@ -51,7 +51,9 @@ export default function TipTreeFilter({
       setIsAllSelected(false);
       setSelectedPpids(new Set(selectedTipGroups));
       const hasPwqSelected = hasPwqPpid(tree, selectedTipGroups);
-      setExcludePwq(!hasPwqSelected && selectedTipGroups.length > 0);
+      if (hasPwqSelected) {
+        setExcludePwq(false);
+      }
     }
   }, [selectedTipGroups, tree]);
 
