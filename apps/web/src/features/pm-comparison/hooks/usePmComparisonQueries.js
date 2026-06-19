@@ -119,6 +119,7 @@ export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCel
   if (category?.payload && hasTarget) {
     payload = {
       ...withRefPmDates(category.payload, refPmDates),
+      includeDetails: true,
       traceParamNames: category.kind === "trace" ? [itemKey].filter(Boolean) : [],
       selectedStep: category.kind === "oes" ? oesStep : "",
       selectedWavelength: category.kind === "oes" ? oesWl : "",

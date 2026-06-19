@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -250,6 +251,26 @@ def _selected_ref_dates(selection: dict[str, object], cycle_map: dict[str, int])
     return available.intersection(requested)
 
 
+def _selection_with_raw_dt_values(
+    selection: dict[str, object],
+    current_pm_date: str,
+    selected_ref_dates: set[str],
+) -> dict[str, object]:
+    """raw 파일 탐색이 선택된 PM cycle 날짜로 좁혀지도록 dt 후보를 보강합니다."""
+
+    dt_values: list[str] = []
+    for value in selection.get("dtValues") or []:
+        dt_values.extend(selectors.date_partition_candidates(value))
+    for value in [current_pm_date, *sorted(selected_ref_dates)]:
+        dt_values.extend(selectors.date_partition_candidates(value))
+    if not dt_values:
+        dt_values.extend(selectors.date_partition_candidates(selection.get("pmTimestamp")))
+    return {
+        **selection,
+        "dtValues": list(dict.fromkeys(dt_values)),
+    }
+
+
 def _ref_cycle_rows(cycle_map: dict[str, int], selected_ref_dates: set[str]) -> list[dict[str, Any]]:
     """화면 checkbox에 표시할 ref cycle 목록을 생성합니다."""
 
@@ -402,82 +423,85 @@ def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings:
     if not selected_sensors:
         selected_sensors = [row["traceSensor"] for row in rank_rows[:1] if row.get("traceSensor")]
 
-    files = selectors.iter_raw_files(
-        selection,
-        data_source=str(selection.get("traceDataSource") or "trace"),
-        trace_param_names=selected_sensors,
-    )
-    frames, raw_file_count = _read_frames(files, columns=TRACE_COLUMNS, warnings=warnings)
     trend_rows: list[dict[str, Any]] = []
-    row_count = 0
-    if frames:
-        frame = pd.concat(frames, ignore_index=True)
-        if "trace_param_name" not in frame.columns and "name" in frame.columns:
-            frame["trace_param_name"] = frame["name"]
-        x_col = "time" if "time" in frame.columns else ("step_time" if "step_time" in frame.columns else None)
-        if x_col and {"value", DATE_COLUMN, "trace_param_name"}.issubset(frame.columns):
-            frame = _filter_selected_cycles(_raw_cycle_frame(frame, cycle_map), selected_ref_dates)
-            if x_col == "time":
-                frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
-                frame = frame[frame["time"].notna()]
-            frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
-            frame = frame[frame["value"].notna()].copy()
-            if selected_sensors:
-                frame = frame[frame["trace_param_name"].astype(str).isin(selected_sensors)]
-            frame = frame.sort_values(["cycle_index", x_col])
-            row_count = int(len(frame))
-            columns = [
-                "time",
-                "step_time",
-                "period",
-                "phase",
-                "cycle_index",
-                "pm_date",
-                "trace_param_name",
-                "value",
-                "root_lot_id",
-                "lot_id",
-                "wafer_id",
-                "ch_step",
-                "group",
-                "slot_no",
-            ]
-            visible_columns = [column for column in columns if column in frame.columns]
-            trend_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
-        else:
-            warnings.append("trace data에 날짜/time/value/trace_param_name 컬럼이 없어 상세 plot을 건너뜁니다.")
-
-    # decomp_data에서 shape/jitter 상세 데이터를 읽습니다.
-    _SHAPE_COLS = [DATE_COLUMN, "ref_dates", "phase", "value", "group", "lot_id", "slot_no"]
-    _JITTER_COLS = [DATE_COLUMN, "ref_dates", "lot_id", "slot_no", "jitter_rms", "level", "group"]
-    shape_files = selectors.iter_decomp_files(selection, comp_dt=current_pm_date, param_names=selected_sensors, file_name="shape.parquet")
-    jitter_files = selectors.iter_decomp_files(selection, comp_dt=current_pm_date, param_names=selected_sensors, file_name="jitter.parquet")
-    shape_frames, _ = _read_frames(shape_files, columns=_SHAPE_COLS, warnings=warnings)
-    jitter_frames, _ = _read_frames(jitter_files, columns=_JITTER_COLS, warnings=warnings)
     shape_rows: list[dict[str, Any]] = []
     jitter_rows: list[dict[str, Any]] = []
-    if shape_frames:
-        sf = pd.concat(shape_frames, ignore_index=True)
-        if {DATE_COLUMN, "phase", "value"}.issubset(sf.columns):
-            sf = sf.rename(columns={"value": "shape", "phase": "norm_phase"})
-            sf = _filter_selected_cycles(_raw_cycle_frame(sf, cycle_map), selected_ref_dates)
-            sf["shape"] = pd.to_numeric(sf["shape"], errors="coerce")
-            sf["norm_phase"] = pd.to_numeric(sf.get("norm_phase", pd.Series(dtype=float)), errors="coerce")
-            sf = sf[sf["shape"].notna() & sf["norm_phase"].notna()].copy()
-            _vis = [c for c in ["norm_phase", "shape", "ch_step", "lot_id", "slot_no", "group",
-                                "cycle_index", "phase", "pm_date"]
-                    if c in sf.columns]
-            shape_rows = [_camelize_mapping(r) for r in sf[_vis].to_dict(orient="records")]
-    if jitter_frames:
-        jf = pd.concat(jitter_frames, ignore_index=True)
-        if {DATE_COLUMN, "jitter_rms", "group"}.issubset(jf.columns):
-            jf = _filter_selected_cycles(_raw_cycle_frame(jf, cycle_map), selected_ref_dates)
-            jf["jitter_rms"] = pd.to_numeric(jf["jitter_rms"], errors="coerce")
-            jf = jf[jf["jitter_rms"].notna()].copy()
-            _jvis = [c for c in ["lot_id", "slot_no", "jitter_rms", "level", "group", "ch_step",
-                                 "cycle_index", "phase", "pm_date"]
-                     if c in jf.columns]
-            jitter_rows = [_camelize_mapping(r) for r in jf[_jvis].to_dict(orient="records")]
+    raw_file_count = 0
+    row_count = 0
+    if selection.get("includeDetails", True):
+        raw_selection = _selection_with_raw_dt_values(selection, current_pm_date, selected_ref_dates)
+        files = selectors.iter_raw_files(
+            raw_selection,
+            data_source=str(selection.get("traceDataSource") or "trace"),
+            trace_param_names=selected_sensors,
+        )
+        frames, raw_file_count = _read_frames(files, columns=TRACE_COLUMNS, warnings=warnings)
+        if frames:
+            frame = pd.concat(frames, ignore_index=True)
+            if "trace_param_name" not in frame.columns and "name" in frame.columns:
+                frame["trace_param_name"] = frame["name"]
+            x_col = "time" if "time" in frame.columns else ("step_time" if "step_time" in frame.columns else None)
+            if x_col and {"value", DATE_COLUMN, "trace_param_name"}.issubset(frame.columns):
+                frame = _filter_selected_cycles(_raw_cycle_frame(frame, cycle_map), selected_ref_dates)
+                if x_col == "time":
+                    frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
+                    frame = frame[frame["time"].notna()]
+                frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
+                frame = frame[frame["value"].notna()].copy()
+                if selected_sensors:
+                    frame = frame[frame["trace_param_name"].astype(str).isin(selected_sensors)]
+                frame = frame.sort_values(["cycle_index", x_col])
+                row_count = int(len(frame))
+                columns = [
+                    "time",
+                    "step_time",
+                    "period",
+                    "phase",
+                    "cycle_index",
+                    "pm_date",
+                    "trace_param_name",
+                    "value",
+                    "root_lot_id",
+                    "lot_id",
+                    "wafer_id",
+                    "ch_step",
+                    "group",
+                    "slot_no",
+                ]
+                visible_columns = [column for column in columns if column in frame.columns]
+                trend_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
+            else:
+                warnings.append("trace data에 날짜/time/value/trace_param_name 컬럼이 없어 상세 plot을 건너뜁니다.")
+
+        # decomp_data에서 shape/jitter 상세 데이터를 읽습니다.
+        _SHAPE_COLS = [DATE_COLUMN, "ref_dates", "phase", "value", "group", "lot_id", "slot_no"]
+        _JITTER_COLS = [DATE_COLUMN, "ref_dates", "lot_id", "slot_no", "jitter_rms", "level", "group"]
+        shape_files = selectors.iter_decomp_files(selection, comp_dt=current_pm_date, param_names=selected_sensors, file_name="shape.parquet")
+        jitter_files = selectors.iter_decomp_files(selection, comp_dt=current_pm_date, param_names=selected_sensors, file_name="jitter.parquet")
+        shape_frames, _ = _read_frames(shape_files, columns=_SHAPE_COLS, warnings=warnings)
+        jitter_frames, _ = _read_frames(jitter_files, columns=_JITTER_COLS, warnings=warnings)
+        if shape_frames:
+            sf = pd.concat(shape_frames, ignore_index=True)
+            if {DATE_COLUMN, "phase", "value"}.issubset(sf.columns):
+                sf = sf.rename(columns={"value": "shape", "phase": "norm_phase"})
+                sf = _filter_selected_cycles(_raw_cycle_frame(sf, cycle_map), selected_ref_dates)
+                sf["shape"] = pd.to_numeric(sf["shape"], errors="coerce")
+                sf["norm_phase"] = pd.to_numeric(sf.get("norm_phase", pd.Series(dtype=float)), errors="coerce")
+                sf = sf[sf["shape"].notna() & sf["norm_phase"].notna()].copy()
+                _vis = [c for c in ["norm_phase", "shape", "ch_step", "lot_id", "slot_no", "group",
+                                    "cycle_index", "phase", "pm_date"]
+                        if c in sf.columns]
+                shape_rows = [_camelize_mapping(r) for r in sf[_vis].to_dict(orient="records")]
+        if jitter_frames:
+            jf = pd.concat(jitter_frames, ignore_index=True)
+            if {DATE_COLUMN, "jitter_rms", "group"}.issubset(jf.columns):
+                jf = _filter_selected_cycles(_raw_cycle_frame(jf, cycle_map), selected_ref_dates)
+                jf["jitter_rms"] = pd.to_numeric(jf["jitter_rms"], errors="coerce")
+                jf = jf[jf["jitter_rms"].notna()].copy()
+                _jvis = [c for c in ["lot_id", "slot_no", "jitter_rms", "level", "group", "ch_step",
+                                     "cycle_index", "phase", "pm_date"]
+                         if c in jf.columns]
+                jitter_rows = [_camelize_mapping(r) for r in jf[_jvis].to_dict(orient="records")]
 
     return {
         "fileCount": raw_file_count,
@@ -548,56 +572,59 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
     rank_rows = _oes_rank_rows(score_frame, current_pm_date)
     selected_step = str(selection.get("selectedStep") or (rank_rows[0].get("step") if rank_rows else "") or "")
 
-    _oes_source = str(selection.get("oesDataSource") or "oes")
-    files = selectors.iter_raw_files(selection, data_source=_oes_source, trace_param_names=[])
-    frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
-    if not frames:
-        files = selectors.iter_raw_files(selection, data_source="oes_processed", trace_param_names=[])
-        frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
     detail_rows: list[dict[str, Any]] = []
+    raw_file_count = 0
     row_count = 0
-    if frames:
-        frame = _normalize_oes(pd.concat(frames, ignore_index=True), warnings)
-        if {DATE_COLUMN, "rcp_step", "wavelength", "value"}.issubset(frame.columns):
-            if "phase" in frame.columns:
-                frame = frame.rename(columns={"phase": "traj_phase"})
-            frame = _filter_selected_cycles(_raw_cycle_frame(frame, cycle_map), selected_ref_dates)
-            frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
-            if selected_step:
-                frame = frame[frame["rcp_step"].astype(str) == selected_step]
-            selected_wl = str(selection.get("selectedWavelength") or "")
-            if selected_wl:
-                try:
-                    wl_val = float(selected_wl)
-                    frame = frame[frame["wavelength"].round(1) == round(wl_val, 1)]
-                except (ValueError, TypeError):
-                    pass
-            frame = frame[frame["value"].notna()].copy()
-            if "traj_phase" in frame.columns:
-                frame["traj_phase"] = pd.to_numeric(frame["traj_phase"], errors="coerce")
-                frame = frame[frame["traj_phase"].notna()]
-                frame = frame.sort_values(["cycle_index", "traj_phase"])
+    if selection.get("includeDetails", True):
+        _oes_source = str(selection.get("oesDataSource") or "oes")
+        raw_selection = _selection_with_raw_dt_values(selection, current_pm_date, selected_ref_dates)
+        files = selectors.iter_raw_files(raw_selection, data_source=_oes_source, trace_param_names=[])
+        frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
+        if not frames:
+            files = selectors.iter_raw_files(raw_selection, data_source="oes_processed", trace_param_names=[])
+            frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
+        if frames:
+            frame = _normalize_oes(pd.concat(frames, ignore_index=True), warnings)
+            if {DATE_COLUMN, "rcp_step", "wavelength", "value"}.issubset(frame.columns):
+                if "phase" in frame.columns:
+                    frame = frame.rename(columns={"phase": "traj_phase"})
+                frame = _filter_selected_cycles(_raw_cycle_frame(frame, cycle_map), selected_ref_dates)
+                frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
+                if selected_step:
+                    frame = frame[frame["rcp_step"].astype(str) == selected_step]
+                selected_wl = str(selection.get("selectedWavelength") or "")
+                if selected_wl:
+                    try:
+                        wl_val = float(selected_wl)
+                        frame = frame[frame["wavelength"].round(1) == round(wl_val, 1)]
+                    except (ValueError, TypeError):
+                        pass
+                frame = frame[frame["value"].notna()].copy()
+                if "traj_phase" in frame.columns:
+                    frame["traj_phase"] = pd.to_numeric(frame["traj_phase"], errors="coerce")
+                    frame = frame[frame["traj_phase"].notna()]
+                    frame = frame.sort_values(["cycle_index", "traj_phase"])
+                else:
+                    frame = frame.sort_values(["cycle_index", "wavelength"])
+                row_count = int(len(frame))
+                columns = [
+                    "traj_phase",
+                    "phase",
+                    "cycle_index",
+                    "pm_date",
+                    "rcp_step",
+                    "wavelength",
+                    "value",
+                    "lot_id",
+                    "slot_no",
+                    "slot_id",
+                    "group",
+                    "wafer_end_time",
+                ]
+                visible_columns = [column for column in columns if column in frame.columns]
+                detail_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
             else:
-                frame = frame.sort_values(["cycle_index", "wavelength"])
-            row_count = int(len(frame))
-            columns = [
-                "traj_phase",
-                "phase",
-                "cycle_index",
-                "pm_date",
-                "rcp_step",
-                "wavelength",
-                "value",
-                "lot_id",
-                "slot_no",
-                "slot_id",
-                "group",
-                "wafer_end_time",
-            ]
-            visible_columns = [column for column in columns if column in frame.columns]
-            detail_rows = [_camelize_mapping(row) for row in frame[visible_columns].to_dict(orient="records")]
-        else:
-            warnings.append("OES data에 날짜/rcp_step/wavelength/value 컬럼이 없어 상세 plot을 건너뜁니다.")
+                warnings.append("OES data에 날짜/rcp_step/wavelength/value 컬럼이 없어 상세 plot을 건너뜁니다.")
 
     step_rows = []
     if rank_rows:
@@ -686,6 +713,16 @@ def _build_filter_response(selection: dict[str, object]) -> dict[str, Any]:
     return {key: _json_safe_value(selection.get(key)) for key in keys}
 
 
+@lru_cache(maxsize=4096)
+def _score_file_dates(path_text: str, mtime_ns: int, size: int) -> tuple[str, ...]:
+    """score 파일 하나에서 읽은 PM 날짜 목록을 캐시합니다."""
+
+    frame = selectors.read_parquet(Path(path_text), [DATE_COLUMN])
+    if DATE_COLUMN not in frame.columns:
+        return tuple()
+    return tuple(sorted({_date_key(value) for value in frame[DATE_COLUMN].dropna().unique().tolist()}))
+
+
 def _collect_pm_dates(warnings: list[str], selection: dict[str, object] | None = None) -> list[str]:
     """result 전체에서 PM 날짜 목록을 수집합니다."""
 
@@ -702,12 +739,11 @@ def _collect_pm_dates(warnings: list[str], selection: dict[str, object] | None =
         return []
     for path in files:
         try:
-            frame = selectors.read_parquet(path, [DATE_COLUMN])
+            stat = path.stat()
+            dates.update(_score_file_dates(str(path), stat.st_mtime_ns, stat.st_size))
         except Exception as exc:
             warnings.append(f"score 날짜 읽기 실패: {path.name} ({exc})")
             continue
-        if DATE_COLUMN in frame.columns:
-            dates.update(_date_key(value) for value in frame[DATE_COLUMN].dropna().unique().tolist())
     return sorted(dates)
 
 

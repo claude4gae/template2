@@ -11,12 +11,19 @@ from typing import Any
 from rest_framework import serializers
 
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
+_SAFE_DATETIME_SEGMENT = re.compile(r"^[A-Za-z0-9_.: -]+$")
 
 
 def _is_safe_segment(value: str) -> bool:
     """파일 경로 partition 값으로 사용할 수 있는 문자열인지 확인합니다."""
 
     return bool(_SAFE_SEGMENT.match(value)) and ".." not in value
+
+
+def _is_safe_datetime_segment(value: str) -> bool:
+    """공백/콜론을 포함한 날짜 partition 값이 안전한지 확인합니다."""
+
+    return bool(_SAFE_DATETIME_SEGMENT.match(value)) and ".." not in value and "/" not in value and "\\" not in value
 
 
 class PmComparisonRequestSerializer(serializers.Serializer):
@@ -48,6 +55,7 @@ class PmComparisonRequestSerializer(serializers.Serializer):
     oesDataSource = serializers.CharField(required=False, allow_blank=True, default="oes")
     selectedStep = serializers.CharField(required=False, allow_blank=True, default="")
     selectedWavelength = serializers.CharField(required=False, allow_blank=True, default="")
+    includeDetails = serializers.BooleanField(required=False, default=True)
     refPmDates = serializers.ListField(
         child=serializers.CharField(),
         allow_empty=True,
@@ -71,11 +79,14 @@ class PmComparisonRequestSerializer(serializers.Serializer):
             attrs.get("selectedStep"),
             attrs.get("selectedWavelength"),
             *attrs.get("traceParamNames", []),
-            *attrs.get("dtValues", []),
-            *attrs.get("refPmDates", []),
         ]
         for value in path_values:
             if value and not _is_safe_segment(str(value)):
+                raise serializers.ValidationError(
+                    {"detail": f"유효하지 않은 선택값입니다: {value!r}"}
+                )
+        for value in [*attrs.get("dtValues", []), *attrs.get("refPmDates", [])]:
+            if value and not _is_safe_datetime_segment(str(value)):
                 raise serializers.ValidationError(
                     {"detail": f"유효하지 않은 선택값입니다: {value!r}"}
                 )

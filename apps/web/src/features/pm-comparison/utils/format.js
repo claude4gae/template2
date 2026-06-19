@@ -70,6 +70,7 @@ export function buildPmComparisonPayload(form) {
     ppid: (form.ppid || "").trim(),
     recipeId: (form.recipeId || "").trim(),
     pmTimestamp: form.pmTimestamp,
+    dtValues: form.pmTimestamp ? [form.pmTimestamp] : [],
     traceDataSource: "trace",
     oesDataSource: "oes",
   }
@@ -82,6 +83,7 @@ export function buildPmSpiderTypePayloads(payload) {
     payload: {
       ...payload,
       type,
+      includeDetails: false,
     },
   }))
 }

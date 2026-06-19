@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections import deque
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -421,7 +422,38 @@ def _scan_partition_dirs(root: Path, keys: list[str], max_dirs: int) -> dict[str
     return options
 
 
-def _meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
+def date_partition_candidates(value: object) -> list[str]:
+    """날짜 선택값과 raw partition 폴더명 후보를 함께 반환합니다."""
+
+    if not value:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    candidates = [text]
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        candidates.append(text[:10])
+        candidates.append(text[:10].replace("-", ""))
+    elif len(text) == 8 and text.isdigit():
+        candidates.append(f"{text[:4]}-{text[4:6]}-{text[6:8]}")
+    return list(dict.fromkeys(candidates))
+
+
+def _matches_filter_value(key: str, value: str | None, expected_values: set[str]) -> bool:
+    """선택 필터와 partition 값의 일치 여부를 확인합니다."""
+
+    if value in expected_values:
+        return True
+    if key != "dt" or not value:
+        return False
+    for expected in expected_values:
+        if len(expected) == 10 and expected[4] == "-" and expected[7] == "-":
+            if value.startswith(f"{expected} ") or value.startswith(f"{expected}T"):
+                return True
+    return False
+
+
+def _meta_filters(selection: dict[str, object] | None) -> dict[str, set[str]]:
     """메타 조회 선택값을 partition key 기준 필터로 변환합니다."""
 
     if not selection:
@@ -435,21 +467,26 @@ def _meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
         "recipeId": "recipe_id",
         "traceDataSource": "data_source",
     }
-    filters: dict[str, str] = {}
+    filters: dict[str, set[str]] = {}
     for request_key, partition_key in mapping.items():
         value = selection.get(request_key)
         if value:
-            filters[partition_key] = str(value)
+            filters[partition_key] = {str(value)}
+    dt_values = [*date_partition_candidates(selection.get("pmTimestamp"))]
+    for value in selection.get("dtValues") or []:
+        dt_values.extend(date_partition_candidates(value))
+    if dt_values:
+        filters["dt"] = set(dt_values)
     return filters
 
 
-def _score_meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
+def _score_meta_filters(selection: dict[str, object] | None) -> dict[str, set[str]]:
     """메타 조회 선택값을 score partition key 기준 필터로 변환합니다."""
 
     if not selection:
         return {}
     filters = _meta_filters(selection)
-    score_filters: dict[str, str] = {}
+    score_filters: dict[str, set[str]] = {}
     for raw_key, score_key in [("line_id", "line_id"), ("eqp_id", "eqp_id"), ("fdc_bin", "chamber_id"), ("type", "type")]:
         value = filters.get(raw_key)
         if value:
@@ -459,7 +496,7 @@ def _score_meta_filters(selection: dict[str, object] | None) -> dict[str, str]:
 
 def _matches_dependencies(
     values: dict[str, str],
-    filters: dict[str, str],
+    filters: dict[str, set[str]],
     dependencies_by_key: dict[str, list[str]],
     key: str,
 ) -> bool:
@@ -467,21 +504,21 @@ def _matches_dependencies(
 
     for dependency in dependencies_by_key.get(key, []):
         expected = filters.get(dependency)
-        if expected and values.get(dependency) != expected:
+        if expected and not _matches_filter_value(dependency, values.get(dependency), expected):
             return False
     return True
 
 
-def _should_descend_for_key(filters: dict[str, str], key: str, value: str) -> bool:
+def _should_descend_for_key(filters: dict[str, set[str]], key: str, value: str) -> bool:
     """선택된 partition 값과 일치할 때만 하위 단계로 내려갑니다."""
 
     expected = filters.get(key)
     if expected:
-        return expected == value
+        return _matches_filter_value(key, value, expected)
     return bool(filters.get("fdc_bin") and key in {"dt", "type", "ppid", "recipe_id", "data_source"})
 
 
-def _scan_hive_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
+def _scan_hive_raw_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]) -> dict[str, set[str]]:
     """key=value raw layout에서 cascade 옵션을 수집합니다."""
 
     options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
@@ -512,7 +549,7 @@ def _scan_hive_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> d
     return options
 
 
-def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
+def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]) -> dict[str, set[str]]:
     """plain raw layout에서 주요 선택값을 수집합니다."""
 
     options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
@@ -598,7 +635,7 @@ def _scan_plain_raw_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> 
     return options
 
 
-def _scan_score_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict[str, set[str]]:
+def _scan_score_dirs(root: Path, max_dirs: int, filters: dict[str, set[str]]) -> dict[str, set[str]]:
     """score layout에서 cascade 옵션을 수집합니다."""
 
     options: dict[str, set[str]] = {key: set() for key in SCORE_PARTITION_KEYS}
@@ -629,6 +666,168 @@ def _scan_score_dirs(root: Path, max_dirs: int, filters: dict[str, str]) -> dict
     return options
 
 
+def _record_items(record: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    """캐시 가능한 record tuple을 생성합니다."""
+
+    return tuple(sorted(record.items()))
+
+
+def _raw_records_signature(root: Path) -> int:
+    """metadata index 캐시 무효화를 위한 루트 mtime을 반환합니다."""
+
+    try:
+        return root.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
+def _scan_hive_raw_records(root: Path, max_dirs: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """key=value raw layout을 한 번 훑어 metadata record를 생성합니다."""
+
+    records: list[tuple[tuple[str, str], ...]] = []
+    queue: deque[tuple[Path, int, dict[str, str]]] = deque([(root, 0, {})])
+    visited = 0
+    while queue and visited < max_dirs:
+        current, depth, parent_values = queue.popleft()
+        if depth >= len(RAW_PARTITION_KEYS):
+            continue
+        expected_key = RAW_PARTITION_KEYS[depth]
+        try:
+            children = sorted(path for path in current.iterdir() if path.is_dir() and not _is_ignored_path(path))
+        except OSError:
+            continue
+        visited += len(children)
+        for child in children:
+            value = parse_partition_values(child).get(expected_key)
+            if not value:
+                continue
+            partition = {**parent_values, expected_key: value}
+            records.append(_record_items(partition))
+            queue.append((child, depth + 1, partition))
+            if visited >= max_dirs:
+                break
+    return tuple(records)
+
+
+def _scan_plain_raw_records(root: Path, max_dirs: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """plain raw layout을 한 번 훑어 metadata record를 생성합니다."""
+
+    records: list[tuple[tuple[str, str], ...]] = []
+    visited = 0
+    try:
+        line_dirs = sorted(path for path in root.iterdir() if path.is_dir() and not _is_ignored_path(path))
+    except OSError:
+        return tuple(records)
+
+    for line_dir in line_dirs:
+        if "=" in line_dir.name:
+            continue
+        line_values = {"line_id": line_dir.name}
+        records.append(_record_items(line_values))
+        visited += 1
+        if visited >= max_dirs:
+            break
+        try:
+            eqp_dirs = sorted(path for path in line_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
+        except OSError:
+            continue
+        for eqp_dir in eqp_dirs:
+            eqp_values = {**line_values, "eqp_id": eqp_dir.name}
+            records.append(_record_items(eqp_values))
+            visited += 1
+            if visited >= max_dirs:
+                break
+            try:
+                chamber_dirs = sorted(path for path in eqp_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
+            except OSError:
+                continue
+            for chamber_dir in chamber_dirs:
+                chamber_values = {**eqp_values, "fdc_bin": chamber_dir.name}
+                records.append(_record_items(chamber_values))
+                visited += 1
+                if visited >= max_dirs:
+                    break
+                try:
+                    dt_dirs = sorted(path for path in chamber_dir.iterdir() if path.is_dir() and not _is_ignored_path(path))
+                except OSError:
+                    continue
+                for dt_dir in dt_dirs:
+                    dt_values = {**chamber_values, "dt": dt_dir.name}
+                    records.append(_record_items(dt_values))
+                    visited += 1
+                    if visited >= max_dirs:
+                        break
+                    for source_name in ("trace", "oes"):
+                        source_root = dt_dir / source_name
+                        if not source_root.is_dir():
+                            continue
+                        source_values = {**dt_values, "data_source": source_name}
+                        records.append(_record_items(source_values))
+                        if source_name != "trace":
+                            continue
+                        try:
+                            trace_dirs = sorted(
+                                path for path in source_root.rglob("*") if path.is_dir() and not _is_ignored_path(path)
+                            )
+                        except OSError:
+                            trace_dirs = []
+                        for trace_dir in trace_dirs:
+                            visited += 1
+                            partition = {**source_values, **parse_partition_values(trace_dir)}
+                            records.append(_record_items(partition))
+                            if visited >= max_dirs:
+                                break
+                    if visited >= max_dirs:
+                        break
+                if visited >= max_dirs:
+                    break
+            if visited >= max_dirs:
+                break
+        if visited >= max_dirs:
+            break
+
+    return tuple(records)
+
+
+@lru_cache(maxsize=16)
+def _cached_raw_records(root_text: str, max_dirs: int, signature: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """요청 간 재사용할 raw metadata index를 생성합니다."""
+
+    root = Path(root_text)
+    return (*_scan_hive_raw_records(root, max_dirs), *_scan_plain_raw_records(root, max_dirs))
+
+
+def _collect_options_from_records(
+    records: tuple[tuple[tuple[str, str], ...], ...],
+    filters: dict[str, set[str]],
+) -> dict[str, set[str]]:
+    """metadata index record를 현재 선택값 기준 옵션으로 변환합니다."""
+
+    options: dict[str, set[str]] = {key: set() for key in RAW_PARTITION_KEYS}
+    for raw_record in records:
+        record = dict(raw_record)
+        for key, value in record.items():
+            if key not in options:
+                continue
+            if not _should_expose_raw_option(key, filters):
+                continue
+            if _matches_dependencies(record, filters, RAW_OPTION_DEPENDENCIES, key):
+                options[key].add(value)
+    return options
+
+
+def _should_expose_raw_option(key: str, filters: dict[str, set[str]]) -> bool:
+    """기존 cascade 단계와 같은 범위의 옵션만 노출합니다."""
+
+    if key == "line_id":
+        return True
+    if key == "eqp_id":
+        return bool(filters.get("line_id"))
+    if key == "fdc_bin":
+        return bool(filters.get("line_id") and filters.get("eqp_id"))
+    return bool(filters.get("fdc_bin"))
+
+
 def collect_partition_options(selection: dict[str, object] | None = None) -> dict[str, list[str]]:
     """data 아래 partition 값을 수집하고 없으면 result score partition 값으로 대체합니다."""
 
@@ -636,10 +835,8 @@ def collect_partition_options(selection: dict[str, object] | None = None) -> dic
     filters = _meta_filters(selection)
     try:
         raw_root = ensure_dataset_root(RAW_DIR_NAME)
-        options = _scan_hive_raw_dirs(raw_root, max_dirs, filters)
-        plain_options = _scan_plain_raw_dirs(raw_root, max_dirs, filters)
-        for key, values in plain_options.items():
-            options.setdefault(key, set()).update(values)
+        records = _cached_raw_records(str(raw_root), max_dirs, _raw_records_signature(raw_root))
+        options = _collect_options_from_records(records, filters)
     except (FileNotFoundError, NotADirectoryError):
         # data가 없으면 result/score_data 또는 result partition 값으로 대체합니다.
         options = {key: set() for key in RAW_PARTITION_KEYS}

@@ -13,6 +13,7 @@ from django.test import SimpleTestCase, override_settings
 import pandas as pd
 
 from . import selectors, services
+from .serializers import PmComparisonRequestSerializer
 
 
 class PmComparisonServiceTests(SimpleTestCase):
@@ -476,6 +477,178 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(timestamp_meta["pmDates"], ["2026-06-01"])
         self.assertEqual(timestamp_meta["ppids"], ["PPID1"])
         self.assertEqual(timestamp_meta["recipeIds"], ["RCP1"])
+
+    def test_pm_timestamp_scopes_ppid_options_by_raw_dt(self) -> None:
+        """PM 시점 선택 후 PPID 후보는 같은 raw dt 하위 값만 반환합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for dt_value, ppid in [("2026-06-01", "PPID1"), ("2026-06-02", "PPID2")]:
+                raw_target = (
+                    root
+                    / selectors.RAW_DIR_NAME
+                    / "L1"
+                    / "EQP1"
+                    / "BIN1"
+                    / dt_value
+                    / "trace"
+                    / "type=ag"
+                    / f"ppid={ppid}"
+                    / "recipe_id=RCP1"
+                    / "priority=1"
+                    / "trace_param_name=PRESSURE"
+                )
+                raw_target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                timestamp_meta = services.get_meta(
+                    {
+                        "lineId": "L1",
+                        "eqpId": "EQP1",
+                        "fdcBin": "BIN1",
+                        "pmTimestamp": "2026-06-01",
+                    }
+                )
+
+        self.assertEqual(timestamp_meta["ppids"], ["PPID1"])
+
+    def test_pm_timestamp_matches_datetime_raw_dt_folder(self) -> None:
+        """날짜 선택값은 시각이 붙은 raw dt 폴더와도 매칭됩니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for dt_value, ppid in [("2026-06-03 14:23:23", "PPID1"), ("2026-06-04 09:00:00", "PPID2")]:
+                raw_target = (
+                    root
+                    / selectors.RAW_DIR_NAME
+                    / "L1"
+                    / "EQP1"
+                    / "BIN1"
+                    / dt_value
+                    / "trace"
+                    / "type=ag"
+                    / f"ppid={ppid}"
+                    / "recipe_id=RCP1"
+                    / "priority=1"
+                    / "trace_param_name=PRESSURE"
+                )
+                raw_target.mkdir(parents=True)
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                timestamp_meta = services.get_meta(
+                    {
+                        "lineId": "L1",
+                        "eqpId": "EQP1",
+                        "fdcBin": "BIN1",
+                        "pmTimestamp": "2026-06-03",
+                    }
+                )
+
+        self.assertEqual(timestamp_meta["ppids"], ["PPID1"])
+
+    def test_compare_without_dt_values_limits_raw_lookup_to_pm_timestamp(self) -> None:
+        """dtValues가 없어도 raw 조회는 선택 PM 시점 partition으로 제한됩니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for dt_value, sensor, value in [
+                ("2026-06-01", "PRESSURE", 30.0),
+                ("2026-06-02", "TEMP", 99.0),
+            ]:
+                raw_target = (
+                    root
+                    / selectors.RAW_DIR_NAME
+                    / "line_id=L1"
+                    / "eqp_id=EQP1"
+                    / "fdc_bin=BIN1"
+                    / f"dt={dt_value}"
+                    / "type=ag"
+                    / "ppid=PPID1"
+                    / "recipe_id=RCP1"
+                    / "data_source=trace"
+                    / f"trace_param_name={sensor}"
+                    / "batch=001"
+                )
+                raw_target.mkdir(parents=True)
+                pd.DataFrame(
+                    [{"날짜": dt_value, "time": f"{dt_value}T01:00:00Z", "value": value}]
+                ).to_parquet(raw_target / "part-000.parquet", engine="pyarrow")
+
+            score_target = self._score_base(root, data_type="trace")
+            score_target.mkdir(parents=True)
+            pd.DataFrame(
+                [
+                    {
+                        "line_id": "L1",
+                        "eqp_id": "EQP1",
+                        "날짜": "2026-06-01",
+                        "type": "ag",
+                        "data_type": "trace",
+                        "item_name": "PRESSURE",
+                        "score": 0.12,
+                    }
+                ]
+            ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
+            selection = {
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "fdcBin": "BIN1",
+                "type": "ag",
+                "ppid": "PPID1",
+                "recipeId": "RCP1",
+                "pmTimestamp": "2026-06-01",
+                "traceDataSource": "trace",
+                "oesDataSource": "oes",
+            }
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                result = services.compare_pm_window(selection)
+
+        self.assertEqual(result["trace"]["fileCount"], 1)
+        self.assertEqual(result["trace"]["rowCount"], 1)
+        self.assertEqual(result["trace"]["trendRows"][0]["traceParamName"], "PRESSURE")
+
+    def test_compare_can_skip_raw_detail_for_summary_request(self) -> None:
+        """초기 summary 요청은 raw 상세 파일 읽기를 생략할 수 있습니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_trace_sample(root)
+            selection = {
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "fdcBin": "BIN1",
+                "type": "ag",
+                "ppid": "PPID1",
+                "recipeId": "RCP1",
+                "pmTimestamp": "2026-06-01",
+                "traceParamNames": ["PRESSURE"],
+                "traceDataSource": "trace",
+                "oesDataSource": "oes",
+                "includeDetails": False,
+            }
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                result = services.compare_pm_window(selection)
+
+        self.assertEqual(result["trace"]["summaryRows"][0]["traceSensor"], "PRESSURE")
+        self.assertEqual(result["trace"]["fileCount"], 0)
+        self.assertEqual(result["trace"]["rowCount"], 0)
+        self.assertEqual(result["trace"]["trendRows"], [])
+
+    def test_serializer_accepts_datetime_dt_values(self) -> None:
+        """raw dt 폴더명과 같은 공백/콜론 포함 날짜 값을 허용합니다."""
+
+        serializer = PmComparisonRequestSerializer(
+            data={
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "pmTimestamp": "2026-06-03 14:23:23",
+                "dtValues": ["2026-06-03 14:23:23"],
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_compare_pm_window_returns_empty_response_without_score_rows(self) -> None:
         """result 파일이 없을 때도 pm_date KeyError 없이 빈 응답을 반환합니다."""
