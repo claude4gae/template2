@@ -8,7 +8,7 @@ from django.conf import settings
 
 TABLE_NAME = "mi_tip_update_hist"
 TEMP_TABLE_NAME = "tmp_mi_tip_update_hist"
-FILE_PATTERN = "*mi_tip_update_hist*.csv.deflate"
+FILE_PATTERN = "*MI_TIP_UPDATE_HIST*.csv.deflate"
 FILE_SEPARATOR = "`"
 RETENTION_DAYS = 180
 UPSERT_KEY = "tip_event_key"

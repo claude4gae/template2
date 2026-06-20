@@ -100,7 +100,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
             root = Path(temp_dir)
             incoming = root / "incoming"
             incoming.mkdir()
-            source = incoming / "86114_MES_MAPPING_INFO_20260619.csv.deflate"
+            source = incoming / "86114_MES_LINE_MAPPING_INFO_20260619.csv.deflate"
             _write_deflate_mapping_csv(
                 source,
                 [
@@ -140,7 +140,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
             root = Path(temp_dir)
             incoming = root / "incoming"
             incoming.mkdir()
-            source = incoming / "86114_MES_MAPPING_INFO_20260619.csv.deflate"
+            source = incoming / "86114_MES_LINE_MAPPING_INFO_20260619.csv.deflate"
             source.write_text("payload", encoding="utf-8")
 
             summary = loader_module.load_mes_line_mapping_info_files(data_dir=root)
@@ -166,7 +166,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
             root = Path(temp_dir)
             incoming = root / "incoming"
             incoming.mkdir()
-            source = incoming / "86114_MES_MAPPING_INFO_20260619.csv.deflate"
+            source = incoming / "86114_MES_LINE_MAPPING_INFO_20260619.csv.deflate"
             source.write_text("payload", encoding="utf-8")
 
             summary = loader_module.load_mes_line_mapping_info_files(data_dir=root)

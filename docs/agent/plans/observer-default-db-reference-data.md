@@ -45,4 +45,4 @@
 - 2026-06-20: 사용자 확인에 따라 `lineId`를 `mes_line_mapping_info.gpm_line_name` 기준으로 정하고 기본 DB 전환 계획을 작성했다.
 - 2026-06-20: observer 기준정보 selector를 기본 DB `mes_line_mapping_info`/`station_master` 기준으로 전환하고 `OBSERVER_DB_*` 설정/문서를 제거했다.
 - 2026-06-20: `api.observer` 테스트, migration dry-run, backend boundary audit, docs audit, diff whitespace 검증이 통과했다.
-- 2026-06-20: 정정된 `MES_LINE_MAPPING_INFO` DDL에 맞춰 기존 `mes_eqp_mapping_info` 명칭과 스키마를 `mes_line_mapping_info`로 교체했다.
+- 2026-06-20: 정정된 `MES_LINE_MAPPING_INFO` DDL에 맞춰 매핑 테이블 명칭과 스키마를 `mes_line_mapping_info`로 정리했다.

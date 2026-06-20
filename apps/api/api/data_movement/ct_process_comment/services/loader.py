@@ -160,6 +160,61 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
             _copy_selected_file_to_temp(cursor=cursor, selected_csv_path=selected_csv_path)
             cursor.execute(
                 f"""
+                WITH normalized_source AS (
+                    SELECT
+                        NULLIF(src.workorder_id, '') AS workorder_id,
+                        NULLIF(src.line_id, '') AS line_id,
+                        NULLIF(src.process_id, '') AS process_id,
+                        NULLIF(src.process_seq, '')::double precision AS process_seq,
+                        NULLIF(src.comment_seq, '') AS comment_seq,
+                        NULLIF(src.eqp_id, '') AS eqp_id,
+                        NULLIF(src.freeze_yn, '') AS freeze_yn,
+                        NULLIF(src.contents, '') AS contents,
+                        NULLIF(src.contents_text, '') AS contents_text,
+                        NULLIF(src.create_date, '')::timestamp AS create_date,
+                        NULLIF(src.create_user, '') AS create_user,
+                        NULLIF(src.update_date, '')::timestamp AS update_date,
+                        NULLIF(src.update_user, '') AS update_user,
+                        NULLIF(src.use_yn, '') AS use_yn,
+                        NULLIF(src.modify_user, '') AS modify_user,
+                        NULLIF(src.modify_date, '')::timestamp AS modify_date,
+                        NULLIF(src.pbu_part_key, '') AS pbu_part_key,
+                        src.ctid AS source_ctid
+                    FROM {quoted_temp} src
+                    WHERE NULLIF(src.workorder_id, '') IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {quoted_workorder_table} workorder
+                          WHERE workorder.workorder_id = src.workorder_id
+                      )
+                ),
+                latest_source AS (
+                    SELECT DISTINCT ON (workorder_id)
+                        workorder_id,
+                        line_id,
+                        process_id,
+                        process_seq,
+                        comment_seq,
+                        eqp_id,
+                        freeze_yn,
+                        contents,
+                        contents_text,
+                        create_date,
+                        create_user,
+                        update_date,
+                        update_user,
+                        use_yn,
+                        modify_user,
+                        modify_date,
+                        pbu_part_key
+                    FROM normalized_source
+                    ORDER BY
+                        workorder_id,
+                        update_date DESC NULLS LAST,
+                        modify_date DESC NULLS LAST,
+                        create_date DESC NULLS LAST,
+                        source_ctid DESC
+                )
                 INSERT INTO {quoted_table} AS target
                     (
                         workorder_id,
@@ -182,31 +237,25 @@ def _upsert_rows(*, selected_csv_path: Path) -> None:
                         {quoted_update_flag}
                     )
                 SELECT
-                    NULLIF(src.workorder_id, ''),
-                    NULLIF(src.line_id, ''),
-                    NULLIF(src.process_id, ''),
-                    NULLIF(src.process_seq, '')::double precision,
-                    NULLIF(src.comment_seq, ''),
-                    NULLIF(src.eqp_id, ''),
-                    NULLIF(src.freeze_yn, ''),
-                    NULLIF(src.contents, ''),
-                    NULLIF(src.contents_text, ''),
-                    NULLIF(src.create_date, '')::timestamp,
-                    NULLIF(src.create_user, ''),
-                    NULLIF(src.update_date, '')::timestamp,
-                    NULLIF(src.update_user, ''),
-                    NULLIF(src.use_yn, ''),
-                    NULLIF(src.modify_user, ''),
-                    NULLIF(src.modify_date, '')::timestamp,
-                    NULLIF(src.pbu_part_key, ''),
+                    workorder_id,
+                    line_id,
+                    process_id,
+                    process_seq,
+                    comment_seq,
+                    eqp_id,
+                    freeze_yn,
+                    contents,
+                    contents_text,
+                    create_date,
+                    create_user,
+                    update_date,
+                    update_user,
+                    use_yn,
+                    modify_user,
+                    modify_date,
+                    pbu_part_key,
                     'Y'
-                FROM {quoted_temp} src
-                WHERE NULLIF(src.workorder_id, '') IS NOT NULL
-                  AND EXISTS (
-                      SELECT 1
-                      FROM {quoted_workorder_table} workorder
-                      WHERE workorder.workorder_id = src.workorder_id
-                  )
+                FROM latest_source
                 ON CONFLICT (workorder_id)
                 DO UPDATE SET
                     line_id = EXCLUDED.line_id,

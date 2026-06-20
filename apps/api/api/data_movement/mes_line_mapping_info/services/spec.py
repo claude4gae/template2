@@ -8,7 +8,7 @@ from django.conf import settings
 
 TABLE_NAME = "mes_line_mapping_info"
 TEMP_TABLE_NAME = "tmp_mes_line_mapping_info"
-FILE_PATTERN = "*_MES_MAPPING_INFO_*.csv.deflate"
+FILE_PATTERN = "*_MES_LINE_MAPPING_INFO_*.csv.deflate"
 FILE_SEPARATOR = "`"
 REPLACE_SCOPE = "all"
 

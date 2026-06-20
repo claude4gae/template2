@@ -123,6 +123,8 @@ class EqpStatusChgLifecycleTests(TestCase):
                 [
                     _build_status_row(eqp_id="EAAA301", chamber_id="A", eqp_event_key="100"),
                     _build_status_row(eqp_id="eBBB302", chamber_id="B", eqp_event_key="101"),
+                    _build_status_row(eqp_id="ECCC303", chamber_id="-", eqp_event_key="104"),
+                    _build_status_row(eqp_id="EDDD304", chamber_id="", eqp_event_key="105"),
                     _build_status_row(eqp_id="AAAA301", chamber_id="A", eqp_event_key="102"),
                     _build_status_row(
                         eqp_id="EOLD301",
@@ -136,9 +138,12 @@ class EqpStatusChgLifecycleTests(TestCase):
             summary = loader_module.load_eqp_status_chg_files(data_dir=root)
 
         self.assertEqual(summary.success_count, 1, summary.outcomes)
-        self.assertEqual(EqpStatusChg.objects.count(), 2)
+        self.assertEqual(EqpStatusChg.objects.count(), 4)
         self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="EAAA301-A").exists())
         self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="eBBB302-B").exists())
+        self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="ECCC303").exists())
+        self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="EDDD304").exists())
+        self.assertFalse(EqpStatusChg.objects.filter(eqp_cb__in=["ECCC303--", "EDDD304-"]).exists())
         self.assertFalse(hasattr(EqpStatusChg.objects.first(), "eqp_id"))
 
     @patch.object(

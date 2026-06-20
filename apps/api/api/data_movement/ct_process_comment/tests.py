@@ -201,6 +201,50 @@ class CtProcessCommentLifecycleTests(TestCase):
         self.assertEqual(created_row.update_flag, "Y")
         self.assertFalse(CtProcessComment.objects.filter(workorder_id="WO_MISSING").exists())
 
+    def test_loader_keeps_one_latest_row_when_file_has_duplicate_workorder_id(self) -> None:
+        """같은 파일의 중복 workorder_id는 최신 update_date row 하나만 반영합니다."""
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO ctttm_workorder_list
+                    (source_type, workorder_id, line_id, eqp_id, work_type, description, inprg_date, comp_date)
+                VALUES
+                    ('MST', 'WO1', 'L1', 'EQP1', 'PM', 'desc', NULL, NULL)
+                """
+            )
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            incoming = root / "incoming"
+            incoming.mkdir()
+            source = incoming / "65635_CT_PROCESS_COMMENT_20260529_1300.csv.deflate"
+            _write_deflate_csv(
+                source,
+                [
+                    _build_comment_row(
+                        workorder_id="WO1",
+                        line_id="OLD_LINE",
+                        contents="old contents",
+                        update_date="2999-01-01 00:00:00",
+                    ),
+                    _build_comment_row(
+                        workorder_id="WO1",
+                        line_id="NEW_LINE",
+                        contents="new contents",
+                        update_date="2999-01-02 00:00:00",
+                    ),
+                ],
+            )
+
+            summary = loader_module.load_ct_process_comment_files(data_dir=root)
+
+        self.assertEqual(summary.success_count, 1, summary.outcomes)
+        self.assertEqual(CtProcessComment.objects.filter(workorder_id="WO1").count(), 1)
+        loaded_row = CtProcessComment.objects.get(workorder_id="WO1")
+        self.assertEqual(loaded_row.line_id, "NEW_LINE")
+        self.assertEqual(loaded_row.contents, "new contents")
+
     def test_loader_keeps_update_flag_when_existing_comment_is_unchanged(self) -> None:
         """동일한 comment row 재적재는 API 요청 flag를 새로 켜지 않습니다."""
 

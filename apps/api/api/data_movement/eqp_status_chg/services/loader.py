@@ -100,6 +100,15 @@ def _retention_cutoff() -> datetime:
     return cutoff
 
 
+def _build_eqp_cb(*, eqp_id: str, chamber_id: str) -> str:
+    """chamber_id가 비어 있거나 '-'이면 eqp_id만 반환합니다."""
+
+    normalized_chamber_id = chamber_id.strip()
+    if not normalized_chamber_id or normalized_chamber_id == "-":
+        return eqp_id
+    return f"{eqp_id}-{normalized_chamber_id}"
+
+
 def _copy_selected_file_to_temp(*, cursor, selected_csv_path: Path) -> None:
     """선별 CSV 파일을 temp table로 COPY 합니다."""
 
@@ -168,7 +177,7 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, cutoff: datetime
 
             chamber_id = row[source_indexes["chamber_id"]].strip()
             selected_values = [
-                f"{eqp_id}-{chamber_id}",
+                _build_eqp_cb(eqp_id=eqp_id, chamber_id=chamber_id),
                 row[source_indexes["line_id"]].strip(),
                 chg_time_raw,
                 row[source_indexes["eqp_code"]].strip(),

@@ -157,7 +157,7 @@ class MiTipUpdateHistLifecycleTests(TestCase):
             root = Path(temp_dir)
             incoming = root / "incoming"
             incoming.mkdir()
-            source = incoming / "mi_tip_update_hist_20260620.csv.deflate"
+            source = incoming / "MI_TIP_UPDATE_HIST_20260620.csv.deflate"
             _write_deflate_csv(
                 source,
                 [
@@ -222,7 +222,7 @@ class MiTipUpdateHistLifecycleTests(TestCase):
             root = Path(temp_dir)
             incoming = root / "incoming"
             incoming.mkdir()
-            source = incoming / "mi_tip_update_hist_20260620.csv.deflate"
+            source = incoming / "MI_TIP_UPDATE_HIST_20260620.csv.deflate"
             _write_deflate_csv(
                 source,
                 [
