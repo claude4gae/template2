@@ -47,7 +47,9 @@ def _build_station_row(*, station: str = "ST01", machine_id: str = "M01") -> lis
     row[22] = "5"
     row[24] = "20260620"
     row[30] = "6"
-    row[51] = "ADDR1"
+    row[50] = "EFF"
+    row[51] = "INCLD"
+    row[52] = "MAKER"
     return row
 
 
@@ -120,6 +122,7 @@ class StationMasterLifecycleTests(TestCase):
         self.assertEqual(loaded_row.machine_id, "M01")
         self.assertEqual(loaded_row.machine_time, 1.5)
         self.assertEqual(loaded_row.da_date, "20260620")
+        self.assertEqual(loaded_row.maker_name, "MAKER")
 
     @patch.object(loader_module, "copy_full_replace_rows")
     @patch.object(loader_module, "_read_station_frame")

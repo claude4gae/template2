@@ -10,7 +10,7 @@ import zlib
 from pathlib import Path
 
 
-DEFAULT_EXPECTED_COLUMNS = 52
+DEFAULT_EXPECTED_COLUMNS = 53
 DEFAULT_SEPARATORS = {
     "comma": ",",
     "backtick": "`",

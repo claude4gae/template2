@@ -7,7 +7,7 @@ from django.db.models.functions import Now
 
 
 class StationMaster(models.Model):
-    """Station master 원천 데이터를 저장합니다."""
+    """station_master 원천 데이터를 저장합니다."""
 
     area = models.CharField(max_length=40, null=True, blank=True)
     station = models.CharField(max_length=40, null=True, blank=True)
@@ -19,12 +19,12 @@ class StationMaster(models.Model):
     status = models.CharField(max_length=2, null=True, blank=True)
     station_name = models.CharField(max_length=40, null=True, blank=True)
     ch_class = models.CharField(max_length=1, null=True, blank=True)
-    ch_main = models.CharField(max_length=40, null=True, blank=True)
+    ch_main = models.CharField(max_length=10, null=True, blank=True)
     status_desc = models.CharField(max_length=60, null=True, blank=True)
     bay = models.CharField(max_length=8, null=True, blank=True)
     sdwt_eng = models.CharField(max_length=40, null=True, blank=True)
     sdwt_eng2 = models.CharField(max_length=40, null=True, blank=True)
-    sdwt_prod = models.CharField(max_length=150, null=True, blank=True)
+    sdwt_prod = models.CharField(max_length=50, null=True, blank=True)
     del_flag = models.CharField(max_length=1, null=True, blank=True)
     machine_time = models.FloatField(null=True, blank=True)
     sbatch_size = models.FloatField(null=True, blank=True)
@@ -54,13 +54,14 @@ class StationMaster(models.Model):
     en_reason = models.CharField(max_length=2, null=True, blank=True)
     dv_flag = models.CharField(max_length=1, null=True, blank=True)
     ed_reason = models.CharField(max_length=2, null=True, blank=True)
-    in_line = models.CharField(max_length=40, null=True, blank=True)
+    in_line = models.CharField(max_length=5, null=True, blank=True)
     floor_line_id = models.CharField(max_length=40, null=True, blank=True)
     index_area = models.CharField(max_length=10, null=True, blank=True)
     dv_date = models.CharField(max_length=8, null=True, blank=True)
     purge_yn = models.CharField(max_length=1, null=True, blank=True)
-    purge_target_yn = models.CharField(max_length=1, null=True, blank=True)
-    addr_book_id = models.CharField(max_length=50, null=True, blank=True)
+    eff_loss_type = models.CharField(max_length=40, null=True, blank=True)
+    incld_reason_detail_code = models.CharField(max_length=40, null=True, blank=True)
+    maker_name = models.CharField(max_length=120, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
 
     class Meta:
