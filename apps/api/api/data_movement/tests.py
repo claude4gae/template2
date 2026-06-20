@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
+from api.data_movement.common.services.file_loader import list_data_files
 from api.data_movement.m_tkin_prevent.models import MTkinPreventLoadJob
 from api.data_movement.m_tkin_prevent.services.loader import LoadFileOutcome, LoadRunSummary
+
+
+class DataMovementFileLoaderTests(SimpleTestCase):
+    """data movement 공통 파일 탐색 동작을 검증합니다."""
+
+    def test_list_data_files_matches_file_name_case_insensitively(self) -> None:
+        """파일명 대소문자가 달라도 spec pattern에 맞는 파일을 찾습니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            matched = root / "65635_ct_process_comment_20260529_1300.CSV.DEFLATE"
+            ignored = root / "other.txt"
+            matched.write_text("ok", encoding="utf-8")
+            ignored.write_text("skip", encoding="utf-8")
+
+            files = list_data_files(
+                data_dir=root,
+                pattern="*_CT_PROCESS_COMMENT_*.csv.deflate",
+            )
+
+        self.assertEqual([path.name for path in files], [matched.name])
 
 
 @override_settings(AIRFLOW_TRIGGER_TOKEN="test-token")

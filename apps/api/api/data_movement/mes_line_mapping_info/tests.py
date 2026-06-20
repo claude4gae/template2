@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import zlib
+from datetime import datetime, timezone as datetime_timezone
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -86,6 +87,20 @@ class MesLineMappingInfoStructureTests(SimpleTestCase):
 
         with self.assertRaises(CommandError):
             call_command("load_mes_line_mapping_info", stdout=StringIO())
+
+    def test_read_mapping_frame_accepts_timezone_aware_update_date(self) -> None:
+        """timezone offset이 포함된 update_date를 UTC datetime으로 변환합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "86114_MES_LINE_MAPPING_INFO_20260619.csv.deflate"
+            row = _build_mapping_row()
+            row[25] = "2026-06-19 11:20:30+09:00"
+            _write_deflate_mapping_csv(source, [row])
+
+            frame = loader_module._read_mapping_frame(file_path=source)
+
+        update_date = frame.select("update_date").to_series().to_list()[0]
+        self.assertEqual(update_date, datetime(2026, 6, 19, 2, 20, 30, tzinfo=datetime_timezone.utc))
 
 
 class MesLineMappingInfoLifecycleTests(TestCase):

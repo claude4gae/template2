@@ -85,6 +85,13 @@ class CtProcessCommentStructureTests(SimpleTestCase):
 
         self.assertEqual(info.file_timestamp, "20260529_1300")
 
+    def test_parse_source_file_name_ignores_file_name_case(self) -> None:
+        """파일명 대소문자가 달라도 timestamp를 추출합니다."""
+
+        info = loader_module.parse_source_file_name(file_name="65635_ct_process_comment_20260529_1300.CSV.DEFLATE")
+
+        self.assertEqual(info.file_timestamp, "20260529_1300")
+
     def test_write_selected_deflate_csv_filters_use_yn_and_eqp_prefix(self) -> None:
         """USE_YN=N 행과 EQP_ID가 E/e로 시작하지 않는 행을 제외합니다."""
 

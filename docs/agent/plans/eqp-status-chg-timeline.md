@@ -1,7 +1,7 @@
 # ExecPlan: eqp_status_chg timeline 전환
 
 ## 목표
-- `/data/data_movement/eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 기본 DB의 `eqp_status_chg` 테이블에 적재한다.
+- `/data/data_movement/m_eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 기본 DB의 `eqp_status_chg` 테이블에 적재한다.
 - timeline EQP log 조회가 기존 observer DB `eqp_status_hist` 대신 새 `eqp_status_chg` 테이블을 사용하게 한다.
 - 적재 전 `eqp_id`가 `E/e`로 시작하지 않는 row와 `chg_time`이 실행 시점 기준 180일보다 오래된 row를 제외한다.
 - 저장 시 `eqp_cb = eqp_id-chamber_id`를 생성하고 `eqp_id`, `chamber_id`는 대상 테이블에 저장하지 않는다.
@@ -23,7 +23,7 @@
 - 조회 인덱스: timeline 쿼리의 `eqp_cb` equality + `chg_time` range/order에 맞춰 `(eqp_cb, chg_time)` 복합 인덱스 추가.
 - 적재 흐름: incoming 파일 선점 -> deflate CSV streaming -> row 필터/`eqp_cb` 생성 -> temp CSV -> temp table COPY -> `ON CONFLICT (eqp_event_key)` upsert -> retention purge.
 - observer EQP 응답 매핑: `eventTime=chg_time`, `eventType=eqp_status_type`, `operator=operator_emp_id`, `comment=chg_comment`, `eqpId=eqp_cb`.
-- 파일 mount/env: 기존 `DATA_MOVEMENT_HOST_PATH` mount 아래 `/data/data_movement/eqp_status_chg`를 사용하고 `DATA_MOVEMENT_EQP_STATUS_CHG_DIR` setting/env를 추가한다.
+- 파일 mount/env: 기존 `DATA_MOVEMENT_HOST_PATH` mount 아래 `/data/data_movement/m_eqp_status_chg`를 사용하고 `DATA_MOVEMENT_EQP_STATUS_CHG_DIR` setting/env를 추가한다.
 
 ## 실행 단계
 - [x] 계획 문서 작성

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 from uuid import uuid4
 
@@ -44,7 +45,7 @@ def ensure_data_movement_dirs(*, dirs: DataMovementDirs) -> None:
 
 
 def list_data_files(*, data_dir: Path, pattern: str, limit: int | None = None) -> list[Path]:
-    """지정 경로에서 적재 대상 파일을 이름순으로 반환합니다."""
+    """지정 경로에서 적재 대상 파일을 대소문자 구분 없이 이름순으로 반환합니다."""
 
     if limit is not None and limit < 1:
         raise ValueError("limit은 1 이상이어야 합니다.")
@@ -54,7 +55,15 @@ def list_data_files(*, data_dir: Path, pattern: str, limit: int | None = None) -
     if not data_dir.is_dir():
         raise NotADirectoryError(f"적재 경로가 디렉터리가 아닙니다: {data_dir}")
 
-    files = sorted(path for path in data_dir.glob(pattern) if path.is_file())
+    normalized_pattern = pattern.casefold()
+    files = sorted(
+        (
+            path
+            for path in data_dir.iterdir()
+            if path.is_file() and fnmatchcase(path.name.casefold(), normalized_pattern)
+        ),
+        key=lambda path: path.name.casefold(),
+    )
     if limit is None:
         return files
     return files[:limit]

@@ -66,7 +66,7 @@ class LoadRunSummary:
 def parse_source_file_name(*, file_name: str) -> SourceFileInfo:
     """파일명에서 파일 timestamp를 추출합니다."""
 
-    match = re.match(spec.SOURCE_FILE_PATTERN, file_name)
+    match = re.match(spec.SOURCE_FILE_PATTERN, file_name, flags=re.IGNORECASE)
     if not match:
         raise ValueError(f"지원하지 않는 파일명입니다: {file_name}")
     return SourceFileInfo(file_timestamp=match.group("file_timestamp"))

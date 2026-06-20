@@ -125,6 +125,16 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
         self.assertEqual(info.source_type, "MNU")
         self.assertEqual(info.file_timestamp, "20260530_1600")
 
+    def test_parse_source_file_name_ignores_file_name_case(self) -> None:
+        """파일명 대소문자가 달라도 source_type과 timestamp를 추출합니다."""
+
+        info = loader_module.parse_source_file_name(
+            file_name="69623_ct_mst_workorder_20260530_1600.CSV.DEFLATE",
+        )
+
+        self.assertEqual(info.source_type, "MST")
+        self.assertEqual(info.file_timestamp, "20260530_1600")
+
     def test_file_columns_match_source_ddl_widths(self) -> None:
         """source별 DDL 컬럼 수가 파일 spec에 반영되어 있는지 확인합니다."""
 

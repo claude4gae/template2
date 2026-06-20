@@ -27,7 +27,7 @@ def _write_deflate_csv(path: Path, rows: list[list[str]]) -> None:
     buffer = StringIO()
     import csv
 
-    writer = csv.writer(buffer)
+    writer = csv.writer(buffer, delimiter=spec.FILE_SEPARATOR)
     writer.writerows(rows)
     path.write_bytes(zlib.compress(buffer.getvalue().encode("utf-8")))
 

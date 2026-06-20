@@ -7,6 +7,13 @@ import zlib
 from pathlib import Path
 from typing import Any, Sequence
 
+DATETIME_FORMATS = (
+    "%Y-%m-%d %H:%M:%S%.f%#z",
+    "%Y-%m-%dT%H:%M:%S%.f%#z",
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%dT%H:%M:%S%.f",
+)
+
 
 def _load_polars() -> Any:
     """Polars 의존성을 지연 로드하고 누락 시 명확한 오류를 발생시킵니다."""
@@ -46,7 +53,14 @@ def read_deflate_csv_file(
     )
 
     datetime_exprs = [
-        pl.col(column).str.strip_chars().str.strptime(pl.Datetime, strict=False)
+        pl.coalesce(
+            [
+                pl.col(column)
+                .str.strip_chars()
+                .str.strptime(pl.Datetime(time_zone="UTC"), date_format, strict=False)
+                for date_format in DATETIME_FORMATS
+            ]
+        ).alias(column)
         for column in datetime_columns
     ]
     if datetime_exprs:

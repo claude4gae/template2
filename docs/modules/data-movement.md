@@ -12,7 +12,7 @@ Compose 기본 host path는 `./data/data_movement`이고, API 컨테이너에서
 | `m_tkin_prevent` | `/data/data_movement/m_tkin_prevent` | `*.csv.deflate` |
 | `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list` | `*CT_*_WORKORDER_*.csv.deflate` |
 | `ct_process_comment` | `/data/data_movement/ct_process_comment` | `*_CT_PROCESS_COMMENT_*.csv.deflate` |
-| `eqp_status_chg` | `/data/data_movement/eqp_status_chg` | `*m_eqp_status_chg*.csv.deflate` |
+| `eqp_status_chg` | `/data/data_movement/m_eqp_status_chg` | `*m_eqp_status_chg*.csv.deflate` |
 | `mi_tip_update_hist` | `/data/data_movement/mi_tip_update_hist` | `*mi_tip_update_hist*.csv.deflate` |
 | `racb_list` | `/data/data_movement/racb_list` | `*racb_list*.csv.deflate` |
 | `mes_line_mapping_info` | `/data/data_movement/mes_line_mapping_info` | `*_MES_MAPPING_INFO_*.csv.deflate` |

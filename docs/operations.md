@@ -129,7 +129,7 @@ POST /api/v1/data-movement/station_master/load/
 ```
 
 `ct_process_comment`는 workorder 목록을 참조하므로 DAG에서 `ctttm_workorder_list` 이후 실행됩니다.
-`eqp_status_chg`는 `/data/data_movement/eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 `eqp_event_key` 기준으로 upsert하고 180일 retention을 적용합니다.
+`eqp_status_chg`는 `/data/data_movement/m_eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 `eqp_event_key` 기준으로 upsert하고 180일 retention을 적용합니다.
 `mi_tip_update_hist`는 `/data/data_movement/mi_tip_update_hist/incoming/*mi_tip_update_hist*.csv.deflate` 파일을 TIP timeline 조회용 row로 적재합니다.
 `racb_list`는 `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` 파일을 `c_racb_id` 최신 row 기준으로 설비별 `eqp_cb` row로 펼쳐 적재합니다.
 `mes_line_mapping_info`는 `/data/data_movement/mes_line_mapping_info/incoming/*_MES_MAPPING_INFO_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.

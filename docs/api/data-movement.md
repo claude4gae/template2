@@ -19,7 +19,7 @@ POST /api/v1/data-movement/<table_name>/load/
 | `m_tkin_prevent` | `/data/data_movement/m_tkin_prevent/incoming/*.csv.deflate` |
 | `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list/incoming/*CT_*_WORKORDER_*.csv.deflate` |
 | `ct_process_comment` | `/data/data_movement/ct_process_comment/incoming/*_CT_PROCESS_COMMENT_*.csv.deflate` |
-| `eqp_status_chg` | `/data/data_movement/eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` |
+| `eqp_status_chg` | `/data/data_movement/m_eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` |
 | `mi_tip_update_hist` | `/data/data_movement/mi_tip_update_hist/incoming/*mi_tip_update_hist*.csv.deflate` |
 | `racb_list` | `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` |
 | `mes_line_mapping_info` | `/data/data_movement/mes_line_mapping_info/incoming/*_MES_MAPPING_INFO_*.csv.deflate` |

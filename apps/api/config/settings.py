@@ -238,7 +238,7 @@ DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR = env(
 )
 DATA_MOVEMENT_EQP_STATUS_CHG_DIR = env(
     "DATA_MOVEMENT_EQP_STATUS_CHG_DIR",
-    "/data/data_movement/eqp_status_chg",
+    "/data/data_movement/m_eqp_status_chg",
 )
 DATA_MOVEMENT_MI_TIP_UPDATE_HIST_DIR = env(
     "DATA_MOVEMENT_MI_TIP_UPDATE_HIST_DIR",

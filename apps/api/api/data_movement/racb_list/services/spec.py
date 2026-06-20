@@ -9,7 +9,7 @@ from django.conf import settings
 TABLE_NAME = "racb_list"
 TEMP_TABLE_NAME = "tmp_racb_list"
 FILE_PATTERN = "*racb_list*.csv.deflate"
-FILE_SEPARATOR = ","
+FILE_SEPARATOR = "`"
 
 DEFAULT_TABLE_DIR = Path(settings.DATA_MOVEMENT_RACB_LIST_DIR)
 
