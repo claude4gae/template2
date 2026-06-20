@@ -12,13 +12,19 @@ Compose 기본 host path는 `./data/data_movement`이고, API 컨테이너에서
 | `m_tkin_prevent` | `/data/data_movement/m_tkin_prevent` | `*.csv.deflate` |
 | `ctttm_workorder_list` | `/data/data_movement/ctttm_workorder_list` | `*CT_*_WORKORDER_*.csv.deflate` |
 | `ct_process_comment` | `/data/data_movement/ct_process_comment` | `*_CT_PROCESS_COMMENT_*.csv.deflate` |
-| `mes_eqp_mapping_info` | `/data/data_movement/mes_line_mapping_info` | `*_MES_MAPPING_INFO_*.csv.deflate` |
+| `eqp_status_chg` | `/data/data_movement/eqp_status_chg` | `*m_eqp_status_chg*.csv.deflate` |
+| `mi_tip_update_hist` | `/data/data_movement/mi_tip_update_hist` | `*mi_tip_update_hist*.csv.deflate` |
+| `racb_list` | `/data/data_movement/racb_list` | `*racb_list*.csv.deflate` |
+| `mes_line_mapping_info` | `/data/data_movement/mes_line_mapping_info` | `*_MES_MAPPING_INFO_*.csv.deflate` |
 | `station_master` | `/data/data_movement/station_master` | `*_STATION_MASTER_*.csv.deflate` |
 
 `ctttm_workorder_list`는 `CT_MST_WORKORDER`와 `CT_MNU_WORKORDER`의 원천 컬럼 수와 순서가 다릅니다.
 loader는 파일명에서 source를 추출한 뒤 MST는 55개 컬럼, MNU는 49개 컬럼 레이아웃으로 백틱(`) 구분 파일을 읽습니다.
-`mes_eqp_mapping_info`는 파일 하나가 테이블 전체 snapshot이므로 새 파일 처리 시 기존 row를 모두 삭제하고 파일 전체를 다시 적재합니다.
+`mes_line_mapping_info`는 파일 하나가 테이블 전체 snapshot이므로 새 파일 처리 시 기존 row를 모두 삭제하고 파일 전체를 다시 적재합니다.
 `station_master`도 파일 하나를 테이블 전체 snapshot으로 보고 전체 교체 적재합니다.
+`eqp_status_chg`는 `eqp_event_key` 기준으로 증분 upsert하고, `eqp_id`가 `E/e`로 시작하지 않거나 `chg_time`이 180일보다 오래된 row를 제외합니다. 저장 시 `eqp_cb=eqp_id-chamber_id`를 생성하며, 적재 후 target의 180일 초과 row도 삭제합니다.
+`mi_tip_update_hist`는 TIP 원천 이력을 `tip_event_key` 기준으로 upsert하고, 원천 타입 조합을 timeline event type으로 매핑합니다.
+`racb_list`는 `c_racb_id`별 최신 `update_date` row를 고른 뒤 `eqp_ids`를 comma split하여 `eqp_cb` row로 펼쳐 저장합니다.
 
 ## 실행 방식
 
@@ -31,7 +37,7 @@ loader는 파일명에서 source를 추출한 뒤 MST는 55개 컬럼, MNU는 49
 
 `ct_process_comment`는 `ctttm_workorder_list`의 workorder 목록을 기준으로 적재 대상을 필터링합니다.
 따라서 DAG는 `ctttm_workorder_list` 성공 후 `ct_process_comment`를 실행합니다.
-`m_tkin_prevent`, `mes_eqp_mapping_info`, `station_master`는 독립적으로 실행됩니다.
+`m_tkin_prevent`, `eqp_status_chg`, `mi_tip_update_hist`, `racb_list`, `mes_line_mapping_info`, `station_master`는 독립적으로 실행됩니다.
 
 ## 주의사항
 

@@ -55,7 +55,10 @@
 | `api.data_movement.m_tkin_prevent` | `MTkinPrevent`, `MTkinPreventLoadJob` |
 | `api.data_movement.ctttm_workorder_list` | `CtttmWorkorderList`, `CtttmWorkorderListLoadJob` |
 | `api.data_movement.ct_process_comment` | `CtProcessComment`, `CtProcessCommentLoadJob` |
-| `api.data_movement.mes_eqp_mapping_info` | `MesEqpMappingInfo`, `MesEqpMappingInfoLoadJob` |
+| `api.data_movement.eqp_status_chg` | `EqpStatusChg`, `EqpStatusChgLoadJob` |
+| `api.data_movement.mi_tip_update_hist` | `MiTipUpdateHist`, `MiTipUpdateHistLoadJob` |
+| `api.data_movement.racb_list` | `RacbList`, `RacbListLoadJob` |
+| `api.data_movement.mes_line_mapping_info` | `MesLineMappingInfo`, `MesLineMappingInfoLoadJob` |
 | `api.data_movement.station_master` | `StationMaster`, `StationMasterLoadJob` |
 | `api.voc` | `VocPost`, `VocReply` |
 | `api.auth`, `api.assistant`, `api.rag`, `api.observer`, `api.l3_spider`, `api.fdc_trend`, `api.pm_comparison`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
@@ -70,7 +73,10 @@
 | `load_m_tkin_prevent` | `apps/api/api/data_movement/m_tkin_prevent/management/commands/load_m_tkin_prevent.py` | `m_tkin_prevent` deflate CSV 파일 적재 |
 | `load_ctttm_workorder_list` | `apps/api/api/data_movement/ctttm_workorder_list/management/commands/load_ctttm_workorder_list.py` | `ctttm_workorder_list` deflate CSV 파일 적재 |
 | `load_ct_process_comment` | `apps/api/api/data_movement/ct_process_comment/management/commands/load_ct_process_comment.py` | `ct_process_comment` deflate CSV 파일 적재 |
-| `load_mes_eqp_mapping_info` | `apps/api/api/data_movement/mes_eqp_mapping_info/management/commands/load_mes_eqp_mapping_info.py` | `mes_eqp_mapping_info` deflate CSV 파일 전체 교체 적재 |
+| `load_eqp_status_chg` | `apps/api/api/data_movement/eqp_status_chg/management/commands/load_eqp_status_chg.py` | `eqp_status_chg` deflate CSV 파일 적재 |
+| `load_mi_tip_update_hist` | `apps/api/api/data_movement/mi_tip_update_hist/management/commands/load_mi_tip_update_hist.py` | `mi_tip_update_hist` deflate CSV 파일 적재 |
+| `load_racb_list` | `apps/api/api/data_movement/racb_list/management/commands/load_racb_list.py` | `racb_list` deflate CSV 파일 적재 |
+| `load_mes_line_mapping_info` | `apps/api/api/data_movement/mes_line_mapping_info/management/commands/load_mes_line_mapping_info.py` | `mes_line_mapping_info` deflate CSV 파일 전체 교체 적재 |
 | `load_station_master` | `apps/api/api/data_movement/station_master/management/commands/load_station_master.py` | `station_master` deflate CSV 파일 전체 교체 적재 |
 | `seed_drone_dummy_data` | `apps/api/api/drone/management/commands/seed_drone_dummy_data.py` | 로컬 개발용 Drone SOP 더미 데이터를 생성 |
 | `seed_drone_targets_from_file` | `apps/api/api/drone/management/commands/seed_drone_targets_from_file.py` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 대상/채널/수신자 생성 |
@@ -90,4 +96,4 @@
 | `env/web.prod.env` | 운영 web 설정 템플릿 |
 | `env/minio.env` | 로컬 MinIO 계정과 endpoint |
 
-주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `DEV_AUTO_AFFILIATION_*`, `OBSERVER_DB_*`, `L3_SPIDER_*`, `FDC_HARD_SPEC_*`, `PM_COMPARISON_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.
+주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `DEV_AUTO_AFFILIATION_*`, `L3_SPIDER_*`, `FDC_HARD_SPEC_*`, `PM_COMPARISON_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.

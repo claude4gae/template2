@@ -1,7 +1,7 @@
 # =============================================================================
-# 모듈 설명: observer DB 데이터 셀렉터를 제공합니다.
+# 모듈 설명: observer 데이터 셀렉터를 제공합니다.
 # - 주요 함수: list_lines, list_sdwt_for_line, get_merged_logs 등
-# - 불변 조건: observer 전용 DB에서 조회하며, 드론 로그는 기본 DB를 사용합니다.
+# - 불변 조건: 로그별 소유 selector/DB를 통해 조회합니다.
 # =============================================================================
 
 from __future__ import annotations
@@ -14,9 +14,12 @@ from typing import Dict, List, Sequence
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.db import connections
+from django.db import connection
 
-OBSERVER_DB_ALIAS = "observer"
+from api.data_movement.eqp_status_chg import selectors as eqp_status_chg_selectors
+from api.data_movement.mi_tip_update_hist import selectors as mi_tip_update_hist_selectors
+from api.data_movement.racb_list import selectors as racb_list_selectors
+
 DEFAULT_LOG_QUERY_DAYS = 60
 MAX_LOG_LIMIT = 5000
 
@@ -47,16 +50,10 @@ def _period_date(days: int | None = None) -> str:
     return datetime.strftime(datetime.now() - timedelta(days=query_days), "%Y-%m-%d")
 
 
-def _get_observer_connection():
-    """Observer DB 연결 객체를 반환합니다."""
-
-    return connections[OBSERVER_DB_ALIAS]
-
-
 def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Row]:
-    """Observer DB에서 조회 결과를 dict 리스트로 반환합니다."""
+    """기본 DB에서 조회 결과를 dict 리스트로 반환합니다."""
 
-    with _get_observer_connection().cursor() as cursor:
+    with connection.cursor() as cursor:
         cursor.execute(query, params or [])
         columns = [col[0] for col in (cursor.description or [])]
         rows = cursor.fetchall()
@@ -67,12 +64,7 @@ def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Row]:
 def _fetch_all_on_default(query: str, params: Sequence[object] | None = None) -> List[Row]:
     """기본 DB에서 조회 결과를 dict 리스트로 반환합니다."""
 
-    with connections["default"].cursor() as cursor:
-        cursor.execute(query, params or [])
-        columns = [col[0] for col in (cursor.description or [])]
-        rows = cursor.fetchall()
-
-    return [dict(zip(columns, row)) for row in rows]
+    return _fetch_all(query, params)
 
 
 def _fetch_one(query: str, params: Sequence[object] | None = None) -> Row | None:
@@ -146,7 +138,7 @@ def normalize_id(value: str | None) -> str:
 
 
 # =============================================================================
-# observer DB 기준 정보 조회
+# 기본 DB 기준 정보 조회
 # =============================================================================
 
 
@@ -168,11 +160,15 @@ def list_lines() -> List[Dict[str, str]]:
 
     rows = _fetch_all(
         """
-        select
-            line_id as id,
-            name as name
-        from line_list
-        order by name
+        select distinct
+            gpm_line_name as id,
+            gpm_line_name as name
+        from mes_line_mapping_info
+        where gbm_name = 'MEMORY'
+          and use_yn = 'Y'
+          and del_yn = 'N'
+          and gpm_line_name is not null
+        order by gpm_line_name
         """
     )
     return [
@@ -203,11 +199,16 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
     rows = _fetch_all(
         """
         select distinct
-            sdwt_prod as id
-        from sdwt_eqp
-        where upper(line_id) = %s
-          and sdwt_prod is not null
-        order by sdwt_prod
+            station.sdwt_prod as id
+        from station_master station
+        join mes_line_mapping_info mapping
+          on mapping.msg_line_id = station.floor_line_id
+        where upper(mapping.gpm_line_name) = %s
+          and mapping.gbm_name = 'MEMORY'
+          and mapping.use_yn = 'Y'
+          and mapping.del_yn = 'N'
+          and station.sdwt_prod is not null
+        order by station.sdwt_prod
         """,
         [line_key],
     )
@@ -240,19 +241,17 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
     """
 
     filters = _normalize_filters(line_id=line_id, sdwt_id=sdwt_id)
-    line_key = filters["line_id"]
     sdwt_key = filters["sdwt_id"]
     rows = _fetch_all(
         """
         select distinct
             prc_group as id
-        from sdwt_eqp
-        where upper(line_id) = %s
-          and upper(sdwt_prod) = %s
+        from station_master
+        where upper(sdwt_prod) = %s
           and prc_group is not null
         order by prc_group
         """,
-        [line_key, sdwt_key],
+        [sdwt_key],
     )
 
     return [
@@ -290,30 +289,30 @@ def list_equipments(
         sdwt_id=sdwt_id,
         prc_group=prc_group,
     )
-    line_key = filters["line_id"]
     sdwt_key = filters["sdwt_id"]
     prc_key = filters["prc_group"]
     sql = """
         select distinct
-            eqp_cb as id,
-            line_id as line_id,
-            sdwt_prod as sdwt_prod,
-            prc_group as prc_group
-        from sdwt_eqp
-        where upper(line_id) = %s
-          and eqp_cb is not null
+            station.station as id,
+            mapping.gpm_line_name as line_id,
+            station.sdwt_prod as sdwt_prod,
+            station.prc_group as prc_group
+        from station_master station
+        left join mes_line_mapping_info mapping
+          on mapping.msg_line_id = station.floor_line_id
+         and mapping.gbm_name = 'MEMORY'
+         and mapping.use_yn = 'Y'
+         and mapping.del_yn = 'N'
+        where upper(station.prc_group) = %s
+          and station.station is not null
     """
-    params: List[object] = [line_key]
+    params: List[object] = [prc_key]
 
     if sdwt_key:
-        sql += " and upper(sdwt_prod) = %s"
+        sql += " and upper(station.sdwt_prod) = %s"
         params.append(sdwt_key)
 
-    if prc_key:
-        sql += " and upper(prc_group) = %s"
-        params.append(prc_key)
-
-    sql += " order by eqp_cb"
+    sql += " order by station.station"
     rows = _fetch_all(sql, params)
 
     return [
@@ -353,12 +352,17 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     row = _fetch_one(
         """
         select distinct
-            eqp_cb as id,
-            line_id as line_id,
-            sdwt_prod as sdwt_prod,
-            prc_group as prc_group
-        from sdwt_eqp
-        where upper(eqp_cb) = %s
+            station.station as id,
+            mapping.gpm_line_name as line_id,
+            station.sdwt_prod as sdwt_prod,
+            station.prc_group as prc_group
+        from station_master station
+        join mes_line_mapping_info mapping
+          on mapping.msg_line_id = station.floor_line_id
+        where upper(station.station) = %s
+          and mapping.gbm_name = 'MEMORY'
+          and mapping.use_yn = 'Y'
+          and mapping.del_yn = 'N'
         limit 1
         """,
         [eqp_key],
@@ -379,7 +383,7 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
 
 
 # =============================================================================
-# observer DB 로그 조회
+# 기본 DB 로그 조회
 # =============================================================================
 
 
@@ -390,51 +394,13 @@ def _fetch_eqp_logs(
     end_at: object | None = None,
     limit: int | None = None,
 ) -> List[Dict[str, object]]:
-    time_clause, time_params = _build_time_clause(
-        "event_time",
-        start_at=start_at,
+    resolved_start_at = start_at or _period_date()
+    return eqp_status_chg_selectors.fetch_eqp_timeline_logs(
+        eqp_id=eqp_id,
+        start_at=resolved_start_at,
         end_at=end_at,
+        limit=limit,
     )
-    limit_clause, limit_params = _build_limit_clause(limit)
-    rows = _fetch_all(
-        f"""
-        select
-            concat_ws(
-                '-',
-                'EQP',
-                eqp_cb,
-                to_char(event_time, 'YYYYMMDDHH24MISSUS'),
-                coalesce(event_type::text, ''),
-                coalesce(operator::text, ''),
-                md5(coalesce(comment::text, ''))
-            ) as id,
-            eqp_cb as eqp_cb,
-            'EQP' as log_type,
-            event_type as event_type,
-            event_time as event_time,
-            operator as operator,
-            comment as comment
-        from eqp_status_hist
-        where {time_clause}
-          and upper(eqp_cb) = %s
-        order by event_time desc
-        {limit_clause}
-        """,
-        [*time_params, eqp_id, *limit_params],
-    )
-
-    return [
-        {
-            "id": row.get("id"),
-            "eqpId": row.get("eqp_cb"),
-            "logType": row.get("log_type"),
-            "eventType": row.get("event_type"),
-            "eventTime": row.get("event_time"),
-            "operator": row.get("operator"),
-            "comment": row.get("comment"),
-        }
-        for row in rows
-    ]
 
 
 def _fetch_tip_logs(
@@ -444,61 +410,13 @@ def _fetch_tip_logs(
     end_at: object | None = None,
     limit: int | None = None,
 ) -> List[Dict[str, object]]:
-    time_clause, time_params = _build_time_clause(
-        "gpm_update_date",
-        start_at=start_at,
+    resolved_start_at = start_at or _period_date()
+    return mi_tip_update_hist_selectors.fetch_tip_timeline_logs(
+        eqp_id=eqp_id,
+        start_at=resolved_start_at,
         end_at=end_at,
+        limit=limit,
     )
-    limit_clause, limit_params = _build_limit_clause(limit)
-    rows = _fetch_all(
-        f"""
-        select
-            concat_ws(
-                '-',
-                'TIP',
-                eqp_cb,
-                to_char(gpm_update_date, 'YYYYMMDDHH24MISSUS'),
-                coalesce(event_type::text, ''),
-                coalesce(process_id::text, ''),
-                coalesce(step_seq::text, ''),
-                coalesce(ppid::text, ''),
-                md5(coalesce(tip_comment::text, ''))
-            ) as id,
-            eqp_cb as eqp_cb,
-            'TIP' as log_type,
-            event_type as event_type,
-            gpm_update_date as event_time,
-            split_part(register_name, '-', 1) as operator,
-            tip_comment as comment,
-            line_id as line_id,
-            process_id as process,
-            step_seq as step,
-            ppid as ppid
-        from gpm_tip_hist
-        where {time_clause}
-          and upper(eqp_cb) = %s
-        order by gpm_update_date desc
-        {limit_clause}
-        """,
-        [*time_params, eqp_id, *limit_params],
-    )
-
-    return [
-        {
-            "id": row.get("id"),
-            "eqpId": row.get("eqp_cb"),
-            "logType": row.get("log_type"),
-            "eventType": row.get("event_type"),
-            "eventTime": row.get("event_time"),
-            "operator": row.get("operator"),
-            "comment": row.get("comment"),
-            "lineId": row.get("line_id"),
-            "process": row.get("process"),
-            "step": row.get("step"),
-            "ppid": row.get("ppid"),
-        }
-        for row in rows
-    ]
 
 
 def _fetch_ctttm_logs(
@@ -510,56 +428,33 @@ def _fetch_ctttm_logs(
 ) -> List[Dict[str, object]]:
     base_url = getattr(settings, "DRONE_CTTTM_BASE_URL", "")
     time_clause, time_params = _build_time_clause(
-        "inprg_date",
+        "workorder.inprg_date",
         start_at=start_at,
         end_at=end_at,
     )
     limit_clause, limit_params = _build_limit_clause(limit)
-    rows = _fetch_all(
+    rows = _fetch_all_on_default(
         f"""
         select
-            workorder_id as id,
-            eqp_id as eqp_id,
+            workorder.workorder_id as id,
+            workorder.eqp_id as eqp_id,
             'CTTTM' as log_type,
-            work_type as event_type,
-            inprg_date as event_time,
+            workorder.work_type as event_type,
+            workorder.inprg_date as event_time,
             null as operator,
-            description as comment,
-            concat(%s, workorder_id, '&lineId=', line_id) as url
-        from ctttm_workorder_list
-        where upper(eqp_id) = %s
+            workorder.description as comment,
+            concat(%s, workorder.workorder_id, '&lineId=', workorder.line_id) as url,
+            comment.llm_summary as summary
+        from ctttm_workorder_list workorder
+        left join ct_process_comment comment
+          on comment.workorder_id = workorder.workorder_id
+        where upper(workorder.eqp_id) = %s
           and {time_clause}
-        order by inprg_date desc
+        order by workorder.inprg_date desc
         {limit_clause}
         """,
         [base_url, eqp_id, *time_params, *limit_params],
     )
-
-    if not rows:
-        return []
-
-    workorder_ids = list({
-        row.get("id")
-        for row in rows
-        if row.get("id") is not None
-    })
-    summary_rows: List[Dict[str, object]] = []
-    if workorder_ids:
-        summary_rows = _fetch_all(
-            """
-            select
-                workorder_id as id,
-                llm_summary_body as summary
-            from llm_ctttm
-            where workorder_id = any(%s)
-            """,
-            [workorder_ids],
-        )
-    summary_map = {
-        row.get("id"): row.get("summary")
-        for row in summary_rows
-        if row.get("id") is not None
-    }
 
     return [
         {
@@ -571,7 +466,7 @@ def _fetch_ctttm_logs(
             "operator": row.get("operator"),
             "comment": row.get("comment"),
             "url": row.get("url"),
-            "summary": summary_map.get(row.get("id")),
+            "summary": row.get("summary"),
         }
         for row in rows
     ]
@@ -584,44 +479,13 @@ def _fetch_racb_logs(
     end_at: object | None = None,
     limit: int | None = None,
 ) -> List[Dict[str, object]]:
-    time_clause, time_params = _build_time_clause(
-        "create_date",
-        start_at=start_at,
+    resolved_start_at = start_at or _period_date()
+    return racb_list_selectors.fetch_racb_timeline_logs(
+        eqp_id=eqp_id,
+        start_at=resolved_start_at,
         end_at=end_at,
+        limit=limit,
     )
-    limit_clause, limit_params = _build_limit_clause(limit)
-    rows = _fetch_all(
-        f"""
-        select
-            CONCAT(line_id, '-', eqp_cb, '-', create_date, '-', racb_type_cd) as id,
-            racb_type_cd as event_type,
-            create_date as event_time,
-            user_name as operator,
-            title as comment,
-            line_id as line_id,
-            eqp_cb as eqp_id
-        from racb_list
-        where upper(eqp_cb) = %s
-          and {time_clause}
-        order by create_date desc
-        {limit_clause}
-        """,
-        [eqp_id, *time_params, *limit_params],
-    )
-
-    return [
-        {
-            "id": row.get("id"),
-            "logType": "RACB",
-            "eventType": row.get("event_type"),
-            "eventTime": row.get("event_time"),
-            "operator": row.get("operator"),
-            "comment": row.get("comment"),
-            "lineId": row.get("line_id"),
-            "eqpId": row.get("eqp_id"),
-        }
-        for row in rows
-    ]
 
 
 # =============================================================================

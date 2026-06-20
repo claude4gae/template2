@@ -10,7 +10,6 @@
 | 기본 API prefix | `/api/v1/` |
 | Auth callback 예외 | `/auth/google/callback/` |
 | 기본 DB | `DJANGO_DB_*` PostgreSQL |
-| Observer DB | `OBSERVER_DB_*` PostgreSQL |
 | 로컬 실행 | `make dev-app-up` |
 
 ## App 구조
@@ -24,7 +23,7 @@
 | `api.assistant` | RAG 검색, LLM 호출, 답변 조립 | `services/chat.py`, `services/rag.py`, `services/llm.py` |
 | `api.rag` | RAG 공통 client와 설정 | `services/client.py`, `services/config.py` |
 | `api.drone` | Drone SOP 수집, 알림 대상, dispatch/delivery, 라인 대시보드 | `models.py`, `selectors.py`, `services/*.py`, `management/commands/*.py` |
-| `api.observer` | observer 전용 DB 기준 정보/로그 조회 | `selectors.py`, `views.py` |
+| `api.observer` | 기본 DB 기준 정보/로그 조회 | `selectors.py`, `views.py` |
 | `api.appstore` | 내부 앱, 댓글, 좋아요, cover | `models.py`, `services/*.py`, `views.py` |
 | `api.voc` | VOC 게시글과 답변 | `models.py`, `services/posts.py`, `views.py` |
 | `api.activity` | 사용자 활동 로그 조회 | `models.py`, `selectors.py`, `services/activity_logs.py` |
@@ -79,7 +78,10 @@
 | `load_m_tkin_prevent` | `api.data_movement.m_tkin_prevent` | `python manage.py load_m_tkin_prevent` |
 | `load_ctttm_workorder_list` | `api.data_movement.ctttm_workorder_list` | `python manage.py load_ctttm_workorder_list` |
 | `load_ct_process_comment` | `api.data_movement.ct_process_comment` | `python manage.py load_ct_process_comment` |
-| `load_mes_eqp_mapping_info` | `api.data_movement.mes_eqp_mapping_info` | `python manage.py load_mes_eqp_mapping_info` |
+| `load_eqp_status_chg` | `api.data_movement.eqp_status_chg` | `python manage.py load_eqp_status_chg` |
+| `load_mi_tip_update_hist` | `api.data_movement.mi_tip_update_hist` | `python manage.py load_mi_tip_update_hist` |
+| `load_racb_list` | `api.data_movement.racb_list` | `python manage.py load_racb_list` |
+| `load_mes_line_mapping_info` | `api.data_movement.mes_line_mapping_info` | `python manage.py load_mes_line_mapping_info` |
 | `load_station_master` | `api.data_movement.station_master` | `python manage.py load_station_master` |
 | `seed_drone_targets_from_file` | `api.drone` | `python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run` |
 | `prune_drone_sop` | `api.drone` | `python manage.py prune_drone_sop` |

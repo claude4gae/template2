@@ -80,7 +80,10 @@ make makemigrations-check
 | `load_m_tkin_prevent` | `m_tkin_prevent` incoming 파일 적재 |
 | `load_ctttm_workorder_list` | `ctttm_workorder_list` incoming 파일 적재 |
 | `load_ct_process_comment` | `ct_process_comment` incoming 파일 적재 |
-| `load_mes_eqp_mapping_info` | `mes_eqp_mapping_info` incoming 파일 전체 교체 적재 |
+| `load_eqp_status_chg` | `eqp_status_chg` incoming 파일 적재 |
+| `load_mi_tip_update_hist` | `mi_tip_update_hist` incoming 파일 적재 |
+| `load_racb_list` | `racb_list` incoming 파일 적재 |
+| `load_mes_line_mapping_info` | `mes_line_mapping_info` incoming 파일 전체 교체 적재 |
 | `load_station_master` | `station_master` incoming 파일 전체 교체 적재 |
 | `seed_drone_dummy_data` | 로컬 개발용 Drone SOP 더미 데이터 생성 |
 | `seed_drone_targets_from_file` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
@@ -96,7 +99,10 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_m_tkin_prevent
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ctttm_workorder_list
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ct_process_comment
-docker compose -f docker-compose.dev.yml exec -T api python manage.py load_mes_eqp_mapping_info
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_eqp_status_chg
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_mi_tip_update_hist
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_racb_list
+docker compose -f docker-compose.dev.yml exec -T api python manage.py load_mes_line_mapping_info
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_station_master
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data --prefix DEMO --reset
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
@@ -115,12 +121,18 @@ OIDC/운영 환경에서는 자동 소속 변경을 실행하지 않습니다.
 POST /api/v1/data-movement/m_tkin_prevent/load/
 POST /api/v1/data-movement/ctttm_workorder_list/load/
 POST /api/v1/data-movement/ct_process_comment/load/
-POST /api/v1/data-movement/mes_eqp_mapping_info/load/
+POST /api/v1/data-movement/eqp_status_chg/load/
+POST /api/v1/data-movement/mi_tip_update_hist/load/
+POST /api/v1/data-movement/racb_list/load/
+POST /api/v1/data-movement/mes_line_mapping_info/load/
 POST /api/v1/data-movement/station_master/load/
 ```
 
 `ct_process_comment`는 workorder 목록을 참조하므로 DAG에서 `ctttm_workorder_list` 이후 실행됩니다.
-`mes_eqp_mapping_info`는 `/data/data_movement/mes_line_mapping_info/incoming/*_MES_MAPPING_INFO_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
+`eqp_status_chg`는 `/data/data_movement/eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 `eqp_event_key` 기준으로 upsert하고 180일 retention을 적용합니다.
+`mi_tip_update_hist`는 `/data/data_movement/mi_tip_update_hist/incoming/*mi_tip_update_hist*.csv.deflate` 파일을 TIP timeline 조회용 row로 적재합니다.
+`racb_list`는 `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` 파일을 `c_racb_id` 최신 row 기준으로 설비별 `eqp_cb` row로 펼쳐 적재합니다.
+`mes_line_mapping_info`는 `/data/data_movement/mes_line_mapping_info/incoming/*_MES_MAPPING_INFO_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
 `station_master`는 `/data/data_movement/station_master/incoming/*_STATION_MASTER_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
 스케줄과 실행 옵션은 Airflow 환경 변수로 조정합니다.
 
@@ -295,5 +307,5 @@ npm run agent:audit:docs
 | Emails 수집 실패 | POP3 env, Airflow token, dummy mail endpoint 동작 |
 | RAG/Assistant 실패 | `ASSISTANT_*`, `RAG_*`, dummy RAG endpoint, permission group |
 | Drone 알림 실패 | SOP 수집 결과, target/channel/recipient 설정, Jira/Mail/Messenger env |
-| Observer 조회 실패 | `OBSERVER_DB_*`, `OBSERVER_QUERY_DAYS`, 기준 정보 endpoint |
+| Observer 조회 실패 | `OBSERVER_QUERY_DAYS`, data movement 적재 상태, 기준 정보 endpoint |
 | 파일/이미지 실패 | MinIO env, bucket 접근, asset sequence |

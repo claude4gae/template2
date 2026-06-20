@@ -34,7 +34,7 @@ python manage.py runserver 0.0.0.0:8000
 | `env/minio.env` | MinIO 접근 정보 |
 | `docker-compose.dev.yml` | 개발용 API/Web/Dummy/MinIO/Nginx 조합 |
 
-기본 데이터베이스는 PostgreSQL입니다. Django 기본 DB는 `DJANGO_DB_*`, Observer 전용 DB는 `OBSERVER_DB_*` 환경 변수를 사용합니다.
+기본 데이터베이스는 PostgreSQL입니다. Django 기본 DB는 `DJANGO_DB_*` 환경 변수를 사용합니다.
 
 ## 앱별 역할
 
@@ -46,7 +46,7 @@ python manage.py runserver 0.0.0.0:8000
 | `api.assistant` | RAG 검색과 LLM 답변 생성 |
 | `api.rag` | RAG 서버 호출 공통 client |
 | `api.drone` | Line Dashboard와 Drone SOP 알림 파이프라인 |
-| `api.observer` | 별도 observer DB 조회 |
+| `api.observer` | 기본 DB 기준정보/로그 조회 |
 | `api.appstore` | 내부 앱 등록, 댓글, 좋아요 |
 | `api.activity` | ActivityLog 조회 |
 | `api.voc` | VOC 게시글/답변 |

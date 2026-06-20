@@ -113,8 +113,11 @@ INSTALLED_APPS = [
     "api.data_movement",
     "api.data_movement.ct_process_comment",
     "api.data_movement.ctttm_workorder_list",
-    "api.data_movement.mes_eqp_mapping_info",
+    "api.data_movement.eqp_status_chg",
+    "api.data_movement.mi_tip_update_hist",
+    "api.data_movement.mes_line_mapping_info",
     "api.data_movement.m_tkin_prevent",
+    "api.data_movement.racb_list",
     "api.data_movement.station_master",
     "api.drone",
     "api.emails",
@@ -194,20 +197,13 @@ DATABASES = {
         # 요청 종료 시 기본 DB 연결을 닫아 idle session 누적을 방지합니다.
         "CONN_MAX_AGE": env_int("DJANGO_DB_CONN_MAX_AGE", 0) or 0
     },
-    # Observer 전용 DB (별도 PostgreSQL)
-    "observer": {
-        "ENGINE": env("OBSERVER_DB_ENGINE") or "django.db.backends.postgresql",
-        "NAME": env("OBSERVER_DB_NAME", "observer"),
-        "USER": env("OBSERVER_DB_USER", "airflow"),
-        "PASSWORD": env("OBSERVER_DB_PASSWORD", "airflow"),
-        "HOST": env("OBSERVER_DB_HOST", "10.172.117.91"),
-        "PORT": env("OBSERVER_DB_PORT", "8010"),
-        # 요청 종료 시 Observer DB 연결을 닫아 idle session 누적을 방지합니다.
-        "CONN_MAX_AGE": env_int("OBSERVER_DB_CONN_MAX_AGE", 0) or 0
-    },
 }
 
 OBSERVER_QUERY_DAYS = env_int("OBSERVER_QUERY_DAYS", 60) or 60
+RACB_REPORT_BASE_URL = env(
+    "RACB_REPORT_BASE_URL",
+    "https://racb.eqms.abc.net/racb/rpt/ReportPop.do",
+)
 
 # L3 Spider Parquet 데이터 경로.
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.
@@ -240,8 +236,20 @@ DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR = env(
     "DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR",
     "/data/data_movement/ct_process_comment",
 )
-DATA_MOVEMENT_MES_EQP_MAPPING_INFO_DIR = env(
-    "DATA_MOVEMENT_MES_EQP_MAPPING_INFO_DIR",
+DATA_MOVEMENT_EQP_STATUS_CHG_DIR = env(
+    "DATA_MOVEMENT_EQP_STATUS_CHG_DIR",
+    "/data/data_movement/eqp_status_chg",
+)
+DATA_MOVEMENT_MI_TIP_UPDATE_HIST_DIR = env(
+    "DATA_MOVEMENT_MI_TIP_UPDATE_HIST_DIR",
+    "/data/data_movement/mi_tip_update_hist",
+)
+DATA_MOVEMENT_RACB_LIST_DIR = env(
+    "DATA_MOVEMENT_RACB_LIST_DIR",
+    "/data/data_movement/racb_list",
+)
+DATA_MOVEMENT_MES_LINE_MAPPING_INFO_DIR = env(
+    "DATA_MOVEMENT_MES_LINE_MAPPING_INFO_DIR",
     "/data/data_movement/mes_line_mapping_info",
 )
 DATA_MOVEMENT_STATION_MASTER_DIR = env(

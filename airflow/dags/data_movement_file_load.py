@@ -99,10 +99,28 @@ with DAG(
         op_kwargs={"table_name": "ct_process_comment"},
     )
 
-    load_mes_eqp_mapping_info = PythonOperator(
-        task_id="load_mes_eqp_mapping_info",
+    load_eqp_status_chg = PythonOperator(
+        task_id="load_eqp_status_chg",
         python_callable=run_data_movement_load,
-        op_kwargs={"table_name": "mes_eqp_mapping_info"},
+        op_kwargs={"table_name": "eqp_status_chg"},
+    )
+
+    load_mi_tip_update_hist = PythonOperator(
+        task_id="load_mi_tip_update_hist",
+        python_callable=run_data_movement_load,
+        op_kwargs={"table_name": "mi_tip_update_hist"},
+    )
+
+    load_racb_list = PythonOperator(
+        task_id="load_racb_list",
+        python_callable=run_data_movement_load,
+        op_kwargs={"table_name": "racb_list"},
+    )
+
+    load_mes_line_mapping_info = PythonOperator(
+        task_id="load_mes_line_mapping_info",
+        python_callable=run_data_movement_load,
+        op_kwargs={"table_name": "mes_line_mapping_info"},
     )
 
     load_station_master = PythonOperator(

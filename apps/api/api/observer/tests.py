@@ -62,13 +62,33 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A")
 
+    def test_observer_lines_selector_uses_mes_mapping_info(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}._fetch_all",
+            return_value=[{"id": "GPM-LINE-A", "name": "GPM-LINE-A"}],
+        ) as fetch_all:
+            lines = selectors.list_lines()
+
+        query = fetch_all.call_args.args[0]
+        self.assertEqual(lines[0]["id"], "GPM-LINE-A")
+        self.assertIn("from mes_line_mapping_info", query)
+        self.assertIn("gpm_line_name as id", query)
+        self.assertIn("gbm_name = 'MEMORY'", query)
+        self.assertIn("use_yn = 'Y'", query)
+        self.assertIn("del_yn = 'N'", query)
+
     def test_observer_sdwt_selector_uses_case_insensitive_line_filter(self) -> None:
         with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
             sdwts = selectors.list_sdwt_for_line(line_id="line-a")
 
         query, params = fetch_all.call_args.args
         self.assertEqual(sdwts, [])
-        self.assertIn("upper(line_id) = %s", query)
+        self.assertIn("from station_master station", query)
+        self.assertIn("join mes_line_mapping_info mapping", query)
+        self.assertIn("upper(mapping.gpm_line_name) = %s", query)
+        self.assertIn("mapping.gbm_name = 'MEMORY'", query)
+        self.assertIn("mapping.use_yn = 'Y'", query)
+        self.assertIn("mapping.del_yn = 'N'", query)
         self.assertEqual(params, ["LINE-A"])
 
     def test_observer_prc_groups_returns_results(self) -> None:
@@ -116,6 +136,46 @@ class ObserverEndpointTests(TestCase):
             sdwt_id="SD-10",
             prc_group="ETCH",
         )
+
+    def test_observer_prc_groups_selector_uses_station_master(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}._fetch_all",
+            return_value=[{"id": "ETCH"}],
+        ) as fetch_all:
+            groups = selectors.list_prc_groups(line_id="LINE-A", sdwt_id="sd-10")
+
+        query, params = fetch_all.call_args.args
+        self.assertEqual(groups[0]["id"], "ETCH")
+        self.assertIn("from station_master", query)
+        self.assertIn("upper(sdwt_prod) = %s", query)
+        self.assertEqual(params, ["SD-10"])
+
+    def test_observer_equipments_selector_uses_station_master(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}._fetch_all",
+            return_value=[
+                {
+                    "id": "EQP-ALPHA",
+                    "line_id": "GPM-LINE-A",
+                    "sdwt_prod": "SD-10",
+                    "prc_group": "ETCH",
+                }
+            ],
+        ) as fetch_all:
+            equipments = selectors.list_equipments(
+                line_id="LINE-A",
+                sdwt_id="sd-10",
+                prc_group="etch",
+            )
+
+        query, params = fetch_all.call_args.args
+        self.assertEqual(equipments[0]["id"], "EQP-ALPHA")
+        self.assertEqual(equipments[0]["lineId"], "GPM-LINE-A")
+        self.assertIn("from station_master station", query)
+        self.assertIn("left join mes_line_mapping_info mapping", query)
+        self.assertIn("upper(station.prc_group) = %s", query)
+        self.assertIn("upper(station.sdwt_prod) = %s", query)
+        self.assertEqual(params, ["ETCH", "SD-10"])
 
     def test_observer_equipments_is_case_insensitive(self) -> None:
         with patch(
@@ -173,12 +233,12 @@ class ObserverEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-    def test_observer_equipment_info_selector_uses_case_insensitive_eqp_filter(self) -> None:
+    def test_observer_equipment_info_selector_uses_station_mapping(self) -> None:
         with patch(
             f"{OBSERVER_SELECTORS}._fetch_one",
             return_value={
                 "id": "EQP-ALPHA",
-                "line_id": "LINE-A",
+                "line_id": "GPM-LINE-A",
                 "sdwt_prod": "SD-10",
                 "prc_group": "ETCH",
             },
@@ -187,7 +247,14 @@ class ObserverEndpointTests(TestCase):
 
         query, params = fetch_one.call_args.args
         self.assertEqual(info["id"], "EQP-ALPHA")
-        self.assertIn("upper(eqp_cb) = %s", query)
+        self.assertEqual(info["lineId"], "GPM-LINE-A")
+        self.assertIn("from station_master station", query)
+        self.assertIn("join mes_line_mapping_info mapping", query)
+        self.assertIn("mapping.msg_line_id = station.floor_line_id", query)
+        self.assertIn("upper(station.station) = %s", query)
+        self.assertIn("mapping.gbm_name = 'MEMORY'", query)
+        self.assertIn("mapping.use_yn = 'Y'", query)
+        self.assertIn("mapping.del_yn = 'N'", query)
         self.assertEqual(params, ["EQP-ALPHA"])
 
     def test_observer_logs_requires_eqp_id(self) -> None:
@@ -237,34 +304,40 @@ class ObserverEndpointTests(TestCase):
             f"{OBSERVER_SELECTORS}._period_date",
             return_value="2026-01-01",
         ) as period_date:
-            with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
+            with patch(
+                f"{OBSERVER_SELECTORS}.eqp_status_chg_selectors.fetch_eqp_timeline_logs",
+                return_value=[],
+            ) as fetch_logs:
                 logs = selectors.get_logs_by_type(
                     eqp_id="EQP-ALPHA",
                     log_key="eqp",
                 )
 
-        query, params = fetch_all.call_args.args
         self.assertEqual(logs, [])
         self.assertEqual(selectors.DEFAULT_LOG_QUERY_DAYS, 60)
         period_date.assert_called_once_with()
-        self.assertNotIn("limit %s", query.lower())
-        self.assertEqual(params, ["2026-01-01", "EQP-ALPHA"])
+        fetch_logs.assert_called_once_with(
+            eqp_id="EQP-ALPHA",
+            start_at="2026-01-01",
+            end_at=None,
+            limit=None,
+        )
 
-    def test_observer_eqp_selector_uses_stable_id_expression(self) -> None:
+    def test_observer_eqp_selector_uses_eqp_status_chg_selector(self) -> None:
         with patch(
-            f"{OBSERVER_SELECTORS}._fetch_all",
+            f"{OBSERVER_SELECTORS}.eqp_status_chg_selectors.fetch_eqp_timeline_logs",
             return_value=[
                 {
-                    "id": "EQP-EQP-ALPHA-20260101000000000000-STATE-USER-abc",
-                    "eqp_cb": "EQP-ALPHA",
-                    "log_type": "EQP",
-                    "event_type": "STATE",
-                    "event_time": "2026-01-01T00:00:00",
+                    "id": "EQP-100",
+                    "eqpId": "EQP-ALPHA",
+                    "logType": "EQP",
+                    "eventType": "STATE",
+                    "eventTime": "2026-01-01T00:00:00",
                     "operator": "USER",
                     "comment": "EQP comment",
                 }
             ],
-        ) as fetch_all:
+        ) as fetch_logs:
             logs = selectors.get_logs_by_type(
                 eqp_id="EQP-ALPHA",
                 log_key="eqp",
@@ -272,32 +345,33 @@ class ObserverEndpointTests(TestCase):
                 limit=20,
             )
 
-        query, params = fetch_all.call_args.args
-        self.assertEqual(logs[0]["id"], "EQP-EQP-ALPHA-20260101000000000000-STATE-USER-abc")
-        self.assertIn("concat_ws", query)
-        self.assertIn("upper(eqp_cb) = %s", query)
-        self.assertNotIn("row_number()", query)
-        self.assertEqual(params, ["2026-01-01T00:00:00", "EQP-ALPHA", 20])
+        self.assertEqual(logs[0]["id"], "EQP-100")
+        fetch_logs.assert_called_once_with(
+            eqp_id="EQP-ALPHA",
+            start_at="2026-01-01T00:00:00",
+            end_at=None,
+            limit=20,
+        )
 
-    def test_observer_tip_selector_uses_stable_id_expression(self) -> None:
+    def test_observer_tip_selector_uses_mi_tip_update_hist_selector(self) -> None:
         with patch(
-            f"{OBSERVER_SELECTORS}._fetch_all",
+            f"{OBSERVER_SELECTORS}.mi_tip_update_hist_selectors.fetch_tip_timeline_logs",
             return_value=[
                 {
                     "id": "TIP-EQP-ALPHA-20260101000000000000-CREATE-P-S-PPID-abc",
-                    "eqp_cb": "EQP-ALPHA",
-                    "log_type": "TIP",
-                    "event_type": "CREATE",
-                    "event_time": "2026-01-01T00:00:00",
+                    "eqpId": "EQP-ALPHA",
+                    "logType": "TIP",
+                    "eventType": "CREATE",
+                    "eventTime": "2026-01-01T00:00:00",
                     "operator": "USER",
                     "comment": "TIP comment",
-                    "line_id": "LINE-A",
+                    "lineId": "LINE-A",
                     "process": "P",
                     "step": "S",
                     "ppid": "PPID",
                 }
             ],
-        ) as fetch_all:
+        ) as fetch_logs:
             logs = selectors.get_logs_by_type(
                 eqp_id="EQP-ALPHA",
                 log_key="tip",
@@ -305,12 +379,13 @@ class ObserverEndpointTests(TestCase):
                 limit=20,
             )
 
-        query, params = fetch_all.call_args.args
         self.assertEqual(logs[0]["id"], "TIP-EQP-ALPHA-20260101000000000000-CREATE-P-S-PPID-abc")
-        self.assertIn("concat_ws", query)
-        self.assertIn("upper(eqp_cb) = %s", query)
-        self.assertNotIn("row_number()", query)
-        self.assertEqual(params, ["2026-01-01T00:00:00", "EQP-ALPHA", 20])
+        fetch_logs.assert_called_once_with(
+            eqp_id="EQP-ALPHA",
+            start_at="2026-01-01T00:00:00",
+            end_at=None,
+            limit=20,
+        )
 
     def test_observer_logs_rejects_invalid_limit(self) -> None:
         with patch(
@@ -370,6 +445,38 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="ctttm")
 
+    def test_observer_ctttm_selector_joins_ct_process_comment_summary(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}._fetch_all_on_default",
+            return_value=[
+                {
+                    "id": "WO-1",
+                    "eqp_id": "EQP-ALPHA",
+                    "log_type": "CTTTM",
+                    "event_type": "CBM",
+                    "event_time": "2026-01-01T00:00:00",
+                    "operator": None,
+                    "comment": "CTTTM comment",
+                    "url": "https://example.local?wono=WO-1&lineId=L1",
+                    "summary": "LLM summary",
+                }
+            ],
+        ) as fetch_all:
+            logs = selectors.get_logs_by_type(
+                eqp_id="EQP-ALPHA",
+                log_key="ctttm",
+                start_at="2026-01-01T00:00:00",
+                limit=20,
+            )
+
+        query, params = fetch_all.call_args.args
+        self.assertEqual(logs[0]["summary"], "LLM summary")
+        self.assertIn("from ctttm_workorder_list workorder", query)
+        self.assertIn("left join ct_process_comment comment", query)
+        self.assertIn("comment.llm_summary as summary", query)
+        self.assertIn("comment.workorder_id = workorder.workorder_id", query)
+        self.assertEqual(params[1:], ["EQP-ALPHA", "2026-01-01T00:00:00", 20])
+
     def test_observer_racb_logs_returns_results(self) -> None:
         with patch(
             f"{OBSERVER_VIEW_SELECTORS}.get_logs_by_type",
@@ -384,21 +491,22 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="racb")
 
-    def test_observer_racb_selector_maps_eqp_id(self) -> None:
+    def test_observer_racb_selector_uses_racb_list_selector(self) -> None:
         with patch(
-            f"{OBSERVER_SELECTORS}._fetch_all",
+            f"{OBSERVER_SELECTORS}.racb_list_selectors.fetch_racb_timeline_logs",
             return_value=[
                 {
                     "id": "LINE-A-EQP-ALPHA-2026-01-01-ALARM",
-                    "event_type": "ALARM",
-                    "event_time": "2026-01-01T00:00:00",
+                    "eventType": "ALARM",
+                    "eventTime": "2026-01-01T00:00:00",
                     "operator": "USER",
                     "comment": "RACB title",
-                    "line_id": "LINE-A",
-                    "eqp_id": "EQP-ALPHA",
+                    "lineId": "LINE-A",
+                    "eqpId": "EQP-ALPHA",
+                    "logType": "RACB",
                 }
             ],
-        ) as fetch_all:
+        ) as selector:
             logs = selectors.get_logs_by_type(
                 eqp_id="EQP-ALPHA",
                 log_key="racb",
@@ -409,16 +517,12 @@ class ObserverEndpointTests(TestCase):
 
         self.assertEqual(logs[0]["eqpId"], "EQP-ALPHA")
         self.assertEqual(logs[0]["logType"], "RACB")
-        self.assertEqual(
-            fetch_all.call_args.args[1],
-            [
-                "EQP-ALPHA",
-                "2026-01-01T00:00:00",
-                "2026-01-02T23:59:59.999999",
-                20,
-            ],
+        selector.assert_called_once_with(
+            eqp_id="EQP-ALPHA",
+            start_at="2026-01-01T00:00:00",
+            end_at="2026-01-02T23:59:59.999999",
+            limit=20,
         )
-        self.assertIn("upper(eqp_cb) = %s", fetch_all.call_args.args[0])
 
     def test_observer_esop_logs_returns_results(self) -> None:
         with patch(

@@ -19,7 +19,7 @@
 2. 화면은 feature-local hook/API client를 통해 `/api/v1/**` Django endpoint를 호출합니다.
 3. Django view는 인증, 요청 파싱, 응답 변환을 담당합니다.
 4. 읽기 로직은 selector, 쓰기/외부 호출/transaction은 service가 담당합니다.
-5. 데이터는 기본 PostgreSQL, observer 전용 PostgreSQL, MinIO, 외부 시스템 또는 dummy 외부계에서 조회/저장됩니다.
+5. 데이터는 기본 PostgreSQL, MinIO, 외부 시스템 또는 dummy 외부계에서 조회/저장됩니다.
 
 ## 백엔드 모듈
 
@@ -31,7 +31,7 @@
 | `api.assistant` | RAG 기반 채팅 | RAG, LLM |
 | `api.rag` | 외부 RAG 서버 공통 client | RAG |
 | `api.drone` | Line Dashboard와 Drone SOP 알림 | 기본 DB, POP3, Jira, Mail API, Messenger |
-| `api.observer` | 별도 observer DB 조회 | observer DB, 일부 Drone 데이터 |
+| `api.observer` | 기본 DB 기준정보/로그 조회 | data movement 테이블, Drone 데이터 |
 | `api.appstore` | 내부 앱 등록/댓글/좋아요 | 기본 DB, cover image |
 | `api.voc` | VOC 게시판 | 기본 DB |
 | `api.activity` | ActivityLog 조회 | 기본 DB |
@@ -83,7 +83,7 @@
 ### Observer 조회
 
 1. Observer 화면이 line, SDWT, 공정, 설비 조건을 선택합니다.
-2. API가 query를 정규화하고 observer 전용 DB를 조회합니다.
+2. API가 query를 정규화하고 기본 DB의 기준정보/로그 테이블을 조회합니다.
 3. EQP, TIP, CTTTM, RACB, Drone 로그를 공통 observer item 형태로 반환합니다.
 4. 프론트는 vis-timeline과 상세 패널에 변환된 로그를 표시합니다.
 

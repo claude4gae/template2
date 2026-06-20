@@ -137,7 +137,6 @@ echo "== Env group 색인 =="
 for env_group in \
   "DJANGO_*" \
   "DJANGO_DB_*" \
-  "OBSERVER_DB_*" \
   "OIDC_*" \
   "ADFS_*" \
   "AIRFLOW_TRIGGER_TOKEN" \

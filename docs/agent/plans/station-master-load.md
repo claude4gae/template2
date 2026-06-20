@@ -6,7 +6,7 @@
 
 ## 현재 상태
 - `api.data_movement`는 테이블별 중첩 app 구조를 사용한다.
-- `mes_eqp_mapping_info`에서 전체 snapshot 교체 적재 패턴과 공통 `copy_full_replace_rows` helper가 추가되어 있다.
+- `mes_line_mapping_info`에서 전체 snapshot 교체 적재 패턴과 공통 `copy_full_replace_rows` helper가 추가되어 있다.
 - Airflow DAG는 테이블별 load API를 주기 호출한다.
 
 ## 범위
