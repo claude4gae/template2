@@ -55,6 +55,8 @@
 | `api.data_movement.m_tkin_prevent` | `MTkinPrevent`, `MTkinPreventLoadJob` |
 | `api.data_movement.ctttm_workorder_list` | `CtttmWorkorderList`, `CtttmWorkorderListLoadJob` |
 | `api.data_movement.ct_process_comment` | `CtProcessComment`, `CtProcessCommentLoadJob` |
+| `api.data_movement.mes_eqp_mapping_info` | `MesEqpMappingInfo`, `MesEqpMappingInfoLoadJob` |
+| `api.data_movement.station_master` | `StationMaster`, `StationMasterLoadJob` |
 | `api.voc` | `VocPost`, `VocReply` |
 | `api.auth`, `api.assistant`, `api.rag`, `api.observer`, `api.l3_spider`, `api.fdc_trend`, `api.pm_comparison`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
 
@@ -68,6 +70,8 @@
 | `load_m_tkin_prevent` | `apps/api/api/data_movement/m_tkin_prevent/management/commands/load_m_tkin_prevent.py` | `m_tkin_prevent` deflate CSV 파일 적재 |
 | `load_ctttm_workorder_list` | `apps/api/api/data_movement/ctttm_workorder_list/management/commands/load_ctttm_workorder_list.py` | `ctttm_workorder_list` deflate CSV 파일 적재 |
 | `load_ct_process_comment` | `apps/api/api/data_movement/ct_process_comment/management/commands/load_ct_process_comment.py` | `ct_process_comment` deflate CSV 파일 적재 |
+| `load_mes_eqp_mapping_info` | `apps/api/api/data_movement/mes_eqp_mapping_info/management/commands/load_mes_eqp_mapping_info.py` | `mes_eqp_mapping_info` deflate CSV 파일 전체 교체 적재 |
+| `load_station_master` | `apps/api/api/data_movement/station_master/management/commands/load_station_master.py` | `station_master` deflate CSV 파일 전체 교체 적재 |
 | `seed_drone_dummy_data` | `apps/api/api/drone/management/commands/seed_drone_dummy_data.py` | 로컬 개발용 Drone SOP 더미 데이터를 생성 |
 | `seed_drone_targets_from_file` | `apps/api/api/drone/management/commands/seed_drone_targets_from_file.py` | JSON/CSV 기준 Drone SOP/발송 이력/알림 설정 초기화 후 대상/채널/수신자 생성 |
 | `prune_drone_sop` | `apps/api/api/drone/management/commands/prune_drone_sop.py` | 보관 기간을 초과한 Drone SOP 데이터 정리 |

@@ -113,7 +113,9 @@ INSTALLED_APPS = [
     "api.data_movement",
     "api.data_movement.ct_process_comment",
     "api.data_movement.ctttm_workorder_list",
+    "api.data_movement.mes_eqp_mapping_info",
     "api.data_movement.m_tkin_prevent",
+    "api.data_movement.station_master",
     "api.drone",
     "api.emails",
     "api.fdc_trend",
@@ -237,6 +239,14 @@ DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR = env(
 DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR = env(
     "DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR",
     "/data/data_movement/ct_process_comment",
+)
+DATA_MOVEMENT_MES_EQP_MAPPING_INFO_DIR = env(
+    "DATA_MOVEMENT_MES_EQP_MAPPING_INFO_DIR",
+    "/data/data_movement/mes_line_mapping_info",
+)
+DATA_MOVEMENT_STATION_MASTER_DIR = env(
+    "DATA_MOVEMENT_STATION_MASTER_DIR",
+    "/data/data_movement/station_master",
 )
 
 

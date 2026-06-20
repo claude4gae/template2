@@ -14,7 +14,9 @@ from rest_framework.views import APIView
 from api.common.services import ensure_airflow_token, parse_json_body_or_error_when_present
 from api.data_movement.ct_process_comment.services import load_ct_process_comment_files
 from api.data_movement.ctttm_workorder_list.services import load_ctttm_workorder_list_files
+from api.data_movement.mes_eqp_mapping_info.services import load_mes_eqp_mapping_info_files
 from api.data_movement.m_tkin_prevent.services import load_m_tkin_prevent_files
+from api.data_movement.station_master.services import load_station_master_files
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,8 @@ DATA_MOVEMENT_LOADERS: dict[str, LoadFunction] = {
     "m_tkin_prevent": load_m_tkin_prevent_files,
     "ctttm_workorder_list": load_ctttm_workorder_list_files,
     "ct_process_comment": load_ct_process_comment_files,
+    "mes_eqp_mapping_info": load_mes_eqp_mapping_info_files,
+    "station_master": load_station_master_files,
 }
 
 

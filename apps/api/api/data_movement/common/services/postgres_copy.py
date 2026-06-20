@@ -21,6 +21,14 @@ class CopyReplaceResult:
     replace_values: list[Any]
 
 
+@dataclass(frozen=True)
+class CopyFullReplaceResult:
+    """COPY 전체 교체 적재 결과입니다."""
+
+    row_count: int
+    column_count: int
+
+
 def _quote_identifier(identifier: str) -> str:
     """단일 SQL identifier를 안전하게 quote 처리합니다."""
 
@@ -130,3 +138,62 @@ def copy_replace_rows(
         column_count=column_count,
         replace_values=replace_values,
     )
+
+
+def copy_full_replace_rows(
+    *,
+    frame: Any,
+    table_name: str,
+    columns: Sequence[str],
+    temp_table_name: str,
+) -> CopyFullReplaceResult:
+    """temp table과 COPY를 사용해 대상 테이블을 전체 교체 적재합니다."""
+
+    row_count, column_count = frame.shape
+    if row_count == 0:
+        raise ValueError("적재할 DataFrame이 비어 있습니다.")
+
+    quoted_table = _quote_identifier(table_name)
+    quoted_temp_table = _quote_identifier(temp_table_name)
+    quoted_columns = _quote_columns(columns)
+    buffer = _write_frame_csv(frame=frame)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TEMP TABLE {quoted_temp_table}
+            ON COMMIT DROP
+            AS
+            SELECT {quoted_columns}
+            FROM {quoted_table}
+            WITH NO DATA
+            """
+        )
+
+        copy_cursor = getattr(cursor, "cursor", cursor)
+        if not hasattr(copy_cursor, "copy"):
+            raise RuntimeError("psycopg3 COPY API를 사용할 수 없습니다.")
+
+        copy_sql = f"""
+            COPY {quoted_temp_table} ({quoted_columns})
+            FROM STDIN
+            WITH (
+                FORMAT CSV,
+                NULL '',
+                QUOTE '"',
+                ESCAPE '"'
+            )
+        """
+        with copy_cursor.copy(copy_sql) as copy:
+            copy.write(buffer.getvalue())
+
+        cursor.execute(f"DELETE FROM {quoted_table}")
+        cursor.execute(
+            f"""
+            INSERT INTO {quoted_table} ({quoted_columns})
+            SELECT {quoted_columns}
+            FROM {quoted_temp_table}
+            """
+        )
+
+    return CopyFullReplaceResult(row_count=row_count, column_count=column_count)

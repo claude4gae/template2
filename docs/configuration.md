@@ -27,7 +27,7 @@
 | `L3_SPIDER_*` / L3 Spider 파일 데이터 | `L3_SPIDER_DATA_ROOT`, `L3_SPIDER_MAX_CHART_POINTS_PER_PANEL` | read-only mount된 `daily_anomaly` Parquet 데이터 경로와 차트 sampling 제한 |
 | `FDC_HARD_SPEC_*` / FDC Trend 추천 데이터 | `FDC_HARD_SPEC_DATA_ROOT`, `FDC_HARD_SPEC_PRIORITY_PATH`, `FDC_HARD_SPEC_UNIT_MODEL_PATH`, `FDC_HARD_SPEC_HARD_LIMIT_PATH` | FDC Hard Limit 추천 Parquet 데이터 경로 |
 | `PM_COMPARISON_*` / PM SPIDER 파일 데이터 | `PM_COMPARISON_DATA_ROOT`, `PM_COMPARISON_DATA_HOST_PATH`, `PM_COMPARISON_MAX_FILES`, `PM_COMPARISON_MAX_META_DIRS` | PM SPIDER raw/score Parquet 데이터의 host mount와 컨테이너 내부 경로, scan 제한 |
-| `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_HOST_PATH`, `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR` | FTP 등으로 수신한 파일의 host mount와 테이블별 root 경로. 하위 `incoming/processing` 사용 |
+| `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_HOST_PATH`, `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR`, `DATA_MOVEMENT_MES_EQP_MAPPING_INFO_DIR`, `DATA_MOVEMENT_STATION_MASTER_DIR` | FTP 등으로 수신한 파일의 host mount와 테이블별 root 경로. 하위 `incoming/processing` 사용 |
 | `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
 | Airflow trigger | `AIRFLOW_TRIGGER_TOKEN` | 수집/동기화 trigger 보호용 Bearer token |

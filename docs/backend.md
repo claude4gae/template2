@@ -79,6 +79,8 @@
 | `load_m_tkin_prevent` | `api.data_movement.m_tkin_prevent` | `python manage.py load_m_tkin_prevent` |
 | `load_ctttm_workorder_list` | `api.data_movement.ctttm_workorder_list` | `python manage.py load_ctttm_workorder_list` |
 | `load_ct_process_comment` | `api.data_movement.ct_process_comment` | `python manage.py load_ct_process_comment` |
+| `load_mes_eqp_mapping_info` | `api.data_movement.mes_eqp_mapping_info` | `python manage.py load_mes_eqp_mapping_info` |
+| `load_station_master` | `api.data_movement.station_master` | `python manage.py load_station_master` |
 | `seed_drone_targets_from_file` | `api.drone` | `python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run` |
 | `prune_drone_sop` | `api.drone` | `python manage.py prune_drone_sop` |
 | `purge_drone_sop` | `api.drone` | `python manage.py purge_drone_sop --dry-run` |
