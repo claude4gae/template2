@@ -62,7 +62,7 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A")
 
-    def test_observer_lines_selector_uses_mes_mapping_info(self) -> None:
+    def test_observer_lines_selector_uses_mes_mapping_info_with_sdwt_station(self) -> None:
         with patch(
             f"{OBSERVER_SELECTORS}._fetch_all",
             return_value=[{"id": "GPM-LINE-A", "name": "GPM-LINE-A"}],
@@ -71,11 +71,14 @@ class ObserverEndpointTests(TestCase):
 
         query = fetch_all.call_args.args[0]
         self.assertEqual(lines[0]["id"], "GPM-LINE-A")
-        self.assertIn("from mes_line_mapping_info", query)
-        self.assertIn("gpm_line_name as id", query)
-        self.assertIn("gbm_name = 'MEMORY'", query)
-        self.assertIn("use_yn = 'Y'", query)
-        self.assertIn("del_yn = 'N'", query)
+        self.assertIn("from mes_line_mapping_info mapping", query)
+        self.assertIn("join station_master station", query)
+        self.assertIn("station.floor_line_id = mapping.msg_line_id", query)
+        self.assertIn("mapping.gpm_line_name as id", query)
+        self.assertIn("mapping.gbm_name = 'MEMORY'", query)
+        self.assertIn("mapping.use_yn = 'Y'", query)
+        self.assertIn("mapping.del_yn = 'N'", query)
+        self.assertIn("station.sdwt_prod_lookup is not null", query)
 
     def test_observer_sdwt_selector_uses_lookup_line_filter(self) -> None:
         with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:

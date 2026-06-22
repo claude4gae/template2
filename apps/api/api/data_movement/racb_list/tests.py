@@ -244,6 +244,7 @@ class RacbListLifecycleTests(TestCase):
             racb_type_cd="ALARM",
             status_code="OPEN",
             user_name="USER01",
+            create_user="CREATOR01",
             create_date=datetime(2026, 6, 20, 10, 0, tzinfo=datetime_timezone.utc),
             update_date=datetime(2026, 6, 20, 10, 5, tzinfo=datetime_timezone.utc),
         )
@@ -260,7 +261,7 @@ class RacbListLifecycleTests(TestCase):
         self.assertEqual(logs[0]["logType"], "RACB")
         self.assertEqual(logs[0]["eventType"], "ALARM_OPEN")
         self.assertEqual(logs[0]["eventTime"], datetime(2026, 6, 20, 10, 5, tzinfo=datetime_timezone.utc))
-        self.assertEqual(logs[0]["operator"], "USER01")
+        self.assertEqual(logs[0]["operator"], "CREATOR01")
         self.assertEqual(logs[0]["comment"], "RACB title")
         self.assertEqual(
             logs[0]["url"],

@@ -161,14 +161,17 @@ def list_lines() -> List[Dict[str, str]]:
     rows = _fetch_all(
         """
         select distinct
-            gpm_line_name as id,
-            gpm_line_name as name
-        from mes_line_mapping_info
-        where gbm_name = 'MEMORY'
-          and use_yn = 'Y'
-          and del_yn = 'N'
-          and gpm_line_name is not null
-        order by gpm_line_name
+            mapping.gpm_line_name as id,
+            mapping.gpm_line_name as name
+        from mes_line_mapping_info mapping
+        join station_master station
+          on station.floor_line_id = mapping.msg_line_id
+        where mapping.gbm_name = 'MEMORY'
+          and mapping.use_yn = 'Y'
+          and mapping.del_yn = 'N'
+          and mapping.gpm_line_name is not null
+          and station.sdwt_prod_lookup is not null
+        order by mapping.gpm_line_name
         """
     )
     return [

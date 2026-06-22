@@ -101,7 +101,7 @@ def fetch_racb_timeline_logs(
             "logType": "RACB",
             "eventType": _build_event_type(row),
             "eventTime": row.update_date,
-            "operator": row.user_name,
+            "operator": row.create_user,
             "comment": row.title,
             "url": _build_racb_url(row),
             "lineId": row.line_id,
