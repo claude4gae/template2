@@ -22,6 +22,10 @@ from api.data_movement.station_master.models import StationMasterLoadJob
 from api.data_movement.station_master.services import spec
 
 
+RAW_PREVIEW_LINE_LIMIT = 5
+RAW_PREVIEW_CHAR_LIMIT = 500
+
+
 @dataclass(frozen=True)
 class LoadFileOutcome:
     """단일 파일 처리 결과입니다."""
@@ -69,6 +73,7 @@ class RawStationFileDiagnostic:
     bad_row_count: int
     sample_row_column_counts: list[dict[str, int]]
     first_bad_rows: list[dict[str, int]]
+    raw_preview_lines: list[dict[str, Any]]
     delimiter_mismatch_suspected: bool
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,6 +86,7 @@ class RawStationFileDiagnostic:
             "bad_row_count": self.bad_row_count,
             "sample_row_column_counts": self.sample_row_column_counts,
             "first_bad_rows": self.first_bad_rows,
+            "raw_preview_lines": self.raw_preview_lines,
             "delimiter_mismatch_suspected": self.delimiter_mismatch_suspected,
         }
 
@@ -139,12 +145,20 @@ def _diagnose_raw_station_file(*, file_path: Path) -> RawStationFileDiagnostic:
     lines = raw.splitlines()
     sample_row_column_counts: list[dict[str, int]] = []
     first_bad_rows: list[dict[str, int]] = []
+    raw_preview_lines: list[dict[str, Any]] = []
     row_counts: list[int] = []
     for row_number, line in enumerate(lines, start=1):
         column_count = len(line.split(spec.FILE_SEPARATOR))
         row_counts.append(column_count)
-        if row_number <= 5:
+        if row_number <= RAW_PREVIEW_LINE_LIMIT:
             sample_row_column_counts.append({"row": row_number, "column_count": column_count})
+            raw_preview_lines.append(
+                {
+                    "row": row_number,
+                    "preview": line[:RAW_PREVIEW_CHAR_LIMIT],
+                    "truncated": len(line) > RAW_PREVIEW_CHAR_LIMIT,
+                }
+            )
         if column_count != expected_column_count and len(first_bad_rows) < 20:
             first_bad_rows.append({"row": row_number, "column_count": column_count})
 
@@ -156,6 +170,7 @@ def _diagnose_raw_station_file(*, file_path: Path) -> RawStationFileDiagnostic:
         bad_row_count=sum(1 for column_count in row_counts if column_count != expected_column_count),
         sample_row_column_counts=sample_row_column_counts,
         first_bad_rows=first_bad_rows,
+        raw_preview_lines=raw_preview_lines,
         delimiter_mismatch_suspected=delimiter_mismatch_suspected,
     )
 

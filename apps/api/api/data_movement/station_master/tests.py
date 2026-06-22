@@ -143,6 +143,8 @@ class StationMasterLifecycleTests(TestCase):
         self.assertEqual(outcome.status, StationMasterLoadJob.Status.DRY_RUN)
         self.assertEqual(outcome.raw_diagnostic["expected_column_count"], len(spec.COLUMNS))
         self.assertEqual(outcome.raw_diagnostic["bad_row_count"], 0)
+        self.assertEqual(outcome.raw_diagnostic["raw_preview_lines"][0]["row"], 1)
+        self.assertIn("AREA1", outcome.raw_diagnostic["raw_preview_lines"][0]["preview"])
         self.assertFalse(outcome.raw_diagnostic["delimiter_mismatch_suspected"])
 
     def test_dry_run_fails_when_raw_column_count_does_not_match(self) -> None:
@@ -162,6 +164,7 @@ class StationMasterLifecycleTests(TestCase):
         self.assertEqual(outcome.status, StationMasterLoadJob.Status.FAILED)
         self.assertIn("raw diagnostic", outcome.error_message)
         self.assertEqual(outcome.raw_diagnostic["bad_row_count"], 1)
+        self.assertEqual(outcome.raw_diagnostic["raw_preview_lines"][0]["preview"], "AREA1,ST01,M01")
         self.assertTrue(outcome.raw_diagnostic["delimiter_mismatch_suspected"])
 
     @patch.object(loader_module, "copy_full_replace_rows")
