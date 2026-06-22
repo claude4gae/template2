@@ -39,8 +39,6 @@ class Command(BaseCommand):
             message = f"{outcome.status}: {outcome.file_name}, rows={outcome.row_count}, scope={outcome.replace_scope}"
             if outcome.error_message:
                 message = f"{message}, error={outcome.error_message}"
-            if outcome.raw_diagnostic:
-                message = f"{message}, raw_diagnostic={outcome.raw_diagnostic}"
             self.stdout.write(message)
 
         self.stdout.write(

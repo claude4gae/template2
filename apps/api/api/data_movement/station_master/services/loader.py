@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import zlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
@@ -22,10 +20,6 @@ from api.data_movement.station_master.models import StationMasterLoadJob
 from api.data_movement.station_master.services import spec
 
 
-RAW_PREVIEW_LINE_LIMIT = 5
-RAW_PREVIEW_CHAR_LIMIT = 500
-
-
 @dataclass(frozen=True)
 class LoadFileOutcome:
     """단일 파일 처리 결과입니다."""
@@ -35,7 +29,6 @@ class LoadFileOutcome:
     row_count: int
     replace_scope: str = spec.REPLACE_SCOPE
     error_message: str | None = None
-    raw_diagnostic: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -63,49 +56,6 @@ class LoadRunSummary:
         return sum(1 for outcome in self.outcomes if outcome.status == StationMasterLoadJob.Status.FAILED)
 
 
-@dataclass(frozen=True)
-class RawStationFileDiagnostic:
-    """원본 station_master 파일의 구분자와 컬럼 개수를 진단합니다."""
-
-    expected_column_count: int
-    separator: str
-    row_count: int
-    bad_row_count: int
-    sample_row_column_counts: list[dict[str, int]]
-    first_bad_rows: list[dict[str, int]]
-    raw_preview_lines: list[dict[str, Any]]
-    delimiter_mismatch_suspected: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        """API 응답과 command 출력에 사용할 dict로 변환합니다."""
-
-        return {
-            "expected_column_count": self.expected_column_count,
-            "separator": self.separator,
-            "row_count": self.row_count,
-            "bad_row_count": self.bad_row_count,
-            "sample_row_column_counts": self.sample_row_column_counts,
-            "first_bad_rows": self.first_bad_rows,
-            "raw_preview_lines": self.raw_preview_lines,
-            "delimiter_mismatch_suspected": self.delimiter_mismatch_suspected,
-        }
-
-    def summary_message(self) -> str:
-        """진단 결과를 한 줄 메시지로 요약합니다."""
-
-        message = (
-            "raw diagnostic: "
-            f"expected_columns={self.expected_column_count}, "
-            f"separator={self.separator!r}, rows={self.row_count}, "
-            f"bad_rows={self.bad_row_count}"
-        )
-        if self.delimiter_mismatch_suspected:
-            message = f"{message}, delimiter_mismatch_suspected=True"
-        if self.first_bad_rows:
-            message = f"{message}, first_bad_rows={self.first_bad_rows}"
-        return message
-
-
 def _finish_job(
     *,
     job: StationMasterLoadJob,
@@ -130,48 +80,6 @@ def _create_job(*, claimed_file: ClaimedDataFile) -> StationMasterLoadJob:
         file_path=str(claimed_file.original_path),
         status=StationMasterLoadJob.Status.RUNNING,
         started_at=timezone.now(),
-    )
-
-
-def _diagnose_raw_station_file(*, file_path: Path) -> RawStationFileDiagnostic:
-    """deflate 해제 후 원본 row의 구분자와 컬럼 개수를 확인합니다."""
-
-    try:
-        raw = zlib.decompress(file_path.read_bytes()).decode("utf-8", "replace")
-    except zlib.error as exc:
-        raise ValueError(f"deflate 압축 해제 실패: {file_path}") from exc
-
-    expected_column_count = len(spec.COLUMNS)
-    lines = raw.splitlines()
-    sample_row_column_counts: list[dict[str, int]] = []
-    first_bad_rows: list[dict[str, int]] = []
-    raw_preview_lines: list[dict[str, Any]] = []
-    row_counts: list[int] = []
-    for row_number, line in enumerate(lines, start=1):
-        column_count = len(line.split(spec.FILE_SEPARATOR))
-        row_counts.append(column_count)
-        if row_number <= RAW_PREVIEW_LINE_LIMIT:
-            sample_row_column_counts.append({"row": row_number, "column_count": column_count})
-            raw_preview_lines.append(
-                {
-                    "row": row_number,
-                    "preview": line[:RAW_PREVIEW_CHAR_LIMIT],
-                    "truncated": len(line) > RAW_PREVIEW_CHAR_LIMIT,
-                }
-            )
-        if column_count != expected_column_count and len(first_bad_rows) < 20:
-            first_bad_rows.append({"row": row_number, "column_count": column_count})
-
-    delimiter_mismatch_suspected = bool(lines) and all(column_count == 1 for column_count in row_counts)
-    return RawStationFileDiagnostic(
-        expected_column_count=expected_column_count,
-        separator=spec.FILE_SEPARATOR,
-        row_count=len(lines),
-        bad_row_count=sum(1 for column_count in row_counts if column_count != expected_column_count),
-        sample_row_column_counts=sample_row_column_counts,
-        first_bad_rows=first_bad_rows,
-        raw_preview_lines=raw_preview_lines,
-        delimiter_mismatch_suspected=delimiter_mismatch_suspected,
     )
 
 
@@ -245,12 +153,7 @@ def _dry_run_one_file(*, file_path: Path) -> LoadFileOutcome:
         started_at=timezone.now(),
     )
 
-    diagnostic: RawStationFileDiagnostic | None = None
     try:
-        diagnostic = _diagnose_raw_station_file(file_path=file_path)
-        if diagnostic.bad_row_count:
-            raise ValueError(diagnostic.summary_message())
-
         frame = _read_station_frame(file_path=file_path)
         row_count = frame.shape[0]
         if row_count == 0:
@@ -265,7 +168,6 @@ def _dry_run_one_file(*, file_path: Path) -> LoadFileOutcome:
             file_name=file_path.name,
             status=StationMasterLoadJob.Status.DRY_RUN,
             row_count=row_count,
-            raw_diagnostic=diagnostic.to_dict(),
         )
     except Exception as exc:
         error_message = str(exc)
@@ -280,7 +182,6 @@ def _dry_run_one_file(*, file_path: Path) -> LoadFileOutcome:
             status=StationMasterLoadJob.Status.FAILED,
             row_count=0,
             error_message=error_message,
-            raw_diagnostic=diagnostic.to_dict() if diagnostic is not None else None,
         )
 
 

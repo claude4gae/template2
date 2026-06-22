@@ -59,6 +59,8 @@ class StationMaster(models.Model):
     index_area = models.CharField(max_length=10, null=True, blank=True)
     dv_date = models.CharField(max_length=8, null=True, blank=True)
     purge_yn = models.CharField(max_length=1, null=True, blank=True)
+    purge_target_yn = models.CharField(max_length=1, null=True, blank=True)
+    addr_book_id = models.CharField(max_length=50, null=True, blank=True)
     eff_loss_type = models.CharField(max_length=40, null=True, blank=True)
     incld_reason_detail_code = models.CharField(max_length=40, null=True, blank=True)
     maker_name = models.CharField(max_length=120, null=True, blank=True)

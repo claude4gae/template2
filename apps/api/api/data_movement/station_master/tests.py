@@ -47,9 +47,11 @@ def _build_station_row(*, station: str = "ST01", machine_id: str = "M01") -> lis
     row[22] = "5"
     row[24] = "20260620"
     row[30] = "6"
-    row[50] = "EFF"
-    row[51] = "INCLD"
-    row[52] = "MAKER"
+    row[50] = "Y"
+    row[51] = "ADDR01"
+    row[52] = "EFF"
+    row[53] = "INCLD"
+    row[54] = "MAKER"
     return row
 
 
@@ -123,49 +125,9 @@ class StationMasterLifecycleTests(TestCase):
         self.assertEqual(loaded_row.machine_id, "M01")
         self.assertEqual(loaded_row.machine_time, 1.5)
         self.assertEqual(loaded_row.da_date, "20260620")
+        self.assertEqual(loaded_row.purge_target_yn, "Y")
+        self.assertEqual(loaded_row.addr_book_id, "ADDR01")
         self.assertEqual(loaded_row.maker_name, "MAKER")
-
-    def test_dry_run_returns_raw_column_diagnostic(self) -> None:
-        """dry-run은 DB 반영 없이 원본 row 컬럼 진단을 함께 반환합니다."""
-
-        with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            incoming = root / "incoming"
-            incoming.mkdir()
-            source = incoming / "86114_STATION_MASTER_20260620.csv.deflate"
-            _write_deflate_station_csv(source, [_build_station_row()])
-
-            summary = loader_module.load_station_master_files(data_dir=root, dry_run=True)
-
-        self.assertEqual(summary.processed_count, 1)
-        self.assertEqual(summary.success_count, 0)
-        outcome = summary.outcomes[0]
-        self.assertEqual(outcome.status, StationMasterLoadJob.Status.DRY_RUN)
-        self.assertEqual(outcome.raw_diagnostic["expected_column_count"], len(spec.COLUMNS))
-        self.assertEqual(outcome.raw_diagnostic["bad_row_count"], 0)
-        self.assertEqual(outcome.raw_diagnostic["raw_preview_lines"][0]["row"], 1)
-        self.assertIn("AREA1", outcome.raw_diagnostic["raw_preview_lines"][0]["preview"])
-        self.assertFalse(outcome.raw_diagnostic["delimiter_mismatch_suspected"])
-
-    def test_dry_run_fails_when_raw_column_count_does_not_match(self) -> None:
-        """dry-run은 delimiter 또는 컬럼 수 불일치를 적재 실패로 보고합니다."""
-
-        with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            incoming = root / "incoming"
-            incoming.mkdir()
-            source = incoming / "86114_STATION_MASTER_20260620.csv.deflate"
-            source.write_bytes(zlib.compress("AREA1,ST01,M01".encode("utf-8")))
-
-            summary = loader_module.load_station_master_files(data_dir=root, dry_run=True)
-
-        self.assertEqual(summary.failure_count, 1)
-        outcome = summary.outcomes[0]
-        self.assertEqual(outcome.status, StationMasterLoadJob.Status.FAILED)
-        self.assertIn("raw diagnostic", outcome.error_message)
-        self.assertEqual(outcome.raw_diagnostic["bad_row_count"], 1)
-        self.assertEqual(outcome.raw_diagnostic["raw_preview_lines"][0]["preview"], "AREA1,ST01,M01")
-        self.assertTrue(outcome.raw_diagnostic["delimiter_mismatch_suspected"])
 
     @patch.object(loader_module, "copy_full_replace_rows")
     @patch.object(loader_module, "_read_station_frame")

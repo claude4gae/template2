@@ -65,6 +65,8 @@ COLUMNS = [
     "index_area",
     "dv_date",
     "purge_yn",
+    "purge_target_yn",
+    "addr_book_id",
     "eff_loss_type",
     "incld_reason_detail_code",
     "maker_name",
