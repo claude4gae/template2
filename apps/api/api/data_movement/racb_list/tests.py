@@ -37,18 +37,20 @@ def _build_racb_row(
     c_racb_id: str = "RACB-1",
     title: str = "RACB title",
     racb_type_cd: str = "ALARM",
+    gbm: str = "MEMORY",
     eqp_ids: str = "EAAA301-A, EAAA301-B",
     create_date: str = "2026-06-20 10:00:00",
     update_date: str = "2026-06-20 10:05:00",
     user_name: str = "USER01",
     line_id: str = "LINE-A",
+    sub_area: str = "ETCH",
 ) -> list[str]:
     """spec 컬럼 순서에 맞춘 테스트용 RACB row를 생성합니다."""
 
     return [
         c_racb_id,
         "ORACB-1",
-        "GBM",
+        gbm,
         "LINE",
         line_id,
         "AREA",
@@ -76,7 +78,7 @@ def _build_racb_row(
         "CREATOR",
         update_date,
         "UPDATER",
-        "SUBAREA",
+        sub_area,
     ]
 
 
@@ -165,6 +167,18 @@ class RacbListLifecycleTests(TestCase):
                         eqp_ids="EBBB302-A",
                     ),
                     _build_racb_row(
+                        c_racb_id="RACB-3",
+                        gbm="LOGIC",
+                        title="logic title",
+                        eqp_ids="ELOGIC301-A",
+                    ),
+                    _build_racb_row(
+                        c_racb_id="RACB-4",
+                        sub_area="PHOTO",
+                        title="photo title",
+                        eqp_ids="EPHOTO301-A",
+                    ),
+                    _build_racb_row(
                         c_racb_id="",
                         title="missing id",
                         eqp_ids="ESKIP301-A",
@@ -181,6 +195,8 @@ class RacbListLifecycleTests(TestCase):
         self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-1", eqp_cb="EAAA301-B", title="new title").exists())
         self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-1", eqp_cb_lookup="EAAA301-A").exists())
         self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-2", eqp_cb="EBBB302-A", racb_type_cd="WARN").exists())
+        self.assertFalse(RacbList.objects.filter(c_racb_id="RACB-3").exists())
+        self.assertFalse(RacbList.objects.filter(c_racb_id="RACB-4").exists())
 
     def test_loader_replaces_existing_rows_for_source_racb_ids(self) -> None:
         """같은 c_racb_id가 다시 들어오면 이전 explode 결과를 제거하고 새 결과만 저장합니다."""

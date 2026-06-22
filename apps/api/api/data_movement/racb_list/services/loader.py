@@ -144,6 +144,10 @@ def _select_latest_rows(*, source_path: Path) -> dict[str, list[str]]:
         normalized_row = [value.strip() for value in row[:required_width]]
         if row_index == 1 and [value.lower() for value in normalized_row] == spec.FILE_COLUMNS:
             continue
+        if normalized_row[source_indexes["gbm"]].strip().upper() != "MEMORY":
+            continue
+        if normalized_row[source_indexes["sub_area"]].strip().upper() != "ETCH":
+            continue
         row_key = tuple(normalized_row)
         if row_key in seen_rows:
             continue
