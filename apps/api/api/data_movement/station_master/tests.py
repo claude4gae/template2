@@ -27,7 +27,7 @@ def _write_deflate_station_csv(path: Path, rows: list[list[str]]) -> None:
     path.write_bytes(zlib.compress(payload))
 
 
-def _build_station_row(*, station: str = "ST01", machine_id: str = "M01") -> list[str]:
+def _build_station_row(*, station: str = "E01", machine_id: str = "M01") -> list[str]:
     """spec 컬럼 순서에 맞춘 테스트용 station_master row를 생성합니다."""
 
     row = [""] * len(spec.COLUMNS)
@@ -111,8 +111,9 @@ class StationMasterLifecycleTests(TestCase):
             _write_deflate_station_csv(
                 source,
                 [
-                    _build_station_row(station="ST01", machine_id="M01"),
-                    _build_station_row(station="ST02", machine_id="M02"),
+                    _build_station_row(station="E01", machine_id="M01"),
+                    _build_station_row(station="e02", machine_id="M02"),
+                    _build_station_row(station="ST03", machine_id="M03"),
                 ],
             )
 
@@ -121,13 +122,32 @@ class StationMasterLifecycleTests(TestCase):
         self.assertEqual(summary.success_count, 1)
         self.assertFalse(StationMaster.objects.filter(station="OLD").exists())
         self.assertEqual(StationMaster.objects.count(), 2)
-        loaded_row = StationMaster.objects.get(station="ST01")
+        self.assertFalse(StationMaster.objects.filter(station="ST03").exists())
+        loaded_row = StationMaster.objects.get(station="E01")
         self.assertEqual(loaded_row.machine_id, "M01")
         self.assertEqual(loaded_row.machine_time, 1.5)
         self.assertEqual(loaded_row.da_date, "20260620")
         self.assertEqual(loaded_row.purge_target_yn, "Y")
         self.assertEqual(loaded_row.addr_book_id, "ADDR01")
         self.assertEqual(loaded_row.maker_name, "MAKER")
+
+    def test_read_station_frame_keeps_e_station_rows_only(self) -> None:
+        """파일 읽기 단계에서 station이 E로 시작하는 row만 남깁니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "86114_STATION_MASTER_20260620.csv.deflate"
+            _write_deflate_station_csv(
+                source,
+                [
+                    _build_station_row(station=" E01", machine_id="M01"),
+                    _build_station_row(station="e02", machine_id="M02"),
+                    _build_station_row(station="ST03", machine_id="M03"),
+                ],
+            )
+
+            frame = loader_module._read_station_frame(file_path=source)
+
+        self.assertEqual(frame.select("station").to_series().to_list(), [" E01", "e02"])
 
     @patch.object(loader_module, "copy_full_replace_rows")
     @patch.object(loader_module, "_read_station_frame")

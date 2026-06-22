@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
@@ -83,16 +84,23 @@ def _create_job(*, claimed_file: ClaimedDataFile) -> StationMasterLoadJob:
     )
 
 
+def _filter_equipment_station_rows(*, frame: Any) -> Any:
+    """station 값이 E로 시작하는 설비 row만 적재 대상으로 남깁니다."""
+
+    return frame.filter(frame["station"].str.strip_chars().str.to_uppercase().str.starts_with("E"))
+
+
 def _read_station_frame(*, file_path: Path):
     """station_master deflate CSV를 spec 기준 DataFrame으로 읽습니다."""
 
-    return read_deflate_csv_file(
+    frame = read_deflate_csv_file(
         file_path=file_path,
         columns=spec.COLUMNS,
         datetime_columns=spec.DATETIME_COLUMNS,
         float_columns=spec.FLOAT_COLUMNS,
         separator=spec.FILE_SEPARATOR,
     )
+    return _filter_equipment_station_rows(frame=frame)
 
 
 def _load_claimed_file(*, claimed_file: ClaimedDataFile) -> LoadFileOutcome:
