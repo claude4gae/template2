@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from api.data_movement.common.services.file_loader import list_data_files
+from api.data_movement.common.services.file_loader import list_data_files, list_incoming_files
 from api.data_movement.m_tkin_prevent.models import MTkinPreventLoadJob
 from api.data_movement.m_tkin_prevent.services.loader import LoadFileOutcome, LoadRunSummary
 
@@ -32,6 +34,66 @@ class DataMovementFileLoaderTests(SimpleTestCase):
             )
 
         self.assertEqual([path.name for path in files], [matched.name])
+
+    @override_settings(
+        DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=60,
+        DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0,
+    )
+    def test_list_incoming_files_skips_recent_files(self) -> None:
+        """최근 수정된 incoming 파일은 아직 전송 중일 수 있어 제외합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            incoming = root / "incoming"
+            incoming.mkdir()
+            recent = incoming / "recent.csv.deflate"
+            recent.write_text("ok", encoding="utf-8")
+
+            files = list_incoming_files(table_dir=root, pattern="*.csv.deflate")
+
+        self.assertEqual(files, [])
+
+    @override_settings(
+        DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=60,
+        DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0,
+    )
+    def test_list_incoming_files_includes_old_files(self) -> None:
+        """최소 안정화 시간을 지난 incoming 파일은 적재 후보로 반환합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            incoming = root / "incoming"
+            incoming.mkdir()
+            matched = incoming / "old.csv.deflate"
+            matched.write_text("ok", encoding="utf-8")
+            old_timestamp = time.time() - 120
+            os.utime(matched, (old_timestamp, old_timestamp))
+
+            files = list_incoming_files(table_dir=root, pattern="*.csv.deflate")
+
+        self.assertEqual([path.name for path in files], [matched.name])
+
+    @override_settings(
+        DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0,
+        DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=1,
+    )
+    def test_list_incoming_files_skips_files_changed_during_stability_check(self) -> None:
+        """재확인 중 stat 값이 바뀐 incoming 파일은 이번 적재에서 제외합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            incoming = root / "incoming"
+            incoming.mkdir()
+            changing = incoming / "changing.csv.deflate"
+            changing.write_text("ok", encoding="utf-8")
+
+            with patch(
+                "api.data_movement.common.services.file_loader.time.sleep",
+                side_effect=lambda _seconds: changing.write_text("changed", encoding="utf-8"),
+            ):
+                files = list_incoming_files(table_dir=root, pattern="*.csv.deflate")
+
+        self.assertEqual(files, [])
 
 
 @override_settings(AIRFLOW_TRIGGER_TOKEN="test-token")

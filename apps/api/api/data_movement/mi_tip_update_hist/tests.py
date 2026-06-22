@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from api.data_movement.mi_tip_update_hist.management.commands.load_mi_tip_update_hist import services
 from api.data_movement.mi_tip_update_hist.models import MiTipUpdateHist, MiTipUpdateHistLoadJob
@@ -142,6 +142,7 @@ class MiTipUpdateHistStructureTests(SimpleTestCase):
             call_command("load_mi_tip_update_hist", stdout=StringIO())
 
 
+@override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class MiTipUpdateHistLifecycleTests(TestCase):
     """TIP 이력 파일 처리 lifecycle을 검증합니다."""
 

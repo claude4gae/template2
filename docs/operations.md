@@ -143,6 +143,14 @@ DATA_MOVEMENT_LOAD_LIMIT=
 DATA_MOVEMENT_LOAD_DRY_RUN=false
 ```
 
+송신 측에서 최종 파일명으로 직접 전송할 수 있으므로 API loader는 전송 중으로 보이는 파일을 적재 후보에서 제외합니다.
+기본값은 마지막 수정 후 60초 이상 지난 파일만 후보로 보고, 1초 뒤 size/mtime이 그대로인 파일만 이번 실행에서 처리합니다.
+
+```text
+DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=60
+DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=1
+```
+
 ### Data Movement FTP
 
 Compose의 `ftp` service는 API와 같은 host path를 공유합니다.

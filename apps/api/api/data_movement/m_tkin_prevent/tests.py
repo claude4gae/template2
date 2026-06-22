@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from api.data_movement.common.services.file_loader import list_data_files
 from api.data_movement.common.services.postgres_copy import CopyReplaceResult
@@ -99,6 +99,7 @@ class MTkinPreventStructureTests(SimpleTestCase):
             call_command("load_m_tkin_prevent", stdout=StringIO())
 
 
+@override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class MTkinPreventLifecycleTests(TestCase):
     """FTP 수신 파일과 loader 처리 파일의 lifecycle을 검증합니다."""
 

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from api.data_movement.common.services.postgres_copy import CopyFullReplaceResult
 from api.data_movement.mes_line_mapping_info.management.commands.load_mes_line_mapping_info import services
@@ -103,6 +103,7 @@ class MesLineMappingInfoStructureTests(SimpleTestCase):
         self.assertEqual(update_date, datetime(2026, 6, 19, 2, 20, 30, tzinfo=datetime_timezone.utc))
 
 
+@override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class MesLineMappingInfoLifecycleTests(TestCase):
     """MES 매핑 수신 파일과 loader 처리 파일의 생명주기를 검증합니다."""
 

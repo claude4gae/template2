@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from api.data_movement.racb_list.management.commands.load_racb_list import services
 from api.data_movement.racb_list.models import RacbList, RacbListLoadJob
@@ -129,6 +129,7 @@ class RacbListStructureTests(SimpleTestCase):
             call_command("load_racb_list", stdout=StringIO())
 
 
+@override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class RacbListLifecycleTests(TestCase):
     """RACB 이력 파일 처리 lifecycle을 검증합니다."""
 

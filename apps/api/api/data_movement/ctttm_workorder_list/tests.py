@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from api.data_movement.ctttm_workorder_list.management.commands.load_ctttm_workorder_list import services
 from api.data_movement.ctttm_workorder_list.models import CtttmWorkorderList, CtttmWorkorderListLoadJob
@@ -277,6 +277,7 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
             call_command("load_ctttm_workorder_list", stdout=StringIO())
 
 
+@override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class CtttmWorkorderListLifecycleTests(TestCase):
     """CTTTM workorder 파일 처리 lifecycle을 검증합니다."""
 

@@ -11,7 +11,7 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from api.data_movement.common.services.streaming_csv import write_selected_deflate_csv
 from api.data_movement.ct_process_comment.management.commands.load_ct_process_comment import services
@@ -159,6 +159,7 @@ class CtProcessCommentStructureTests(SimpleTestCase):
             call_command("load_ct_process_comment", stdout=StringIO())
 
 
+@override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class CtProcessCommentLifecycleTests(TestCase):
     """CT_PROCESS_COMMENT 파일 처리 lifecycle을 검증합니다."""
 
