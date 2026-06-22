@@ -31,7 +31,13 @@ def _write_deflate_mapping_csv(path: Path, rows: list[list[str]]) -> None:
     path.write_bytes(zlib.compress(payload))
 
 
-def _build_mapping_row(*, seq_no: str = "1", line_id: str = "L1", gpm_line_name: str = "GPM-L1") -> list[str]:
+def _build_mapping_row(
+    *,
+    seq_no: str = "1",
+    line_id: str = "L1",
+    gpm_line_name: str = "GPM-L1",
+    gbm_name: str = "MEMORY",
+) -> list[str]:
     """spec 컬럼 순서에 맞춘 테스트용 mes_line_mapping_info row를 생성합니다."""
 
     row = [""] * len(spec.COLUMNS)
@@ -41,7 +47,7 @@ def _build_mapping_row(*, seq_no: str = "1", line_id: str = "L1", gpm_line_name:
     row[3] = "FDC1"
     row[4] = gpm_line_name
     row[6] = "MSG1"
-    row[10] = "MEMORY"
+    row[10] = gbm_name
     row[20] = "2"
     row[21] = "Y"
     row[22] = "N"
@@ -102,6 +108,24 @@ class MesLineMappingInfoStructureTests(SimpleTestCase):
         update_date = frame.select("update_date").to_series().to_list()[0]
         self.assertEqual(update_date, datetime(2026, 6, 19, 2, 20, 30, tzinfo=datetime_timezone.utc))
 
+    def test_read_mapping_frame_keeps_memory_rows_only(self) -> None:
+        """파일 읽기 단계에서 gbm_name이 MEMORY인 row만 남깁니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "86114_MES_LINE_MAPPING_INFO_20260619.csv.deflate"
+            _write_deflate_mapping_csv(
+                source,
+                [
+                    _build_mapping_row(seq_no="1", line_id="L1", gbm_name=" MEMORY "),
+                    _build_mapping_row(seq_no="2", line_id="L2", gbm_name="LOGIC"),
+                    _build_mapping_row(seq_no="3", line_id="L3", gbm_name="memory"),
+                ],
+            )
+
+            frame = loader_module._read_mapping_frame(file_path=source)
+
+        self.assertEqual(frame.select("line_id").to_series().to_list(), ["L1", "L3"])
+
 
 @override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class MesLineMappingInfoLifecycleTests(TestCase):
@@ -121,6 +145,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
                 source,
                 [
                     _build_mapping_row(seq_no="1", line_id="L1", gpm_line_name="GPM-L1"),
+                    _build_mapping_row(seq_no="9", line_id="LOGIC_LINE", gpm_line_name="GPM-LOGIC", gbm_name="LOGIC"),
                     _build_mapping_row(seq_no="2", line_id="L2", gpm_line_name="GPM-L2"),
                 ],
             )
@@ -130,6 +155,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
         self.assertEqual(summary.success_count, 1)
         self.assertFalse(MesLineMappingInfo.objects.filter(line_id="OLD_LINE").exists())
         self.assertEqual(MesLineMappingInfo.objects.count(), 2)
+        self.assertFalse(MesLineMappingInfo.objects.filter(line_id="LOGIC_LINE").exists())
         loaded_row = MesLineMappingInfo.objects.get(line_id="L1")
         self.assertEqual(loaded_row.line_id, "L1")
         self.assertEqual(loaded_row.gpm_line_name, "GPM-L1")
