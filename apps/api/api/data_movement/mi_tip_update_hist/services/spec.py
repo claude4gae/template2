@@ -52,6 +52,7 @@ DB_COLUMNS = [
     "tip_event_key",
     "line_id",
     "eqp_cb",
+    "eqp_cb_lookup",
     "step_seq",
     "process_id",
     "ppid",

@@ -12,6 +12,12 @@ from django.utils.dateparse import parse_date, parse_datetime
 from api.data_movement.mi_tip_update_hist.models import MiTipUpdateHist
 
 
+def _lookup_key(value: str) -> str:
+    """조회용 정규화 키를 생성합니다."""
+
+    return (value or "").strip().upper()
+
+
 def _normalize_datetime_filter(value: object | None, *, is_end: bool = False) -> object | None:
     """문자열 시간 경계를 DateTimeField filter에 안전한 값으로 변환합니다."""
 
@@ -92,7 +98,7 @@ def fetch_tip_timeline_logs(
     normalized_start_at = _normalize_datetime_filter(start_at)
     normalized_end_at = _normalize_datetime_filter(end_at, is_end=True)
 
-    queryset = MiTipUpdateHist.objects.filter(eqp_cb__iexact=eqp_id).order_by("-gpm_update_date")
+    queryset = MiTipUpdateHist.objects.filter(eqp_cb_lookup=_lookup_key(eqp_id)).order_by("-gpm_update_date")
     if normalized_start_at is not None:
         queryset = queryset.filter(gpm_update_date__gte=normalized_start_at)
     if normalized_end_at is not None:

@@ -13,6 +13,7 @@ class CtttmWorkorderList(models.Model):
     workorder_id = models.TextField(null=True, blank=True)
     line_id = models.TextField(null=True, blank=True)
     eqp_id = models.TextField(null=True, blank=True)
+    eqp_id_lookup = models.TextField(null=True, blank=True)
     work_type = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     inprg_date = models.DateTimeField(null=True, blank=True)
@@ -25,12 +26,19 @@ class CtttmWorkorderList(models.Model):
             models.Index(fields=["source_type"], name="idx_ctttm_wol_src"),
             models.Index(fields=["line_id"], name="idx_ctttm_wol_line"),
             models.Index(fields=["eqp_id"], name="idx_ctttm_wol_eqp"),
+            models.Index(fields=["eqp_id_lookup", "-inprg_date"], name="idx_ctttm_lkp_dt"),
         ]
 
     def __str__(self) -> str:
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.source_type} {self.workorder_id or '-'}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """조회용 정규화 키를 채운 뒤 저장합니다."""
+
+        self.eqp_id_lookup = (self.eqp_id or "").strip().upper() or None
+        super().save(*args, **kwargs)
 
 
 class CtttmWorkorderListLoadJob(models.Model):

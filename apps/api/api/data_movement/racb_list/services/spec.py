@@ -62,6 +62,7 @@ DB_COLUMNS = [
     "major_category",
     "minor_category",
     "eqp_cb",
+    "eqp_cb_lookup",
     "prc_groups",
     "level_data",
     "status_code",

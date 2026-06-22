@@ -90,6 +90,16 @@ def _filter_equipment_station_rows(*, frame: Any) -> Any:
     return frame.filter(frame["station"].str.strip_chars().str.to_uppercase().str.starts_with("E"))
 
 
+def _with_lookup_columns(*, frame: Any) -> Any:
+    """observer 조회용 정규화 lookup 컬럼을 추가합니다."""
+
+    return frame.with_columns(
+        frame["station"].str.strip_chars().str.to_uppercase().alias("station_lookup"),
+        frame["sdwt_prod"].str.strip_chars().str.to_uppercase().alias("sdwt_prod_lookup"),
+        frame["prc_group"].str.strip_chars().str.to_uppercase().alias("prc_group_lookup"),
+    ).select(spec.DB_COLUMNS)
+
+
 def _read_station_frame(*, file_path: Path):
     """station_master deflate CSV를 spec 기준 DataFrame으로 읽습니다."""
 
@@ -100,7 +110,7 @@ def _read_station_frame(*, file_path: Path):
         float_columns=spec.FLOAT_COLUMNS,
         separator=spec.FILE_SEPARATOR,
     )
-    return _filter_equipment_station_rows(frame=frame)
+    return _with_lookup_columns(frame=_filter_equipment_station_rows(frame=frame))
 
 
 def _load_claimed_file(*, claimed_file: ClaimedDataFile) -> LoadFileOutcome:
@@ -118,7 +128,7 @@ def _load_claimed_file(*, claimed_file: ClaimedDataFile) -> LoadFileOutcome:
             result = copy_full_replace_rows(
                 frame=frame,
                 table_name=spec.TABLE_NAME,
-                columns=spec.COLUMNS,
+                columns=spec.DB_COLUMNS,
                 temp_table_name=spec.TEMP_TABLE_NAME,
             )
 

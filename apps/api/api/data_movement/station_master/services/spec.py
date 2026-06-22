@@ -72,6 +72,16 @@ COLUMNS = [
     "maker_name",
 ]
 
+DB_COLUMNS = [
+    *COLUMNS[:2],
+    "station_lookup",
+    *COLUMNS[2:16],
+    "sdwt_prod_lookup",
+    *COLUMNS[16:35],
+    "prc_group_lookup",
+    *COLUMNS[35:],
+]
+
 DATETIME_COLUMNS = []
 
 FLOAT_COLUMNS = [

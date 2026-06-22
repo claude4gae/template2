@@ -77,7 +77,7 @@ class ObserverEndpointTests(TestCase):
         self.assertIn("use_yn = 'Y'", query)
         self.assertIn("del_yn = 'N'", query)
 
-    def test_observer_sdwt_selector_uses_case_insensitive_line_filter(self) -> None:
+    def test_observer_sdwt_selector_uses_lookup_line_filter(self) -> None:
         with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
             sdwts = selectors.list_sdwt_for_line(line_id="line-a")
 
@@ -85,7 +85,7 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(sdwts, [])
         self.assertIn("from station_master station", query)
         self.assertIn("join mes_line_mapping_info mapping", query)
-        self.assertIn("upper(mapping.gpm_line_name) = %s", query)
+        self.assertIn("mapping.gpm_line_name_lookup = %s", query)
         self.assertIn("mapping.gbm_name = 'MEMORY'", query)
         self.assertIn("mapping.use_yn = 'Y'", query)
         self.assertIn("mapping.del_yn = 'N'", query)
@@ -105,7 +105,7 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A", sdwt_id="SD-10")
 
-    def test_observer_prc_groups_is_case_insensitive(self) -> None:
+    def test_observer_prc_groups_normalizes_query_values(self) -> None:
         with patch(
             f"{OBSERVER_VIEW_SELECTORS}.list_prc_groups",
             return_value=[],
@@ -147,7 +147,7 @@ class ObserverEndpointTests(TestCase):
         query, params = fetch_all.call_args.args
         self.assertEqual(groups[0]["id"], "ETCH")
         self.assertIn("from station_master", query)
-        self.assertIn("upper(sdwt_prod) = %s", query)
+        self.assertIn("sdwt_prod_lookup = %s", query)
         self.assertEqual(params, ["SD-10"])
 
     def test_observer_equipments_selector_uses_station_master(self) -> None:
@@ -173,11 +173,11 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(equipments[0]["lineId"], "GPM-LINE-A")
         self.assertIn("from station_master station", query)
         self.assertIn("left join mes_line_mapping_info mapping", query)
-        self.assertIn("upper(station.prc_group) = %s", query)
-        self.assertIn("upper(station.sdwt_prod) = %s", query)
+        self.assertIn("station.prc_group_lookup = %s", query)
+        self.assertIn("station.sdwt_prod_lookup = %s", query)
         self.assertEqual(params, ["ETCH", "SD-10"])
 
-    def test_observer_equipments_is_case_insensitive(self) -> None:
+    def test_observer_equipments_normalizes_query_values(self) -> None:
         with patch(
             f"{OBSERVER_VIEW_SELECTORS}.list_equipments",
             return_value=[],
@@ -251,7 +251,7 @@ class ObserverEndpointTests(TestCase):
         self.assertIn("from station_master station", query)
         self.assertIn("join mes_line_mapping_info mapping", query)
         self.assertIn("mapping.msg_line_id = station.floor_line_id", query)
-        self.assertIn("upper(station.station) = %s", query)
+        self.assertIn("station.station_lookup = %s", query)
         self.assertIn("mapping.gbm_name = 'MEMORY'", query)
         self.assertIn("mapping.use_yn = 'Y'", query)
         self.assertIn("mapping.del_yn = 'N'", query)
@@ -538,7 +538,7 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         self.assert_log_selector_called(selector, log_key="esop")
 
-    def test_observer_esop_selector_uses_case_insensitive_eqp_filter(self) -> None:
+    def test_observer_esop_selector_uses_lookup_eqp_filter(self) -> None:
         with patch(
             f"{OBSERVER_SELECTORS}._fetch_all_on_default",
             return_value=[],
@@ -552,7 +552,7 @@ class ObserverEndpointTests(TestCase):
 
         query, params = fetch_all.call_args.args
         self.assertEqual(logs, [])
-        self.assertIn("upper(sop.eqp_id) = %s", query)
+        self.assertIn("sop.eqp_id_lookup = %s", query)
         self.assertEqual(params, ["2026-01-01T00:00:00", "EQPALPHA", 20])
 
     def test_observer_esop_selector_maps_log_type_to_esop(self) -> None:

@@ -66,6 +66,7 @@ class DroneSOP(models.Model):
     sample_type = models.CharField(max_length=50, null=True, blank=True)
     sample_group = models.CharField(max_length=50, null=True, blank=True)
     eqp_id = models.CharField(max_length=50, null=True, blank=True)
+    eqp_id_lookup = models.CharField(max_length=50, null=True, blank=True)
     chamber_ids = models.CharField(max_length=50, null=True, blank=True)
     lot_id = models.CharField(max_length=50, null=True, blank=True)
     proc_id = models.CharField(max_length=50, null=True, blank=True)
@@ -90,6 +91,7 @@ class DroneSOP(models.Model):
     class Meta:
         db_table = "drone_sop"
         indexes = [
+            models.Index(fields=["eqp_id_lookup", "-created_at"], name="idx_dro_sop_lkp_crt"),
             models.Index(fields=["sdwt_prod"], name="idx_dro_sop_sdw_prd"),
             models.Index(fields=["created_at", "id"], name="idx_dro_sop_crt_at_id"),
             models.Index(
@@ -117,6 +119,7 @@ class DroneSOP(models.Model):
         # -------------------------------------------------------------------------
         # 1) sop_key 생성(없을 때만)
         # -------------------------------------------------------------------------
+        self.eqp_id_lookup = (self.eqp_id or "").strip().upper() or None
         if not self.sop_key:
             self.sop_key = build_sop_key(
                 line_id=self.line_id,

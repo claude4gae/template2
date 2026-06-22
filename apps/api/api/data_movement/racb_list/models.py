@@ -23,6 +23,7 @@ class RacbList(models.Model):
     major_category = models.TextField(null=True, blank=True)
     minor_category = models.TextField(null=True, blank=True)
     eqp_cb = models.TextField()
+    eqp_cb_lookup = models.TextField(null=True, blank=True)
     prc_groups = models.TextField(null=True, blank=True)
     level_data = models.TextField(null=True, blank=True)
     status_code = models.TextField(null=True, blank=True)
@@ -46,6 +47,7 @@ class RacbList(models.Model):
     class Meta:
         db_table = "racb_list"
         indexes = [
+            models.Index(fields=["eqp_cb_lookup", "-update_date"], name="idx_racb_lkp_dt"),
             models.Index(fields=["eqp_cb", "update_date"], name="idx_racb_list_cb_upd"),
             models.Index(fields=["update_date"], name="idx_racb_list_upd"),
         ]
@@ -57,6 +59,12 @@ class RacbList(models.Model):
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.c_racb_id} {self.eqp_cb}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """조회용 정규화 키를 채운 뒤 저장합니다."""
+
+        self.eqp_cb_lookup = (self.eqp_cb or "").strip().upper() or None
+        super().save(*args, **kwargs)
 
 
 class RacbListLoadJob(models.Model):

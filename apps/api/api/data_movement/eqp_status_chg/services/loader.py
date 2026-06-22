@@ -109,6 +109,12 @@ def _build_eqp_cb(*, eqp_id: str, chamber_id: str) -> str:
     return f"{eqp_id}-{normalized_chamber_id}"
 
 
+def _lookup_key(value: str) -> str:
+    """조회용 정규화 키를 생성합니다."""
+
+    return value.strip().upper()
+
+
 def _copy_selected_file_to_temp(*, cursor, selected_csv_path: Path) -> None:
     """선별 CSV 파일을 temp table로 COPY 합니다."""
 
@@ -176,8 +182,10 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, cutoff: datetime
                 continue
 
             chamber_id = row[source_indexes["chamber_id"]].strip()
+            eqp_cb = _build_eqp_cb(eqp_id=eqp_id, chamber_id=chamber_id)
             selected_values = [
-                _build_eqp_cb(eqp_id=eqp_id, chamber_id=chamber_id),
+                eqp_cb,
+                _lookup_key(eqp_cb),
                 row[source_indexes["line_id"]].strip(),
                 chg_time_raw,
                 row[source_indexes["eqp_code"]].strip(),
@@ -224,6 +232,7 @@ def _upsert_rows(*, selected_csv_path: Path, cutoff: datetime) -> None:
                 INSERT INTO {quoted_table} AS target
                     (
                         eqp_cb,
+                        eqp_cb_lookup,
                         line_id,
                         chg_time,
                         eqp_code,
@@ -236,6 +245,7 @@ def _upsert_rows(*, selected_csv_path: Path, cutoff: datetime) -> None:
                     )
                 SELECT DISTINCT ON (NULLIF(src.eqp_event_key, '')::numeric)
                     NULLIF(src.eqp_cb, ''),
+                    NULLIF(src.eqp_cb_lookup, ''),
                     NULLIF(src.line_id, ''),
                     NULLIF(src.chg_time, '')::timestamp,
                     NULLIF(src.eqp_code, ''),

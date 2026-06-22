@@ -110,6 +110,12 @@ def _build_eqp_cb(*, eqp_id: str, tip_chamber_id: str) -> str:
     return f"{eqp_id}-{chamber}"
 
 
+def _lookup_key(value: str) -> str:
+    """조회용 정규화 키를 생성합니다."""
+
+    return value.strip().upper()
+
+
 def _map_event_type(*, tip_type: str, tip_chg_type: str, tip_level: str) -> str:
     """TIP 원천 타입 3종을 timeline event_type으로 매핑합니다."""
 
@@ -231,6 +237,7 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, cutoff: datetime
                 tip_event_key,
                 row[source_indexes["line_id"]].strip(),
                 eqp_cb,
+                _lookup_key(eqp_cb),
                 row[source_indexes["step_seq"]].strip(),
                 row[source_indexes["process_id"]].strip(),
                 row[source_indexes["ppid"]].strip(),
@@ -288,6 +295,7 @@ def _upsert_rows(*, selected_csv_path: Path, cutoff: datetime) -> None:
                         tip_event_key,
                         line_id,
                         eqp_cb,
+                        eqp_cb_lookup,
                         step_seq,
                         process_id,
                         ppid,
@@ -311,6 +319,7 @@ def _upsert_rows(*, selected_csv_path: Path, cutoff: datetime) -> None:
                     NULLIF(src.tip_event_key, ''),
                     NULLIF(src.line_id, ''),
                     NULLIF(src.eqp_cb, ''),
+                    NULLIF(src.eqp_cb_lookup, ''),
                     NULLIF(src.step_seq, ''),
                     NULLIF(src.process_id, ''),
                     NULLIF(src.ppid, ''),

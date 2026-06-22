@@ -10,6 +10,7 @@ class EqpStatusChg(models.Model):
     """EQP 상태 변경 이력을 timeline 조회용 최신 원천으로 저장합니다."""
 
     eqp_cb = models.CharField(max_length=41)
+    eqp_cb_lookup = models.CharField(max_length=41, null=True, blank=True)
     line_id = models.CharField(max_length=8, null=True, blank=True)
     chg_time = models.DateTimeField()
     eqp_code = models.CharField(max_length=20, null=True, blank=True)
@@ -25,6 +26,7 @@ class EqpStatusChg(models.Model):
     class Meta:
         db_table = "eqp_status_chg"
         indexes = [
+            models.Index(fields=["eqp_cb_lookup", "-chg_time"], name="idx_eqp_sts_lkp_tm"),
             models.Index(fields=["eqp_cb", "chg_time"], name="idx_eqp_sts_chg_cb_tm"),
             models.Index(fields=["chg_time"], name="idx_eqp_sts_chg_tm"),
         ]
@@ -36,6 +38,12 @@ class EqpStatusChg(models.Model):
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.eqp_cb} {self.chg_time:%Y-%m-%d %H:%M:%S}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """조회용 정규화 키를 채운 뒤 저장합니다."""
+
+        self.eqp_cb_lookup = (self.eqp_cb or "").strip().upper() or None
+        super().save(*args, **kwargs)
 
 
 class EqpStatusChgLoadJob(models.Model):

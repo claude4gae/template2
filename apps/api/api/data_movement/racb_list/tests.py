@@ -95,6 +95,7 @@ class RacbListStructureTests(SimpleTestCase):
         index_names = {index.name for index in RacbList._meta.indexes}
         constraint_names = {constraint.name for constraint in RacbList._meta.constraints}
 
+        self.assertIn("idx_racb_lkp_dt", index_names)
         self.assertIn("idx_racb_list_cb_upd", index_names)
         self.assertIn("idx_racb_list_upd", index_names)
         self.assertIn("uniq_racb_list_id_cb", constraint_names)
@@ -178,6 +179,7 @@ class RacbListLifecycleTests(TestCase):
         self.assertFalse(RacbList.objects.filter(eqp_cb="EOLD301-A").exists())
         self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-1", eqp_cb="EAAA301-A", title="new title").exists())
         self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-1", eqp_cb="EAAA301-B", title="new title").exists())
+        self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-1", eqp_cb_lookup="EAAA301-A").exists())
         self.assertTrue(RacbList.objects.filter(c_racb_id="RACB-2", eqp_cb="EBBB302-A", racb_type_cd="WARN").exists())
 
     def test_loader_replaces_existing_rows_for_source_racb_ids(self) -> None:
@@ -214,6 +216,7 @@ class RacbListLifecycleTests(TestCase):
         self.assertFalse(RacbList.objects.filter(eqp_cb="EOLD301-A").exists())
         self.assertTrue(RacbList.objects.filter(eqp_cb="ENEW301-A", title="replacement").exists())
 
+    @override_settings(RACB_REPORT_BASE_URL="https://racb.eqms.abc.net/racb/rpt/ReportPop.do")
     def test_selector_returns_observer_racb_payload(self) -> None:
         """내부 테이블 row를 observer RACB payload로 변환합니다."""
 

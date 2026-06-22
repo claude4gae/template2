@@ -172,6 +172,8 @@ def _build_selected_values(*, row: list[str], eqp_cb: str, source_indexes: dict[
     for column in spec.DB_COLUMNS:
         if column == "eqp_cb":
             values.append(eqp_cb)
+        elif column == "eqp_cb_lookup":
+            values.append(eqp_cb.strip().upper())
         else:
             values.append(row[source_indexes[column]])
     return values
@@ -258,6 +260,7 @@ def _replace_rows(*, selected_csv_path: Path) -> None:
                     NULLIF(src.major_category, ''),
                     NULLIF(src.minor_category, ''),
                     NULLIF(src.eqp_cb, ''),
+                    NULLIF(src.eqp_cb_lookup, ''),
                     NULLIF(src.prc_groups, ''),
                     NULLIF(src.level_data, ''),
                     NULLIF(src.status_code, ''),

@@ -203,7 +203,7 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
         from station_master station
         join mes_line_mapping_info mapping
           on mapping.msg_line_id = station.floor_line_id
-        where upper(mapping.gpm_line_name) = %s
+        where mapping.gpm_line_name_lookup = %s
           and mapping.gbm_name = 'MEMORY'
           and mapping.use_yn = 'Y'
           and mapping.del_yn = 'N'
@@ -247,7 +247,7 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
         select distinct
             prc_group as id
         from station_master
-        where upper(sdwt_prod) = %s
+        where sdwt_prod_lookup = %s
           and prc_group is not null
         order by prc_group
         """,
@@ -303,13 +303,13 @@ def list_equipments(
          and mapping.gbm_name = 'MEMORY'
          and mapping.use_yn = 'Y'
          and mapping.del_yn = 'N'
-        where upper(station.prc_group) = %s
+        where station.prc_group_lookup = %s
           and station.station is not null
     """
     params: List[object] = [prc_key]
 
     if sdwt_key:
-        sql += " and upper(station.sdwt_prod) = %s"
+        sql += " and station.sdwt_prod_lookup = %s"
         params.append(sdwt_key)
 
     sql += " order by station.station"
@@ -359,7 +359,7 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
         from station_master station
         join mes_line_mapping_info mapping
           on mapping.msg_line_id = station.floor_line_id
-        where upper(station.station) = %s
+        where station.station_lookup = %s
           and mapping.gbm_name = 'MEMORY'
           and mapping.use_yn = 'Y'
           and mapping.del_yn = 'N'
@@ -448,7 +448,7 @@ def _fetch_ctttm_logs(
         from ctttm_workorder_list workorder
         left join ct_process_comment comment
           on comment.workorder_id = workorder.workorder_id
-        where upper(workorder.eqp_id) = %s
+        where workorder.eqp_id_lookup = %s
           and {time_clause}
         order by workorder.inprg_date desc
         {limit_clause}
@@ -675,7 +675,7 @@ def _fetch_esop_logs(
             sop.defect_url as defect_url
         from drone_sop as sop
         where {time_clause}
-          and upper(sop.eqp_id) = %s
+          and sop.eqp_id_lookup = %s
           {match_clause}
         order by sop.created_at desc
         {limit_clause}

@@ -45,6 +45,12 @@ COLUMNS = [
     "rms_line_id",
 ]
 
+DB_COLUMNS = [
+    *COLUMNS[:5],
+    "gpm_line_name_lookup",
+    *COLUMNS[5:],
+]
+
 DATETIME_COLUMNS = [
     "create_date",
     "update_date",

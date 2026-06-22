@@ -11,6 +11,7 @@ class StationMaster(models.Model):
 
     area = models.CharField(max_length=40, null=True, blank=True)
     station = models.CharField(max_length=40, null=True, blank=True)
+    station_lookup = models.CharField(max_length=40, null=True, blank=True)
     room = models.CharField(max_length=3, null=True, blank=True)
     module = models.CharField(max_length=2, null=True, blank=True)
     st_group = models.CharField(max_length=2, null=True, blank=True)
@@ -25,6 +26,7 @@ class StationMaster(models.Model):
     sdwt_eng = models.CharField(max_length=40, null=True, blank=True)
     sdwt_eng2 = models.CharField(max_length=40, null=True, blank=True)
     sdwt_prod = models.CharField(max_length=50, null=True, blank=True)
+    sdwt_prod_lookup = models.CharField(max_length=50, null=True, blank=True)
     del_flag = models.CharField(max_length=1, null=True, blank=True)
     machine_time = models.FloatField(null=True, blank=True)
     sbatch_size = models.FloatField(null=True, blank=True)
@@ -44,6 +46,7 @@ class StationMaster(models.Model):
     oht = models.CharField(max_length=1, null=True, blank=True)
     metro_grp = models.CharField(max_length=10, null=True, blank=True)
     prc_group = models.CharField(max_length=50, null=True, blank=True)
+    prc_group_lookup = models.CharField(max_length=50, null=True, blank=True)
     scanner = models.CharField(max_length=40, null=True, blank=True)
     amhs = models.CharField(max_length=2, null=True, blank=True)
     chm_type = models.CharField(max_length=20, null=True, blank=True)
@@ -69,6 +72,10 @@ class StationMaster(models.Model):
     class Meta:
         db_table = "station_master"
         indexes = [
+            models.Index(fields=["sdwt_prod_lookup", "prc_group_lookup", "station"], name="idx_st_sdwt_prc_st"),
+            models.Index(fields=["prc_group_lookup", "sdwt_prod_lookup", "station"], name="idx_st_prc_sdwt_st"),
+            models.Index(fields=["station_lookup"], name="idx_st_station_lkp"),
+            models.Index(fields=["floor_line_id"], name="idx_st_floor_ln"),
             models.Index(fields=["station"], name="idx_station_master_station"),
             models.Index(fields=["machine_id"], name="idx_station_master_mch"),
         ]
@@ -77,6 +84,14 @@ class StationMaster(models.Model):
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"station_master {self.station or '-'}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """조회용 정규화 키를 채운 뒤 저장합니다."""
+
+        self.station_lookup = (self.station or "").strip().upper() or None
+        self.sdwt_prod_lookup = (self.sdwt_prod or "").strip().upper() or None
+        self.prc_group_lookup = (self.prc_group or "").strip().upper() or None
+        super().save(*args, **kwargs)
 
 
 class StationMasterLoadJob(models.Model):

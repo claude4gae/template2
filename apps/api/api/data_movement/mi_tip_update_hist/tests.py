@@ -108,6 +108,7 @@ class MiTipUpdateHistStructureTests(SimpleTestCase):
         index_names = {index.name for index in MiTipUpdateHist._meta.indexes}
         constraint_names = {constraint.name for constraint in MiTipUpdateHist._meta.constraints}
 
+        self.assertIn("idx_mi_tip_lkp_dt", index_names)
         self.assertIn("idx_mi_tip_upd_hist_cb_dt", index_names)
         self.assertIn("idx_mi_tip_upd_hist_dt", index_names)
         self.assertIn("uniq_mi_tip_upd_hist_evt", constraint_names)
@@ -187,6 +188,7 @@ class MiTipUpdateHistLifecycleTests(TestCase):
         self.assertEqual(MiTipUpdateHist.objects.count(), 4)
         self.assertTrue(MiTipUpdateHist.objects.filter(eqp_cb="EAAA301-A", event_type="L1_TIP").exists())
         self.assertTrue(MiTipUpdateHist.objects.filter(eqp_cb="eBBB302").exists())
+        self.assertTrue(MiTipUpdateHist.objects.filter(eqp_cb_lookup="EBBB302").exists())
         self.assertTrue(MiTipUpdateHist.objects.filter(eqp_cb="ECCC303").exists())
         self.assertTrue(MiTipUpdateHist.objects.filter(eqp_cb="EUNK301-A", event_type="unknown").exists())
         self.assertFalse(hasattr(MiTipUpdateHist.objects.first(), "eqp_id"))

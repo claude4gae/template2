@@ -312,6 +312,7 @@ class CtttmWorkorderListLifecycleTests(TestCase):
         loaded_row = CtttmWorkorderList.objects.get(source_type="MST", workorder_id="NEW")
         self.assertEqual(loaded_row.line_id, "L2")
         self.assertEqual(loaded_row.eqp_id, "EQP2")
+        self.assertEqual(loaded_row.eqp_id_lookup, "EQP2")
 
     @patch.object(loader_module, "_replace_source_rows")
     def test_loader_replaces_source_and_deletes_processing_file(self, replace_rows) -> None:

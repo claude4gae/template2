@@ -159,6 +159,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
         loaded_row = MesLineMappingInfo.objects.get(line_id="L1")
         self.assertEqual(loaded_row.line_id, "L1")
         self.assertEqual(loaded_row.gpm_line_name, "GPM-L1")
+        self.assertEqual(loaded_row.gpm_line_name_lookup, "GPM-L1")
         self.assertEqual(loaded_row.gbm_name, "MEMORY")
         self.assertEqual(loaded_row.use_yn, "Y")
         self.assertEqual(loaded_row.del_yn, "N")
@@ -176,7 +177,7 @@ class MesLineMappingInfoLifecycleTests(TestCase):
         """성공 시 incoming 파일을 processing 경유 삭제합니다."""
 
         read_file.return_value = type("Frame", (), {"shape": (1, len(spec.COLUMNS))})()
-        copy_rows.return_value = CopyFullReplaceResult(row_count=1, column_count=len(spec.COLUMNS))
+        copy_rows.return_value = CopyFullReplaceResult(row_count=1, column_count=len(spec.DB_COLUMNS))
 
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

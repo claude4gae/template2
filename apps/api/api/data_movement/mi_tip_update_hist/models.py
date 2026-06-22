@@ -12,6 +12,7 @@ class MiTipUpdateHist(models.Model):
     tip_event_key = models.CharField(max_length=32)
     line_id = models.CharField(max_length=10, null=True, blank=True)
     eqp_cb = models.CharField(max_length=65)
+    eqp_cb_lookup = models.CharField(max_length=65, null=True, blank=True)
     step_seq = models.CharField(max_length=16, null=True, blank=True)
     process_id = models.CharField(max_length=16, null=True, blank=True)
     ppid = models.CharField(max_length=40, null=True, blank=True)
@@ -36,6 +37,7 @@ class MiTipUpdateHist(models.Model):
     class Meta:
         db_table = "mi_tip_update_hist"
         indexes = [
+            models.Index(fields=["eqp_cb_lookup", "-gpm_update_date"], name="idx_mi_tip_lkp_dt"),
             models.Index(fields=["eqp_cb", "gpm_update_date"], name="idx_mi_tip_upd_hist_cb_dt"),
             models.Index(fields=["gpm_update_date"], name="idx_mi_tip_upd_hist_dt"),
         ]
@@ -47,6 +49,12 @@ class MiTipUpdateHist(models.Model):
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"{self.eqp_cb} {self.gpm_update_date:%Y-%m-%d %H:%M:%S}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """조회용 정규화 키를 채운 뒤 저장합니다."""
+
+        self.eqp_cb_lookup = (self.eqp_cb or "").strip().upper() or None
+        super().save(*args, **kwargs)
 
 
 class MiTipUpdateHistLoadJob(models.Model):

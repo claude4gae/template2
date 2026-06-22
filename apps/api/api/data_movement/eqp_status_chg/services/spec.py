@@ -31,6 +31,7 @@ FILE_COLUMNS = [
 
 DB_COLUMNS = [
     "eqp_cb",
+    "eqp_cb_lookup",
     "line_id",
     "chg_time",
     "eqp_code",

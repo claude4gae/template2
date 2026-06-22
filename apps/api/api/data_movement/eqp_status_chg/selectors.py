@@ -7,6 +7,12 @@ from typing import List
 from api.data_movement.eqp_status_chg.models import EqpStatusChg
 
 
+def _lookup_key(value: str) -> str:
+    """조회용 정규화 키를 생성합니다."""
+
+    return (value or "").strip().upper()
+
+
 def fetch_eqp_timeline_logs(
     *,
     eqp_id: str,
@@ -31,7 +37,7 @@ def fetch_eqp_timeline_logs(
     - DB 연결 실패 시 예외
     """
 
-    queryset = EqpStatusChg.objects.filter(eqp_cb__iexact=eqp_id).order_by("-chg_time")
+    queryset = EqpStatusChg.objects.filter(eqp_cb_lookup=_lookup_key(eqp_id)).order_by("-chg_time")
     if start_at is not None:
         queryset = queryset.filter(chg_time__gte=start_at)
     if end_at is not None:

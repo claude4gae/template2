@@ -68,6 +68,7 @@ class EqpStatusChgStructureTests(SimpleTestCase):
         index_names = {index.name for index in EqpStatusChg._meta.indexes}
         constraint_names = {constraint.name for constraint in EqpStatusChg._meta.constraints}
 
+        self.assertIn("idx_eqp_sts_lkp_tm", index_names)
         self.assertIn("idx_eqp_sts_chg_cb_tm", index_names)
         self.assertIn("idx_eqp_sts_chg_tm", index_names)
         self.assertIn("uniq_eqp_sts_chg_evt", constraint_names)
@@ -142,6 +143,7 @@ class EqpStatusChgLifecycleTests(TestCase):
         self.assertEqual(EqpStatusChg.objects.count(), 4)
         self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="EAAA301-A").exists())
         self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="eBBB302-B").exists())
+        self.assertTrue(EqpStatusChg.objects.filter(eqp_cb_lookup="EBBB302-B").exists())
         self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="ECCC303").exists())
         self.assertTrue(EqpStatusChg.objects.filter(eqp_cb="EDDD304").exists())
         self.assertFalse(EqpStatusChg.objects.filter(eqp_cb__in=["ECCC303--", "EDDD304-"]).exists())

@@ -47,6 +47,7 @@ def _build_station_row(*, station: str = "E01", machine_id: str = "M01") -> list
     row[22] = "5"
     row[24] = "20260620"
     row[30] = "6"
+    row[34] = "PRC"
     row[50] = "Y"
     row[51] = "ADDR01"
     row[52] = "EFF"
@@ -124,6 +125,9 @@ class StationMasterLifecycleTests(TestCase):
         self.assertEqual(StationMaster.objects.count(), 2)
         self.assertFalse(StationMaster.objects.filter(station="ST03").exists())
         loaded_row = StationMaster.objects.get(station="E01")
+        self.assertEqual(loaded_row.station_lookup, "E01")
+        self.assertEqual(loaded_row.sdwt_prod_lookup, "SDWT_PROD")
+        self.assertEqual(loaded_row.prc_group_lookup, "PRC")
         self.assertEqual(loaded_row.machine_id, "M01")
         self.assertEqual(loaded_row.machine_time, 1.5)
         self.assertEqual(loaded_row.da_date, "20260620")
@@ -159,7 +163,7 @@ class StationMasterLifecycleTests(TestCase):
         """성공 시 incoming 파일을 processing 경유 삭제합니다."""
 
         read_file.return_value = type("Frame", (), {"shape": (1, len(spec.COLUMNS))})()
-        copy_rows.return_value = CopyFullReplaceResult(row_count=1, column_count=len(spec.COLUMNS))
+        copy_rows.return_value = CopyFullReplaceResult(row_count=1, column_count=len(spec.DB_COLUMNS))
 
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

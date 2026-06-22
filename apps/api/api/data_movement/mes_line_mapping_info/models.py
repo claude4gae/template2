@@ -14,6 +14,7 @@ class MesLineMappingInfo(models.Model):
     mos_line_id = models.CharField(max_length=40, null=True, blank=True)
     fdc_line_id = models.CharField(max_length=40, null=True, blank=True)
     gpm_line_name = models.TextField(null=True, blank=True)
+    gpm_line_name_lookup = models.TextField(null=True, blank=True)
     oi_line_name = models.CharField(max_length=40, null=True, blank=True)
     msg_line_id = models.CharField(max_length=40, null=True, blank=True)
     mcs_line_id = models.CharField(max_length=40, null=True, blank=True)
@@ -42,6 +43,8 @@ class MesLineMappingInfo(models.Model):
     class Meta:
         db_table = "mes_line_mapping_info"
         indexes = [
+            models.Index(fields=["gpm_line_name_lookup", "gbm_name", "use_yn", "del_yn"], name="idx_mes_gpm_flg"),
+            models.Index(fields=["msg_line_id", "gbm_name", "use_yn", "del_yn"], name="idx_mes_msg_flg"),
             models.Index(fields=["line_id"], name="idx_mes_line_map_line"),
             models.Index(fields=["msg_line_id"], name="idx_mes_line_map_msg"),
             models.Index(fields=["gpm_line_name"], name="idx_mes_line_map_gpm"),
@@ -52,6 +55,12 @@ class MesLineMappingInfo(models.Model):
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
         return f"mes_line_mapping_info {self.line_id or '-'}"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """조회용 정규화 키를 채운 뒤 저장합니다."""
+
+        self.gpm_line_name_lookup = (self.gpm_line_name or "").strip().upper() or None
+        super().save(*args, **kwargs)
 
 
 class MesLineMappingInfoLoadJob(models.Model):
