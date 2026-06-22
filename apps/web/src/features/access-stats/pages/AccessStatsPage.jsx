@@ -10,12 +10,11 @@ import {
   Users,
 } from "lucide-react"
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from "recharts"
@@ -23,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -88,18 +88,56 @@ function formatDateTime(value) {
   }).format(new Date(value))
 }
 
-function buildChartRows(series, apps) {
+function parseDateString(value) {
+  if (typeof value !== "string") return null
+  const [year, month, day] = value.split("-").map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
+function formatDateString(value) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const day = String(value.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function buildDateKeys({ from, to }) {
+  const start = parseDateString(from)
+  const end = parseDateString(to)
+  if (!start || !end || start > end) return []
+
+  const dates = []
+  const cursor = new Date(start)
+  while (cursor <= end) {
+    dates.push(formatDateString(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
+}
+
+function formatDateTick(value) {
+  if (typeof value !== "string") return value
+  return value.slice(5).replace("-", "/")
+}
+
+function buildChartRows(series, apps, range) {
   const topApps = apps.slice(0, 5)
   const topIds = new Set(topApps.map((app) => app.appId))
-  const rows = new Map()
+  const rows = new Map(
+    buildDateKeys(range).map((date) => [
+      date,
+      Object.fromEntries([["date", date], ...topApps.map((app) => [app.appId, 0])]),
+    ])
+  )
 
   series
     .filter((row) => topIds.has(row.appId))
     .forEach((row) => {
       if (!rows.has(row.date)) {
-        rows.set(row.date, { date: row.date })
+        rows.set(row.date, Object.fromEntries([["date", row.date], ...topApps.map((app) => [app.appId, 0])]))
       }
-      rows.get(row.date)[row.appId] = row.accessCount
+      rows.get(row.date)[row.appId] = Number(row.accessCount) || 0
     })
 
   return Array.from(rows.values())
@@ -140,6 +178,14 @@ function StatePanel({ icon: Icon, title, description, action }) {
 }
 
 function ChartPanel({ apps, chartRows, isLoading, error }) {
+  const chartApps = apps.slice(0, 5)
+  const chartConfig = Object.fromEntries(
+    chartApps.map((app, index) => [
+      app.appId,
+      { label: app.appName, color: CHART_COLORS[index % CHART_COLORS.length] },
+    ])
+  )
+
   return (
     <Card className="grid h-full min-h-0 min-w-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
       <CardHeader className="border-b px-4 py-3">
@@ -159,38 +205,49 @@ function ChartPanel({ apps, chartRows, isLoading, error }) {
             title="차트를 불러오지 못했습니다."
             description={error.message || "접속 통계 요청 중 오류가 발생했습니다."}
           />
-        ) : chartRows.length === 0 ? (
+        ) : chartRows.length === 0 || chartApps.length === 0 ? (
           <StatePanel
             icon={BarChart3}
             title="접속 기록이 없습니다."
             description="선택한 기간에 기록된 앱 접속 이벤트가 없습니다."
           />
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartRows} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-              <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
-              <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
-              <Tooltip
-                cursor={{ fill: "var(--muted)" }}
-                contentStyle={{
-                  background: "var(--background)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                }}
-              />
-              <Legend />
-              {apps.slice(0, 5).map((app, index) => (
-                <Bar
-                  key={app.appId}
-                  dataKey={app.appId}
-                  name={app.appName}
-                  fill={CHART_COLORS[index % CHART_COLORS.length]}
-                  radius={[4, 4, 0, 0]}
+          <ChartContainer config={chartConfig} className="h-full min-h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartRows} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={formatDateTick}
+                  tickLine={false}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickMargin={8}
+                  minTickGap={16}
                 />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
+                <YAxis
+                  tickLine={false}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickMargin={8}
+                  allowDecimals={false}
+                  width={52}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Legend verticalAlign="top" height={28} iconType="circle" />
+                {chartApps.map((app, index) => (
+                  <Line
+                    key={app.appId}
+                    type="monotone"
+                    dataKey={app.appId}
+                    name={app.appName}
+                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                    strokeWidth={2}
+                    dot={chartRows.length <= 7 ? { r: 3 } : false}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>
@@ -304,7 +361,7 @@ export function AccessStatsPage() {
   const summary = payload?.summary ?? {}
   const apps = useMemo(() => (Array.isArray(payload?.apps) ? payload.apps : []), [payload?.apps])
   const series = useMemo(() => (Array.isArray(payload?.series) ? payload.series : []), [payload?.series])
-  const chartRows = useMemo(() => buildChartRows(series, apps), [apps, series])
+  const chartRows = useMemo(() => buildChartRows(series, apps, params), [apps, params, series])
 
   if (!user?.is_superuser) {
     return (
