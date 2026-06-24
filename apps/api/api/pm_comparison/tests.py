@@ -276,6 +276,76 @@ class PmComparisonServiceTests(SimpleTestCase):
             ]
         ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
 
+    def _write_wide_oes_step_filter_sample(self, root: Path) -> None:
+        """여러 step이 섞인 wide OES raw와 score 데이터를 생성합니다."""
+
+        raw_target = self._raw_base(
+            root,
+            data_source="oes",
+            trace_param_name="spectrum",
+        )
+        raw_target.mkdir(parents=True)
+        rows = []
+        for date, date_shift in [("2026-05-01", 0), ("2026-06-01", 100)]:
+            for step, step_shift in [("1D", 10), ("3D", 1000)]:
+                for time_index in [0, 1]:
+                    base = date_shift + step_shift + time_index
+                    rows.append(
+                        {
+                            "날짜": date,
+                            "Time": float(time_index),
+                            "rcp_step": step,
+                            "lot_id": "LOT1",
+                            "slot_no": 1,
+                            "slot_id": "SLOT01",
+                            "group": f"{step}_{date}",
+                            "200.0": float(base),
+                            "200.5": float(base + 1),
+                            "201.0": float(base + 2),
+                        }
+                    )
+        pd.DataFrame(rows).to_parquet(raw_target / "part-000.parquet", engine="pyarrow")
+
+        score_target = self._score_base(root, data_type="oes")
+        score_target.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "날짜": "2026-05-01",
+                    "type": "ag",
+                    "data_type": "oes",
+                    "item_name": "1D/200.0",
+                    "step": "1D",
+                    "wavelength": 200.0,
+                    "score": 0.2,
+                },
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "날짜": "2026-06-01",
+                    "type": "ag",
+                    "data_type": "oes",
+                    "item_name": "1D/200.0",
+                    "step": "1D",
+                    "wavelength": 200.0,
+                    "score": 0.03,
+                },
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "날짜": "2026-06-01",
+                    "type": "ag",
+                    "data_type": "oes",
+                    "item_name": "3D/200.0",
+                    "step": "3D",
+                    "wavelength": 200.0,
+                    "score": 0.6,
+                },
+            ]
+        ).to_parquet(score_target / "part-000.parquet", engine="pyarrow")
+
     def test_compare_pm_window_returns_score_rank_and_raw_detail(self) -> None:
         """score rank와 raw ref/comp 상세 row가 함께 반환되는지 확인합니다."""
 
@@ -318,6 +388,19 @@ class PmComparisonServiceTests(SimpleTestCase):
                         "maxPoints": 200,
                     }
                 )
+                trace_only_result = services.compare_pm_window(
+                    {
+                        **selection,
+                        "includeOesDetails": False,
+                    }
+                )
+                oes_only_result = services.compare_pm_window(
+                    {
+                        **selection,
+                        "selectedStep": "STEP_A",
+                        "includeTraceDetails": False,
+                    }
+                )
 
         self.assertEqual(meta["lineIds"], ["L1"])
         self.assertEqual(meta["eqpIds"], [])
@@ -346,6 +429,11 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertGreaterEqual(len(result["oes"]["spectrumChart"]["series"]), 1)
 
         self.assertGreaterEqual(len(wavelength_result["oes"]["lineChart"]["series"]), 1)
+        self.assertEqual(trace_only_result["oes"]["rowCount"], 0)
+        self.assertEqual(trace_only_result["oes"]["fileCount"], 0)
+        self.assertEqual(oes_only_result["trace"]["rowCount"], 0)
+        self.assertEqual(oes_only_result["trace"]["fileCount"], 0)
+        self.assertGreaterEqual(oes_only_result["oes"]["heatmap"]["width"], 1)
 
     def test_single_mount_uses_data_and_result_dir_names(self) -> None:
         """단일 mount 아래 data/result 폴더명을 사용하는지 확인합니다."""
@@ -431,6 +519,67 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertFalse(
             any("날짜/rcp_step/wavelength/value" in warning for warning in result["warnings"])
         )
+
+    def test_wide_oes_detail_filters_selected_step_before_matrix_build(self) -> None:
+        """wide OES 상세는 선택 step만 사용해 matrix와 trajectory를 만들어야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_wide_oes_step_filter_sample(root)
+            selection = {
+                "lineId": "L1",
+                "eqpId": "EQP1",
+                "fdcBin": "BIN1",
+                "type": "ag",
+                "ppid": "PPID1",
+                "recipeId": "RCP1",
+                "pmTimestamp": "2026-06-01",
+                "dtValues": ["2026-06-01"],
+                "traceDataSource": "trace",
+                "oesDataSource": "oes",
+                "selectedStep": "1D",
+                "includeDetails": True,
+                "limit": 10,
+            }
+
+            with override_settings(PM_COMPARISON_DATA_ROOT=str(root)):
+                result = services.compare_pm_window(selection)
+                wavelength_result = services.compare_pm_window(
+                    {
+                        **selection,
+                        "selectedWavelength": "200.5",
+                    }
+                )
+                heatmap_only_result = services.compare_pm_window(
+                    {
+                        **selection,
+                        "includeOesSpectrum": False,
+                        "heatmapXBins": 2,
+                    }
+                )
+                trajectory_only_result = services.compare_pm_window(
+                    {
+                        **selection,
+                        "selectedWavelength": "200.5",
+                        "includeOesHeatmap": False,
+                        "includeOesSpectrum": False,
+                    }
+                )
+
+        self.assertEqual(result["oes"]["rowCount"], 12)
+        self.assertEqual(result["oes"]["heatmap"]["width"], 3)
+        self.assertEqual(result["oes"]["heatmap"]["height"], 2)
+        self.assertEqual(result["oes"]["heatmap"]["wavelengths"], [200.0, 200.5, 201.0])
+        self.assertEqual(result["oes"]["heatmap"]["sourcePointCount"], 12)
+        self.assertTrue(all(row["rcpStep"] == "1D" for row in result["oes"]["detailRows"]))
+        self.assertLess(max(row["value"] for row in result["oes"]["detailRows"]), 500)
+        self.assertEqual(wavelength_result["oes"]["rowCount"], 4)
+        self.assertEqual(wavelength_result["oes"]["lineChart"]["sourcePointCount"], 4)
+        self.assertEqual(heatmap_only_result["oes"]["heatmap"]["width"], 3)
+        self.assertEqual(heatmap_only_result["oes"]["spectrumChart"]["series"], [])
+        self.assertEqual(trajectory_only_result["oes"]["heatmap"]["width"], 0)
+        self.assertEqual(trajectory_only_result["oes"]["spectrumChart"]["series"], [])
+        self.assertEqual(trajectory_only_result["oes"]["lineChart"]["sourcePointCount"], 4)
 
     def test_meta_options_are_scoped_and_ignore_ipynb_checkpoints(self) -> None:
         """선택값 하위 옵션만 반환하고 checkpoint 폴더는 제외해야 합니다."""
@@ -909,6 +1058,10 @@ class PmComparisonServiceTests(SimpleTestCase):
                 "xEnd": 100,
                 "heatmapXBins": 1200,
                 "heatmapYBins": 100,
+                "includeOesHeatmap": False,
+                "includeOesSpectrum": False,
+                "includeTraceDetails": False,
+                "includeOesDetails": True,
             }
         )
 
