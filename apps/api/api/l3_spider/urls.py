@@ -9,6 +9,8 @@ from django.urls import path
 
 from .views import (
     L3SpiderDataView,
+    L3SpiderExclusionFilterDetailView,
+    L3SpiderExclusionFilterListCreateView,
     L3SpiderFilterCandidatesView,
     L3SpiderMetaView,
     L3SpiderStatsView,
@@ -23,4 +25,6 @@ urlpatterns = [
     path("summary", L3SpiderSummaryView.as_view(), name="l3-spider-summary"),
     path("data", L3SpiderDataView.as_view(), name="l3-spider-data"),
     path("filter-candidates", L3SpiderFilterCandidatesView.as_view(), name="l3-spider-filter-candidates"),
+    path("exclusion-filters", L3SpiderExclusionFilterListCreateView.as_view(), name="l3-spider-exclusion-filters"),
+    path("exclusion-filters/<int:pk>", L3SpiderExclusionFilterDetailView.as_view(), name="l3-spider-exclusion-filter-detail"),
 ]

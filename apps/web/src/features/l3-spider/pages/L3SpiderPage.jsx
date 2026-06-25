@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 
 import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
+import { L3SpiderExclusionSheet } from "../components/L3SpiderExclusionSheet"
 import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
 import {
   useL3SpiderData,
@@ -129,6 +130,7 @@ export function L3SpiderPage() {
         onRefresh={() => metaQuery.refetch()}
         stats={statsQuery.data?.stats}
         showStats={isSelectionReady}
+        headerExtra={<L3SpiderExclusionSheet />}
         rightContent={
           <L3SpiderFilterPanel
             edsStepSeqs={structureQuery.data?.edsStepSeqs ?? {}}

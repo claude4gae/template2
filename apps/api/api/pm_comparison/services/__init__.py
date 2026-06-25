@@ -5,6 +5,7 @@
 # =============================================================================
 from __future__ import annotations
 
+import ast
 import math
 from bisect import bisect_right
 from functools import lru_cache
@@ -91,6 +92,7 @@ SCORE_COLUMNS = [
     "delta_spectrum",
     "direction",
     "flagged_wl",
+    "ref_dates",
 ]
 SCORE_FRAME_COLUMNS = [*SCORE_COLUMNS, "pm_date"]
 
@@ -542,6 +544,34 @@ def _date_key(value: Any) -> str:
     return timestamp.date().isoformat()
 
 
+def _ref_date_values(value: Any) -> list[Any]:
+    """score ref_dates 값을 원본 날짜 후보 목록으로 펼칩니다."""
+
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text.lower() in {"nan", "none", "null"}:
+            return []
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                return _ref_date_values(ast.literal_eval(text))
+            except (SyntaxError, ValueError):
+                return [text]
+        return [text]
+    if isinstance(value, (list, tuple, set, np.ndarray, pd.Series)):
+        values: list[Any] = []
+        for item in value:
+            values.extend(_ref_date_values(item))
+        return values
+    try:
+        if pd.isna(value):
+            return []
+    except (TypeError, ValueError):
+        pass
+    return [value]
+
+
 def _selected_pm_date(selection: dict[str, object]) -> str:
     """요청에서 현재 PM 날짜를 추출합니다."""
 
@@ -742,19 +772,51 @@ def _read_score(selection: dict[str, object], data_type: str, warnings: list[str
 def _cycle_map(score_frame: pd.DataFrame, current_pm_date: str) -> dict[str, int]:
     """현재 PM 날짜 기준 상대 cycle index를 계산합니다."""
 
-    dates = sorted(
+    dates = {
         date
         for date in score_frame.get("pm_date", pd.Series(dtype=str)).dropna().unique().tolist()
         if str(date) <= current_pm_date
-    )
+    }
+    if "ref_dates" in score_frame.columns and "pm_date" in score_frame.columns:
+        current_rows = score_frame[score_frame["pm_date"] == current_pm_date]
+        for value in current_rows["ref_dates"].tolist():
+            for ref_value in _ref_date_values(value):
+                try:
+                    ref_date = _date_key(ref_value)
+                except (TypeError, ValueError):
+                    continue
+                if ref_date <= current_pm_date:
+                    dates.add(ref_date)
     if current_pm_date not in dates:
-        dates.append(current_pm_date)
-        dates = sorted(set(dates))
+        dates.add(current_pm_date)
+    dates = sorted(dates)
     previous_dates = [date for date in dates if date < current_pm_date]
     mapping = {current_pm_date: 0}
     for offset, date in enumerate(reversed(previous_dates), start=1):
         mapping[date] = -offset
     return mapping
+
+
+def _score_ref_raw_dt_values(
+    score_frame: pd.DataFrame,
+    current_pm_date: str,
+    selected_ref_dates: set[str],
+) -> list[str]:
+    """선택된 score ref_dates의 원본 raw dt 후보를 반환합니다."""
+
+    if not selected_ref_dates or "ref_dates" not in score_frame.columns or "pm_date" not in score_frame.columns:
+        return []
+    values: list[str] = []
+    current_rows = score_frame[score_frame["pm_date"] == current_pm_date]
+    for value in current_rows["ref_dates"].tolist():
+        for ref_value in _ref_date_values(value):
+            try:
+                ref_date = _date_key(ref_value)
+            except (TypeError, ValueError):
+                continue
+            if ref_date in selected_ref_dates:
+                values.append(str(ref_value).strip())
+    return [value for value in dict.fromkeys(values) if value]
 
 
 def _requested_ref_dates(selection: dict[str, object]) -> set[str] | None:
@@ -785,11 +847,14 @@ def _selection_with_raw_dt_values(
     selection: dict[str, object],
     current_pm_date: str,
     selected_ref_dates: set[str],
+    ref_dt_values: Iterable[object] | None = None,
 ) -> dict[str, object]:
     """raw 파일 탐색이 선택된 PM cycle 날짜로 좁혀지도록 dt 후보를 보강합니다."""
 
     dt_values: list[str] = []
     for value in selection.get("dtValues") or []:
+        dt_values.extend(selectors.date_partition_candidates(value))
+    for value in ref_dt_values or []:
         dt_values.extend(selectors.date_partition_candidates(value))
     for value in [current_pm_date, *sorted(selected_ref_dates)]:
         dt_values.extend(selectors.date_partition_candidates(value))
@@ -960,7 +1025,13 @@ def _prepare_trace(selection: dict[str, object], current_pm_date: str, warnings:
     raw_file_count = 0
     row_count = 0
     if selection.get("includeDetails", True) and selection.get("includeTraceDetails", True):
-        raw_selection = _selection_with_raw_dt_values(selection, current_pm_date, selected_ref_dates)
+        ref_dt_values = _score_ref_raw_dt_values(score_frame, current_pm_date, selected_ref_dates)
+        raw_selection = _selection_with_raw_dt_values(
+            selection,
+            current_pm_date,
+            selected_ref_dates,
+            ref_dt_values=ref_dt_values,
+        )
         files = selectors.iter_raw_files(
             raw_selection,
             data_source=str(selection.get("traceDataSource") or "trace"),
@@ -1515,7 +1586,13 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
     include_oes_spectrum = bool(selection.get("includeOesSpectrum", True))
     if selection.get("includeDetails", True) and selection.get("includeOesDetails", True):
         _oes_source = str(selection.get("oesDataSource") or "oes")
-        raw_selection = _selection_with_raw_dt_values(selection, current_pm_date, selected_ref_dates)
+        ref_dt_values = _score_ref_raw_dt_values(score_frame, current_pm_date, selected_ref_dates)
+        raw_selection = _selection_with_raw_dt_values(
+            selection,
+            current_pm_date,
+            selected_ref_dates,
+            ref_dt_values=ref_dt_values,
+        )
         oes_step_filters = [("rcp_step", "==", selected_step)] if selected_step else None
         files = list(selectors.iter_raw_files(raw_selection, data_source=_oes_source, trace_param_names=[]))
         read_columns = _trajectory_only_oes_columns(

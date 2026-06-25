@@ -66,3 +66,38 @@ export function fetchL3SpiderData(selection) {
 export function fetchL3SpiderFilterCandidates(params) {
   return postJson("/filter-candidates", params)
 }
+
+export function fetchExclusionFilters() {
+  return request("/exclusion-filters")
+}
+
+export function createExclusionFilter(data) {
+  return postJson("/exclusion-filters", data)
+}
+
+export function updateExclusionFilter(id, data) {
+  return request(`/exclusion-filters/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteExclusionFilter(id) {
+  const response = await fetch(buildBackendUrl(`${BASE_PATH}/exclusion-filters/${id}`), {
+    method: "DELETE",
+    credentials: "include",
+    cache: "no-store",
+  })
+  if (!response.ok) {
+    let message = `L3 Spider 요청 실패 (${response.status})`
+    try {
+      const payload = await response.json()
+      if (typeof payload?.error === "string") message = payload.error
+    } catch {}
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
+  return null
+}
