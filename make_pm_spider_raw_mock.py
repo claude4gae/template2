@@ -44,7 +44,8 @@ WAVELENGTHS = np.arange(200.0, 800.0 + 0.5, 0.5).round(1)
 LOTS = ["LOT001", "LOT002"]
 SLOTS = [1, 2, 3, 4, 5, 6]
 OES_SLOTS = list(range(1, 26))
-OES_TIME_POINTS = 80
+OES_BASE_TIME_POINTS = 398
+OES_EXTRA_TIME_SERIES = 44
 
 
 def parse_args() -> argparse.Namespace:
@@ -171,13 +172,14 @@ def _oes_intensity_vector(
     rcp_step: str,
     slot_no: int,
     time_idx: int,
+    time_count: int,
 ) -> np.ndarray:
     """OES 0.5nm 해상도 intensity 벡터를 생성합니다."""
 
     wavelengths = WAVELENGTHS.astype(float)
     type_shift = 12.0 if type_value == "process" else 0.0
     step_offset = RCP_STEPS.index(rcp_step) * 18.0
-    time_axis = time_idx / max(OES_TIME_POINTS - 1, 1)
+    time_axis = time_idx / max(time_count - 1, 1)
     time_decay = 1.0 + 0.4 * np.exp(-3.0 * time_axis)
     slot_shift = slot_no * 0.15
 
@@ -197,6 +199,14 @@ def _oes_intensity_vector(
     return (spectrum * time_decay * drift + noise).astype(np.float32)
 
 
+def _oes_time_points(*, cycle_idx: int, slot_no: int) -> int:
+    """실제 OES 규모에 맞는 cycle/slot별 time point 수를 반환합니다."""
+
+    series_index = cycle_idx * len(OES_SLOTS) + (slot_no - 1)
+    extra = 1 if series_index < OES_EXTRA_TIME_SERIES else 0
+    return OES_BASE_TIME_POINTS + extra
+
+
 def make_oes_frame(rng: np.random.Generator, *, date: str, cycle_idx: int, type_value: str) -> pd.DataFrame:
     """OES wide raw schema에 맞는 25매 mock frame을 생성합니다."""
 
@@ -204,8 +214,9 @@ def make_oes_frame(rng: np.random.Generator, *, date: str, cycle_idx: int, type_
     intensity_rows: list[np.ndarray] = []
     wavelength_columns = [_wavelength_column(wavelength) for wavelength in WAVELENGTHS]
     for lot_id, slot_no, wafer_id in _oes_slot_rows():
+        time_count = _oes_time_points(cycle_idx=cycle_idx, slot_no=slot_no)
         for rcp_step in RCP_STEPS:
-            for time_idx in range(OES_TIME_POINTS):
+            for time_idx in range(time_count):
                 intensity = _oes_intensity_vector(
                     rng,
                     cycle_idx=cycle_idx,
@@ -213,6 +224,7 @@ def make_oes_frame(rng: np.random.Generator, *, date: str, cycle_idx: int, type_
                     rcp_step=rcp_step,
                     slot_no=slot_no,
                     time_idx=time_idx,
+                    time_count=time_count,
                 )
                 metadata_rows.append(
                     {
@@ -230,14 +242,15 @@ def make_oes_frame(rng: np.random.Generator, *, date: str, cycle_idx: int, type_
                 intensity_rows.append(intensity)
     metadata = pd.DataFrame(metadata_rows)
     spectra = pd.DataFrame(np.vstack(intensity_rows), columns=wavelength_columns)
-    return pd.concat([metadata, spectra], axis=1)
+    frame = pd.concat([metadata, spectra], axis=1)
+    return frame.sort_values(["rcp_step", "slot_no", "Time"], kind="stable").reset_index(drop=True)
 
 
 def save_frame(frame: pd.DataFrame, path: Path, root: Path) -> None:
     """DataFrame을 Parquet 파일로 저장하고 상대 경로를 출력합니다."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_parquet(path, index=False, engine="pyarrow")
+    frame.to_parquet(path, index=False, engine="pyarrow", row_group_size=2500)
     print(f"저장: {path.relative_to(root)} ({len(frame):,}행)")
 
 

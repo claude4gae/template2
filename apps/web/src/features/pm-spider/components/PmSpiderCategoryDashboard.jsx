@@ -1200,7 +1200,7 @@ function OesStepDetail({ category, selectedStep, refPmDates, onRemove }) {
     {
       includeOesHeatmap: true,
       includeOesSpectrum: false,
-      heatmapXBins: 800,
+      heatmapXBins: 1200,
       limit: 50,
     },
   )
@@ -1297,7 +1297,7 @@ export function PmSpiderCategoryDashboard({
   if (!categories.length) {
     return (
       <div className="flex min-h-96 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
-        PM SPIDER category 데이터가 없습니다.
+        PM Spider category 데이터가 없습니다.
       </div>
     )
   }
@@ -1373,7 +1373,7 @@ export function PmSpiderCategoryDashboard({
 
       {isFetching && (
         <div className="pointer-events-none fixed bottom-4 right-4 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
-          PM SPIDER 데이터 갱신 중...
+          PM Spider 데이터 갱신 중...
         </div>
       )}
     </div>

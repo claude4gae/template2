@@ -11,6 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
+import numpy as np
 import pandas as pd
 
 from api.pm_comparison import selectors
@@ -55,6 +56,19 @@ OES_ID_COLUMNS = [
     "wavelength",
     "value",
 ]
+OES_DETAIL_METADATA_COLUMNS = list(
+    dict.fromkeys(
+        [
+            *OES_ID_COLUMNS,
+            "traj_phase",
+            "phase",
+            "cycle_index",
+            "pm_date",
+            "slot_no",
+            "group",
+        ]
+    )
+)
 
 SCORE_COLUMNS = [
     "line_id",
@@ -666,6 +680,7 @@ def _read_frames(
     files: Iterable[Path],
     *,
     columns: list[str] | None,
+    filters: list[tuple[str, str, Any]] | None = None,
     warnings: list[str],
 ) -> tuple[list[pd.DataFrame], int]:
     """후보 파일을 DataFrame 목록으로 읽습니다."""
@@ -675,7 +690,7 @@ def _read_frames(
     for path in files:
         file_count += 1
         try:
-            frame = selectors.read_parquet(path, columns)
+            frame = selectors.read_parquet(path, columns, filters=filters)
             frames.append(_apply_partitions(frame, path))
         except Exception as exc:
             warnings.append(f"읽기 실패: {path.name} ({exc})")
@@ -1094,6 +1109,36 @@ def _nearest_wavelength_pair(
     return [min(wavelength_pairs, key=lambda pair: abs(pair[1] - target))]
 
 
+def _trajectory_only_oes_columns(
+    files: list[Path],
+    selection: dict[str, object],
+    *,
+    include_heatmap: bool,
+    include_spectrum: bool,
+    warnings: list[str],
+) -> list[str] | None:
+    """wavelength trajectory만 필요할 때 읽을 OES 컬럼을 좁힙니다."""
+
+    selected_wl = str(selection.get("selectedWavelength") or "")
+    if include_heatmap or include_spectrum or not selected_wl:
+        return None
+    for path in files:
+        try:
+            columns = selectors.parquet_columns(path)
+        except Exception as exc:
+            warnings.append(f"OES schema 읽기 실패: {path.name} ({exc})")
+            continue
+        wavelength_pairs = _wavelength_column_pairs(columns)
+        selected_pairs = _nearest_wavelength_pair(wavelength_pairs, selected_wl)
+        if not selected_pairs:
+            continue
+        available = set(columns)
+        metadata_columns = [column for column in OES_DETAIL_METADATA_COLUMNS if column in available]
+        selected_column = str(selected_pairs[0][0])
+        return list(dict.fromkeys([*metadata_columns, selected_column]))
+    return None
+
+
 def _canonical_oes_columns(frame: pd.DataFrame) -> pd.DataFrame:
     """OES raw 컬럼 alias를 상세 계산용 표준 컬럼으로 보강합니다."""
 
@@ -1157,8 +1202,11 @@ def _wide_oes_phase_grid(
         return [None for _ in range(width * height)]
 
     columns = [column for column, _ in wavelength_pairs]
-    numeric_values = frame[columns].apply(pd.to_numeric, errors="coerce")
-    y_values = pd.to_numeric(frame["chart_y"], errors="coerce")
+    try:
+        numeric_values = frame[columns].to_numpy(dtype=np.float32, copy=False)
+    except (TypeError, ValueError):
+        numeric_values = frame[columns].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float32, copy=False)
+    y_values = pd.to_numeric(frame["chart_y"], errors="coerce").to_numpy(dtype=np.float64, copy=False)
     values: list[float | None] = []
     for edge_index in range(height):
         start = y_edges[edge_index]
@@ -1170,7 +1218,11 @@ def _wide_oes_phase_grid(
         if not mask.any():
             values.extend([None for _ in range(width)])
             continue
-        means = numeric_values.loc[mask].mean(axis=0, skipna=True)
+        bucket = numeric_values[mask]
+        finite = np.isfinite(bucket)
+        counts = finite.sum(axis=0)
+        sums = np.where(finite, bucket, 0.0).sum(axis=0, dtype=np.float64)
+        means = np.divide(sums, counts, out=np.full(width, np.nan, dtype=np.float64), where=counts > 0)
         for value in means.tolist():
             if value is None or not math.isfinite(float(value)):
                 values.append(None)
@@ -1464,11 +1516,26 @@ def _prepare_oes(selection: dict[str, object], current_pm_date: str, warnings: l
     if selection.get("includeDetails", True) and selection.get("includeOesDetails", True):
         _oes_source = str(selection.get("oesDataSource") or "oes")
         raw_selection = _selection_with_raw_dt_values(selection, current_pm_date, selected_ref_dates)
-        files = selectors.iter_raw_files(raw_selection, data_source=_oes_source, trace_param_names=[])
-        frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
+        oes_step_filters = [("rcp_step", "==", selected_step)] if selected_step else None
+        files = list(selectors.iter_raw_files(raw_selection, data_source=_oes_source, trace_param_names=[]))
+        read_columns = _trajectory_only_oes_columns(
+            files,
+            selection,
+            include_heatmap=include_oes_heatmap,
+            include_spectrum=include_oes_spectrum,
+            warnings=warnings,
+        )
+        frames, raw_file_count = _read_frames(files, columns=read_columns, filters=oes_step_filters, warnings=warnings)
         if not frames:
-            files = selectors.iter_raw_files(raw_selection, data_source="oes_processed", trace_param_names=[])
-            frames, raw_file_count = _read_frames(files, columns=None, warnings=warnings)
+            files = list(selectors.iter_raw_files(raw_selection, data_source="oes_processed", trace_param_names=[]))
+            read_columns = _trajectory_only_oes_columns(
+                files,
+                selection,
+                include_heatmap=include_oes_heatmap,
+                include_spectrum=include_oes_spectrum,
+                warnings=warnings,
+            )
+            frames, raw_file_count = _read_frames(files, columns=read_columns, filters=oes_step_filters, warnings=warnings)
         if frames:
             raw_frame = pd.concat(frames, ignore_index=True)
             wide_payload = _wide_oes_detail_payload(

@@ -44,6 +44,34 @@ class L3SpiderMetaView(APIView):
             return _error_response(error)
 
 
+class L3SpiderStructureView(APIView):
+    """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderDataRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return Response(services.get_structure(serializer.validated_data))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
+class L3SpiderStatsView(APIView):
+    """slim parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderDataRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return _fast_response(services.get_stats(serializer.validated_data))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
 class L3SpiderSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 

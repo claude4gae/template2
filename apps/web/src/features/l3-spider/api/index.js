@@ -4,6 +4,8 @@ export {
   fetchL3SpiderData,
   fetchL3SpiderFilterCandidates,
   fetchL3SpiderMeta,
+  fetchL3SpiderStats,
+  fetchL3SpiderStructure,
   fetchL3SpiderSummary,
 } from "./l3SpiderApi"
 export { l3SpiderQueryKeys } from "./queryKeys"

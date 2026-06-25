@@ -37,6 +37,14 @@ export function fetchL3SpiderMeta() {
   return request("/meta")
 }
 
+export function fetchL3SpiderStructure(selection) {
+  return postJson("/structure", selection)
+}
+
+export function fetchL3SpiderStats(selection) {
+  return postJson("/stats", selection)
+}
+
 export function fetchL3SpiderSummary(selection) {
   return postJson("/summary", selection)
 }

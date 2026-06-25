@@ -581,6 +581,23 @@ class PmComparisonServiceTests(SimpleTestCase):
         self.assertEqual(trajectory_only_result["oes"]["spectrumChart"]["series"], [])
         self.assertEqual(trajectory_only_result["oes"]["lineChart"]["sourcePointCount"], 4)
 
+    def test_read_parquet_applies_optional_filters(self) -> None:
+        """Parquet filter가 가능한 파일은 필요한 step row만 읽어야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "sample.parquet"
+            pd.DataFrame(
+                [
+                    {"rcp_step": "1D", "value": 10.0},
+                    {"rcp_step": "3D", "value": 99.0},
+                ]
+            ).to_parquet(path, engine="pyarrow")
+
+            frame = selectors.read_parquet(path, filters=[("rcp_step", "==", "1D")])
+
+        self.assertEqual(frame["rcp_step"].tolist(), ["1D"])
+        self.assertEqual(frame["value"].tolist(), [10.0])
+
     def test_meta_options_are_scoped_and_ignore_ipynb_checkpoints(self) -> None:
         """선택값 하위 옵션만 반환하고 checkpoint 폴더는 제외해야 합니다."""
 

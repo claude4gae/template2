@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import functools
+import json
 import math
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,7 @@ SUMMARY_COLUMNS = ["step_seq", "ppid", "eqp_id", "eqc", "bin_name", "display_sta
 # 파일명에서 step_seq/ppid 파싱 성공 시 파일에서 읽을 컬럼 (절반으로 감소)
 _SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status"]
 _SUMMARY_DEDUP_KEYS = ["step_seq", "ppid", "eqc", "bin_name", "display_status"]
+_STATS_COLUMNS = ["eqc", "display_status", "tkin_time"]
 CHART_COLUMNS = [
     "tkin_time",
     "tkout_time",
@@ -49,6 +53,34 @@ CHART_COLUMNS = [
 ]
 ANOMALY_STATUSES = {"Warning", "High Risk Chamber"}
 _MAX_PARALLEL_WORKERS = 8
+
+
+class _SimpleCache:
+    """스레드 안전한 TTL 인메모리 캐시."""
+
+    def __init__(self, ttl: float = 600.0) -> None:
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._store: dict[str, tuple[float, Any]] = {}
+
+    def get(self, key: str) -> Any:
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            ts, value = entry
+            if time.monotonic() - ts > self._ttl:
+                del self._store[key]
+                return None
+            return value
+
+    def set(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._store[key] = (time.monotonic(), value)
+
+
+_structure_cache = _SimpleCache(ttl=600.0)
+_stats_cache = _SimpleCache(ttl=600.0)
 
 
 class L3SpiderServiceError(Exception):
@@ -103,6 +135,15 @@ def _has_required_selection(selection: dict[str, object]) -> bool:
     return all(selection.get(key) for key in ("dates", "lineIds", "processIds", "edsSteps"))
 
 
+def _make_selection_cache_key(selection: dict) -> str:
+    return json.dumps({
+        "dates": sorted(selection.get("dates") or []),
+        "lineIds": sorted(selection.get("lineIds") or []),
+        "processIds": sorted(selection.get("processIds") or []),
+        "edsSteps": sorted(selection.get("edsSteps") or []),
+    }, sort_keys=True)
+
+
 def _parse_filename_key(path: Path) -> tuple[str, str] | None:
     """파일명에서 (step_seq, ppid)를 파싱합니다."""
     try:
@@ -152,6 +193,19 @@ def _read_summary_file(path: Path) -> pd.DataFrame | None:
         return frame.drop_duplicates(subset=available_dedup) if not frame.empty else None
     except Exception as exc:
         print(f"[WARN] L3 Spider summary read failed: {path}: {exc}")
+        return None
+
+
+def _read_stats_file(path: Path) -> pd.DataFrame | None:
+    """stats 읽기: 3컬럼만 읽고 파일명에서 eds_step/step_seq/ppid 추가."""
+    try:
+        parsed = _parse_filename_key(path)
+        frame = selectors.read_parquet_columns(path, _STATS_COLUMNS)
+        frame = _normalize_display_status(frame)
+        frame = _add_path_context(frame, path, override_filename_keys=bool(parsed))
+        return frame if not frame.empty else None
+    except Exception as exc:
+        print(f"[WARN] L3 Spider stats read failed: {path}: {exc}")
         return None
 
 
@@ -321,6 +375,106 @@ def get_meta() -> dict[str, object]:
             for date, lines in sorted(availability.items())
         },
     }
+
+
+def get_structure(selection: dict[str, object]) -> dict[str, object]:
+    """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다 (parquet 읽기 없음)."""
+    empty: dict[str, object] = {"edsStepSeqs": {}, "edsStepPpids": {}}
+    if not _has_required_selection(selection):
+        return empty
+
+    cache_key = _make_selection_cache_key(selection)
+    cached = _structure_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    eds_step_seqs: dict[str, set[str]] = {}
+    eds_step_ppids: dict[str, set[str]] = {}
+    root = selectors.get_data_root()
+
+    try:
+        for path in selectors.iter_data_files(selection):
+            parsed = _parse_filename_key(path)
+            if not parsed:
+                continue
+            step_seq, ppid = parsed
+            relative_parts = path.relative_to(root).parts
+            if len(relative_parts) < 4:
+                continue
+            eds_step = relative_parts[3]
+            eds_step_seqs.setdefault(eds_step, set()).add(step_seq)
+            composite = f"{eds_step}|||{step_seq}"
+            eds_step_ppids.setdefault(composite, set()).add(ppid)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    result: dict[str, object] = {
+        "edsStepSeqs": {eds: sorted(steps) for eds, steps in sorted(eds_step_seqs.items())},
+        "edsStepPpids": {key: sorted(ppids) for key, ppids in sorted(eds_step_ppids.items())},
+    }
+    _structure_cache.set(cache_key, result)
+    return result
+
+
+def get_stats(selection: dict[str, object]) -> dict[str, object]:
+    """slim parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
+    empty: dict[str, object] = {"stats": _empty_stats(), "ppidLastTkinTime": {}}
+    if not _has_required_selection(selection):
+        return empty
+
+    cache_key = _make_selection_cache_key(selection)
+    cached = _stats_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        files = list(selectors.iter_data_files(selection))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    frames = _parallel_read(files, _read_stats_file)
+    if not frames:
+        _stats_cache.set(cache_key, empty)
+        return empty
+
+    merged = pd.concat(frames, ignore_index=True)
+    merged = _normalize_display_status(merged)
+
+    if "display_status" not in merged.columns:
+        _stats_cache.set(cache_key, empty)
+        return empty
+
+    status = merged["display_status"]
+    anomaly_mask = status.isin(ANOMALY_STATUSES)
+    high_risk_mask = status == "High Risk Chamber"
+
+    stats = {
+        "total": int(len(merged)),
+        "normal": int((status == "Normal (Ref)").sum()),
+        "warning": int((status == "Warning").sum()),
+        "risk": int(high_risk_mask.sum()),
+        "anomalySteps": int(merged.loc[anomaly_mask, "step_seq"].dropna().nunique())
+            if "step_seq" in merged.columns else 0,
+        "highRiskEqpchs": int(merged.loc[high_risk_mask, "eqc"].dropna().nunique())
+            if "eqc" in merged.columns else 0,
+    }
+
+    ppid_last_tkin_time: dict[str, str] = {}
+    if {"eds_step", "step_seq", "ppid", "tkin_time"}.issubset(merged.columns):
+        try:
+            tkin = merged[["eds_step", "step_seq", "ppid", "tkin_time"]].copy()
+            tkin["tkin_time"] = pd.to_datetime(tkin["tkin_time"], errors="coerce")
+            tkin = tkin.dropna(subset=["tkin_time"])
+            if not tkin.empty:
+                grouped = tkin.groupby(["eds_step", "step_seq", "ppid"], sort=False)["tkin_time"].max()
+                for (eds, step, ppid), ts in grouped.items():
+                    ppid_last_tkin_time[f"{eds}|||{step}|||{ppid}"] = ts.strftime("%Y-%m-%d %H:%M")
+        except Exception as exc:
+            print(f"[WARN] L3 Spider ppidLastTkinTime compute failed: {exc}")
+
+    result = {"stats": stats, "ppidLastTkinTime": ppid_last_tkin_time}
+    _stats_cache.set(cache_key, result)
+    return result
 
 
 def get_summary(selection: dict[str, object]) -> dict[str, object]:

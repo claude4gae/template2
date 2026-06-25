@@ -7,10 +7,19 @@ from __future__ import annotations
 
 from django.urls import path
 
-from .views import L3SpiderDataView, L3SpiderFilterCandidatesView, L3SpiderMetaView, L3SpiderSummaryView
+from .views import (
+    L3SpiderDataView,
+    L3SpiderFilterCandidatesView,
+    L3SpiderMetaView,
+    L3SpiderStatsView,
+    L3SpiderStructureView,
+    L3SpiderSummaryView,
+)
 
 urlpatterns = [
     path("meta", L3SpiderMetaView.as_view(), name="l3-spider-meta"),
+    path("structure", L3SpiderStructureView.as_view(), name="l3-spider-structure"),
+    path("stats", L3SpiderStatsView.as_view(), name="l3-spider-stats"),
     path("summary", L3SpiderSummaryView.as_view(), name="l3-spider-summary"),
     path("data", L3SpiderDataView.as_view(), name="l3-spider-data"),
     path("filter-candidates", L3SpiderFilterCandidatesView.as_view(), name="l3-spider-filter-candidates"),
